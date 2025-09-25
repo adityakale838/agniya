@@ -5,7 +5,7 @@ This module provides the mathematical primitives needed for
 the hybrid AES + Paillier encryption system.
 """
 
-import random
+import secrets
 from typing import Tuple
 import math
 
@@ -98,7 +98,7 @@ def is_prime(n: int, k: int = 20) -> bool:
     
     # Perform k rounds of testing
     for _ in range(k):
-        a = random.randrange(2, n - 1)
+        a = secrets.randbelow(n - 3) + 2  # [2, n-2]
         x = pow(a, d, n)
         
         if x == 1 or x == n - 1:
@@ -125,8 +125,8 @@ def generate_prime(bit_length: int) -> int:
         Random prime number of specified bit length
     """
     while True:
-        # Generate random odd number of specified bit length
-        candidate = random.getrandbits(bit_length)
+        # Generate random odd number of specified bit length using secrets
+        candidate = secrets.randbits(bit_length)
         candidate |= (1 << bit_length - 1) | 1  # Set MSB and LSB
         
         if is_prime(candidate):
