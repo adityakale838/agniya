@@ -1,0 +1,163 @@
+"""
+Number Theory utilities for the Paillier cryptosystem.
+
+This module provides the mathematical primitives needed for
+the hybrid AES + Paillier encryption system.
+"""
+
+import random
+from typing import Tuple
+import math
+
+
+def gcd(a: int, b: int) -> int:
+    """
+    Calculate Greatest Common Divisor using Euclidean algorithm.
+    
+    Args:
+        a: First integer
+        b: Second integer
+        
+    Returns:
+        Greatest common divisor of a and b
+    """
+    while b:
+        a, b = b, a % b
+    return abs(a)
+
+
+def extended_gcd(a: int, b: int) -> Tuple[int, int, int]:
+    """
+    Extended Euclidean Algorithm.
+    
+    Returns (gcd, x, y) where ax + by = gcd(a, b)
+    
+    Args:
+        a: First integer
+        b: Second integer
+        
+    Returns:
+        Tuple of (gcd, x, y) satisfying ax + by = gcd(a, b)
+    """
+    if a == 0:
+        return b, 0, 1
+    
+    gcd_val, x1, y1 = extended_gcd(b % a, a)
+    x = y1 - (b // a) * x1
+    y = x1
+    
+    return gcd_val, x, y
+
+
+def mod_inverse(a: int, m: int) -> int:
+    """
+    Calculate modular multiplicative inverse of a modulo m.
+    
+    Args:
+        a: Integer to find inverse of
+        m: Modulus
+        
+    Returns:
+        Modular inverse of a modulo m
+        
+    Raises:
+        ValueError: If gcd(a, m) != 1 (no inverse exists)
+    """
+    gcd_val, x, _ = extended_gcd(a, m)
+    
+    if gcd_val != 1:
+        raise ValueError(f"Modular inverse of {a} mod {m} does not exist")
+    
+    return x % m
+
+
+def is_prime(n: int, k: int = 20) -> bool:
+    """
+    Miller-Rabin primality test.
+    
+    Args:
+        n: Number to test for primality
+        k: Number of rounds (higher = more accurate)
+        
+    Returns:
+        True if n is probably prime, False if composite
+    """
+    if n < 2:
+        return False
+    if n == 2 or n == 3:
+        return True
+    if n % 2 == 0:
+        return False
+    
+    # Write n-1 as 2^r * d
+    r = 0
+    d = n - 1
+    while d % 2 == 0:
+        r += 1
+        d //= 2
+    
+    # Perform k rounds of testing
+    for _ in range(k):
+        a = random.randrange(2, n - 1)
+        x = pow(a, d, n)
+        
+        if x == 1 or x == n - 1:
+            continue
+            
+        for _ in range(r - 1):
+            x = pow(x, 2, n)
+            if x == n - 1:
+                break
+        else:
+            return False
+    
+    return True
+
+
+def generate_prime(bit_length: int) -> int:
+    """
+    Generate a random prime number of specified bit length.
+    
+    Args:
+        bit_length: Desired bit length of the prime
+        
+    Returns:
+        Random prime number of specified bit length
+    """
+    while True:
+        # Generate random odd number of specified bit length
+        candidate = random.getrandbits(bit_length)
+        candidate |= (1 << bit_length - 1) | 1  # Set MSB and LSB
+        
+        if is_prime(candidate):
+            return candidate
+
+
+def lcm(a: int, b: int) -> int:
+    """
+    Calculate Least Common Multiple of two integers.
+    
+    Args:
+        a: First integer
+        b: Second integer
+        
+    Returns:
+        Least common multiple of a and b
+    """
+    return abs(a * b) // gcd(a, b)
+
+
+def carmichael_lambda(p: int, q: int) -> int:
+    """
+    Calculate Carmichael function λ(n) for n = p * q where p, q are primes.
+    
+    For RSA-like systems: λ(n) = lcm(p-1, q-1)
+    
+    Args:
+        p: First prime
+        q: Second prime
+        
+    Returns:
+        Carmichael lambda of p * q
+    """
+    return lcm(p - 1, q - 1)
