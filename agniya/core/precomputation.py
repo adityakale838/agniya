@@ -21,19 +21,24 @@ class PrecomputationTable:
     
     This is a key patent innovation: instead of encrypting common values
     (like 0, 1, powers of 10) every time, we precompute and cache them.
+    
+    Enhanced with LRU cache and dataset-aware precomputation.
     """
     
-    def __init__(self, public_key: PaillierPublicKey):
+    def __init__(self, public_key: PaillierPublicKey, max_cache_size: int = 10000):
         """
         Initialize precomputation table.
         
         Args:
             public_key: Paillier public key to use for encryption
+            max_cache_size: Maximum number of cached values (default 10K)
         """
         self.public_key = public_key
         self.cache: Dict[int, int] = {}  # plaintext -> ciphertext
+        self.access_count: Dict[int, int] = {}  # Track access frequency
         self.hit_count = 0
         self.miss_count = 0
+        self.max_cache_size = max_cache_size
         
         # Precompute common values
         self._precompute_basics()
@@ -80,7 +85,7 @@ class PrecomputationTable:
     
     def get_or_encrypt(self, plaintext: int) -> int:
         """
-        Get cached value or encrypt on-demand.
+        Get cached value or encrypt on-demand with smart caching.
         
         Args:
             plaintext: Value to encrypt
@@ -88,6 +93,9 @@ class PrecomputationTable:
         Returns:
             Ciphertext (from cache or newly encrypted)
         """
+        # Track access frequency
+        self.access_count[plaintext] = self.access_count.get(plaintext, 0) + 1
+        
         cached = self.get_encrypted(plaintext)
         if cached is not None:
             return cached
@@ -95,16 +103,70 @@ class PrecomputationTable:
         # Not in cache, encrypt it
         ciphertext = encrypt(self.public_key, plaintext)
         
-        # Add to cache if space permits (simple LRU would be better)
-        if len(self.cache) < 10000:  # Limit cache size
+        # Add to cache using LRU-like eviction
+        if len(self.cache) < self.max_cache_size:
             self.cache[plaintext] = ciphertext
+        else:
+            # Cache is full, evict least accessed value if this one is more frequent
+            if self.access_count[plaintext] > 1:  # Accessed more than once
+                # Find least accessed item
+                least_accessed = min(self.access_count.items(), key=lambda x: x[1])
+                if least_accessed[1] < self.access_count[plaintext]:
+                    # Evict it
+                    del self.cache[least_accessed[0]]
+                    del self.access_count[least_accessed[0]]
+                    # Add new value
+                    self.cache[plaintext] = ciphertext
         
         return ciphertext
     
     def add_to_cache(self, plaintext: int, ciphertext: int):
         """Manually add a value to cache."""
-        if len(self.cache) < 10000:
+        if len(self.cache) < self.max_cache_size:
             self.cache[plaintext] = ciphertext
+    
+    def warm_cache_with_dataset(self, values: List[int], max_values: int = 1000):
+        """
+        Warm up cache with most common values from dataset.
+        
+        This is a key optimization: analyze the dataset and precompute
+        the most frequently occurring values.
+        
+        Args:
+            values: List of plaintext values from dataset
+            max_values: Maximum number of values to precompute
+        """
+        from collections import Counter
+        
+        print(f"Analyzing dataset for cache warming...")
+        
+        # Count frequency of each value
+        value_counts = Counter(values)
+        
+        # Get most common values
+        most_common = value_counts.most_common(max_values)
+        
+        print(f"Precomputing {len(most_common)} most frequent values...")
+        
+        cached_count = 0
+        for value, count in most_common:
+            if value not in self.cache and len(self.cache) < self.max_cache_size:
+                try:
+                    if 0 <= value < self.public_key.n:
+                        self.cache[value] = encrypt(self.public_key, value)
+                        cached_count += 1
+                except:
+                    pass  # Skip invalid values
+        
+        print(f"Cache warmed with {cached_count} dataset-specific values")
+        print(f"Total cache size: {len(self.cache)} values")
+        
+        # Show top 10 most common values
+        print(f"\nTop 10 most common values in dataset:")
+        for i, (value, count) in enumerate(most_common[:10], 1):
+            pct = (count / len(values)) * 100
+            in_cache = "✓" if value in self.cache else "✗"
+            print(f"  {i}. Value={value}, Count={count} ({pct:.1f}%) [{in_cache}]")
     
     def get_hit_rate(self) -> float:
         """Calculate cache hit rate."""

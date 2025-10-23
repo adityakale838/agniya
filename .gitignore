@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment (DO NOT COMMIT)
+envb/
+venv/
+ENV/
+env/
+
+# Large Dataset Files (can be downloaded/regenerated)
+data/real_datasets/*.txt
+data/real_datasets/*.csv
+data/real_datasets/*.xlsx
+data/real_datasets/**/*.txt
+data/real_datasets/**/*.csv
+data/real_datasets/**/*.xlsx
+
+# Benchmark Results (can be regenerated)
+data/benchmark_results/*.json
+data/benchmark_results/*.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Pytest
+.pytest_cache/
+.coverage
+htmlcov/
