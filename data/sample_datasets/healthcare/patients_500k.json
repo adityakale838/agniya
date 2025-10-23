@@ -1,0 +1,28 @@
+{
+  "generation_timestamp": "2025-10-23T19:08:22.543067",
+  "numpy_version": "2.2.6",
+  "random_seed": 42,
+  "healthcare": {
+    "rows": 500000,
+    "columns": [
+      "patient_id",
+      "age",
+      "heart_rate",
+      "blood_pressure_systolic",
+      "blood_pressure_diastolic",
+      "glucose_level",
+      "cholesterol",
+      "temperature"
+    ],
+    "null_percentage": 5.0,
+    "value_ranges": {
+      "age": "0-120",
+      "heart_rate": "40-127",
+      "blood_pressure_systolic": "70-200",
+      "blood_pressure_diastolic": "40-130",
+      "glucose_level": "50-200",
+      "cholesterol": "100-334",
+      "temperature": "950-1030"
+    }
+  }
+}
