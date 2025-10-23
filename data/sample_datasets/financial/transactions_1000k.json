@@ -1,0 +1,46 @@
+{
+  "generation_timestamp": "2025-10-23T19:08:22.543067",
+  "numpy_version": "2.2.6",
+  "random_seed": 42,
+  "healthcare": {
+    "rows": 1000000,
+    "columns": [
+      "patient_id",
+      "age",
+      "heart_rate",
+      "blood_pressure_systolic",
+      "blood_pressure_diastolic",
+      "glucose_level",
+      "cholesterol",
+      "temperature"
+    ],
+    "null_percentage": 5.0,
+    "value_ranges": {
+      "age": "0-120",
+      "heart_rate": "40-130",
+      "blood_pressure_systolic": "70-200",
+      "blood_pressure_diastolic": "40-130",
+      "glucose_level": "50-193",
+      "cholesterol": "100-352",
+      "temperature": "950-1036"
+    }
+  },
+  "financial": {
+    "rows": 1000000,
+    "columns": [
+      "transaction_id",
+      "account_balance",
+      "transaction_amount",
+      "salary",
+      "loan_amount",
+      "credit_score"
+    ],
+    "value_ranges": {
+      "account_balance": "28-4,322,882,939",
+      "transaction_amount": "-94,814-999,994",
+      "salary": "2,000,000-15,644,831",
+      "loan_amount": "0-42,064,581",
+      "credit_score": "333-850"
+    }
+  }
+}
