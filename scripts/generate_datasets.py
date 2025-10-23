@@ -297,6 +297,105 @@ class DatasetGenerator:
         print()
 
 
+def generate_adaptive_test_datasets():
+    """
+    Generate datasets specifically designed to test all key sizes.
+    
+    This demonstrates the adaptive bit-length optimization across
+    the full spectrum from 512-bit to 4096-bit keys.
+    """
+    generator = DatasetGenerator(seed=42)
+    base_path = Path("data/sample_datasets/adaptive_tests")
+    
+    print("\n" + "=" * 70)
+    print("Generating Adaptive Bit-Length Test Datasets")
+    print("=" * 70)
+    
+    # Test 1: Tiny values (should select 512-bit)
+    print("\n1. Tiny Values Dataset (512-bit target)")
+    tiny_values = pd.DataFrame({
+        'id': range(10000),
+        'age': np.random.randint(0, 120, 10000),  # 0-120
+        'score': np.random.randint(0, 100, 10000),  # 0-100
+        'rating': np.random.randint(1, 5, 10000),  # 1-5 stars
+        'count': np.random.randint(0, 1000, 10000)  # 0-1000
+    })
+    generator.save_dataset(tiny_values, base_path / "tiny_values_512bit.csv")
+    print(f"   Max value: {tiny_values[['age', 'score', 'rating', 'count']].max().max()}")
+    print(f"   Expected key: 512-bit")
+    
+    # Test 2: Small values (should select 1024-bit)
+    print("\n2. Small Values Dataset (1024-bit target)")
+    small_values = pd.DataFrame({
+        'id': range(10000),
+        'temperature': np.random.randint(-400, 1250, 10000),  # -40°C to 125°C (tenths)
+        'humidity': np.random.randint(0, 100, 10000),  # 0-100%
+        'heart_rate': np.random.randint(40, 200, 10000),  # 40-200 bpm
+        'blood_pressure': np.random.randint(70, 200, 10000),  # 70-200 mmHg
+        'inventory_count': np.random.randint(0, 100000, 10000)  # 0-100K
+    })
+    generator.save_dataset(small_values, base_path / "small_values_1024bit.csv")
+    print(f"   Max value: {small_values[['temperature', 'humidity', 'heart_rate', 'blood_pressure', 'inventory_count']].max().max()}")
+    print(f"   Expected key: 1024-bit")
+    
+    # Test 3: Medium values (should select 2048-bit)
+    print("\n3. Medium Values Dataset (2048-bit target)")
+    medium_values = pd.DataFrame({
+        'id': range(10000),
+        'salary_cents': np.random.randint(2000000, 50000000, 10000),  # $20K-$500K
+        'transaction_amount': np.random.randint(100, 100000000, 10000),  # $1-$1M
+        'account_balance': np.random.randint(0, 1000000000, 10000),  # $0-$10M
+        'product_id': np.random.randint(0, 10000000, 10000)  # 0-10M
+    })
+    generator.save_dataset(medium_values, base_path / "medium_values_2048bit.csv")
+    print(f"   Max value: {medium_values[['salary_cents', 'transaction_amount', 'account_balance', 'product_id']].max().max()}")
+    print(f"   Expected key: 2048-bit")
+    
+    # Test 4: Large values (should select 3072-bit)
+    print("\n4. Large Values Dataset (3072-bit target)")
+    # Use lognormal distribution for very large values
+    large_values = pd.DataFrame({
+        'id': range(10000),
+        'large_account': (np.random.lognormal(28, 2, 10000)).astype(np.int64),  # Very large balances
+        'big_transaction': (np.random.lognormal(29, 2, 10000)).astype(np.int64),  # Huge transactions
+        'enterprise_revenue': (np.random.lognormal(30, 2, 10000)).astype(np.int64)  # Enterprise scale
+    })
+    generator.save_dataset(large_values, base_path / "large_values_3072bit.csv")
+    print(f"   Max value: {large_values[['large_account', 'big_transaction', 'enterprise_revenue']].max().max()}")
+    print(f"   Expected key: 3072-bit")
+    
+    # Test 5: Huge values (should select 4096-bit)
+    print("\n5. Huge Values Dataset (4096-bit target)")
+    # Use even larger lognormal distribution
+    huge_values = pd.DataFrame({
+        'id': range(10000),
+        'cryptographic_nonce': (np.random.lognormal(40, 3, 10000)).astype(np.int64),  # Very large numbers
+        'global_identifier': (np.random.lognormal(42, 3, 10000)).astype(np.int64),  # Global scale IDs
+    })
+    generator.save_dataset(huge_values, base_path / "huge_values_4096bit.csv")
+    print(f"   Max value: {huge_values[['cryptographic_nonce', 'global_identifier']].max().max()}")
+    print(f"   Expected key: 4096-bit")
+    
+    # Test 6: Mixed range dataset (tests adaptive selection intelligence)
+    print("\n6. Mixed Range Dataset (tests smart column-by-column selection)")
+    mixed_values = pd.DataFrame({
+        'id': range(10000),
+        'small_col': np.random.randint(0, 100, 10000),  # 512-bit if separate
+        'medium_col': np.random.randint(0, 1000000, 10000),  # 1024-bit if separate
+        'large_col': (np.random.uniform(0, 10**10, 10000)).astype(np.int64),  # 2048-bit if separate
+        'category': np.random.randint(1, 20, 10000),  # 512-bit if separate
+    })
+    generator.save_dataset(mixed_values, base_path / "mixed_range_values.csv")
+    print(f"   Column max values:")
+    for col in ['small_col', 'medium_col', 'large_col', 'category']:
+        print(f"     {col}: {mixed_values[col].max()}")
+    print(f"   Use case: Test column-wise adaptive optimization")
+    
+    print("\n" + "=" * 70)
+    print("Adaptive test datasets generated successfully!")
+    print("=" * 70)
+
+
 def generate_all_datasets():
     """Generate all benchmark datasets."""
     generator = DatasetGenerator(seed=42)
@@ -332,6 +431,9 @@ def generate_all_datasets():
             df,
             base_path / f"ecommerce/orders_{size//1000}k.csv"
         )
+    
+    # Generate adaptive test datasets
+    generate_adaptive_test_datasets()
     
     print("=" * 60)
     print("All datasets generated successfully!")
