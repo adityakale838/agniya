@@ -43,6 +43,7 @@ from agniya.core.paillier import (
     PaillierPublicKey, PaillierPrivateKey,
     generate_keypair, encrypt, decrypt, decrypt_crt
 )
+from agniya.hybrid.aes_cipher import AESCipher
 
 
 class SecurityLevel(Enum):
@@ -128,7 +129,8 @@ class MultiLevelCache:
                  high_pub: PaillierPublicKey,
                  high_priv: PaillierPrivateKey,
                  max_cache_size: int = 10000,
-                 auto_generate_low_keys: bool = True):
+                 auto_generate_low_keys: bool = True,
+                 aes_key: bytes = None):
         """
         Initialize multi-level cache.
         
@@ -137,6 +139,7 @@ class MultiLevelCache:
             high_priv: High-security private key
             max_cache_size: Maximum cache entries
             auto_generate_low_keys: Generate 1024-bit keys automatically
+            aes_key: AES-256 key (32 bytes). If None, generates random key.
         """
         # High security keys (storage level)
         self.high_pub = high_pub
@@ -149,6 +152,10 @@ class MultiLevelCache:
         else:
             self.low_pub = None
             self.low_priv = None
+        
+        # AES cipher for fast encryption
+        self.aes_cipher = AESCipher(aes_key)
+        print("✅ AES-256-GCM cipher initialized for cache")
         
         # LRU cache
         self.cache = LRUCache(max_cache_size)
@@ -171,6 +178,34 @@ class MultiLevelCache:
     def _hash_plaintext(self, plaintext: int) -> int:
         """Hash plaintext for cache key (one-way, no reversal)."""
         return hash((plaintext, "agniya_cache_salt"))
+    
+    def _encrypt_aes(self, plaintext: int) -> Tuple[bytes, bytes, bytes]:
+        """
+        Encrypt integer plaintext with AES-256-GCM.
+        
+        Args:
+            plaintext: Integer to encrypt
+        
+        Returns:
+            Tuple of (ciphertext, nonce, tag)
+        """
+        plaintext_bytes = plaintext.to_bytes((plaintext.bit_length() + 7) // 8, 'big')
+        encrypted = self.aes_cipher.encrypt(plaintext_bytes)
+        return encrypted['ciphertext'], encrypted['nonce'], encrypted['tag']
+    
+    def _decrypt_aes(self, ciphertext: bytes, nonce: bytes, tag: bytes) -> bytes:
+        """
+        Decrypt AES-256-GCM ciphertext.
+        
+        Args:
+            ciphertext: Encrypted data
+            nonce: Nonce used for encryption
+            tag: Authentication tag
+        
+        Returns:
+            Decrypted plaintext bytes
+        """
+        return self.aes_cipher.decrypt({'ciphertext': ciphertext, 'nonce': nonce, 'tag': tag})
     
     def _should_promote_to_compute(self, value: CachedValue) -> bool:
         """
@@ -244,9 +279,12 @@ class MultiLevelCache:
                 
                 # Lazy conversion: AES → Low Paillier
                 if cached.aes_ciphertext is not None:
-                    # TODO: Implement AES decryption (need AES key)
-                    # For now, encrypt from scratch
-                    pass
+                    # Decrypt AES first, then encrypt with Paillier
+                    plaintext_bytes = self._decrypt_aes(cached.aes_ciphertext, cached.aes_nonce, cached.aes_tag)
+                    plaintext_int = int.from_bytes(plaintext_bytes, 'big')
+                    cached.paillier_low_ct = encrypt(self.low_pub, plaintext_int)
+                    self.stats['lazy_conversions'] += 1
+                    return cached.paillier_low_ct, SecurityLevel.PAILLIER_LOW
             
             if required_level == SecurityLevel.PAILLIER_HIGH:
                 if cached.paillier_high_ct is not None:
@@ -271,9 +309,13 @@ class MultiLevelCache:
         
         # Not in cache or lazy conversion failed - encrypt from scratch
         if required_level == SecurityLevel.AES:
-            # TODO: Implement AES encryption
-            # For now, not supported
-            raise NotImplementedError("AES encryption not yet implemented")
+            # Encrypt with AES-256-GCM
+            plaintext_bytes = plaintext.to_bytes((plaintext.bit_length() + 7) // 8, 'big')
+            encrypted = self.aes_cipher.encrypt(plaintext_bytes)
+            cached.aes_ciphertext = encrypted['ciphertext']
+            cached.aes_nonce = encrypted['nonce']
+            cached.aes_tag = encrypted['tag']
+            return (encrypted['ciphertext'], encrypted['nonce'], encrypted['tag']), SecurityLevel.AES
         
         elif required_level == SecurityLevel.PAILLIER_LOW:
             if self.low_pub is None:

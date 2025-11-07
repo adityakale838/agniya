@@ -1,0 +1,13 @@
+{
+  "timestamp": "2025-10-28T12:20:43.780333",
+  "database_info": {
+    "total_transactions": 100,
+    "encryption_method": "Hybrid AES-256 + Paillier-2048"
+  },
+  "analytics": {
+    "total_revenue_usd": 26419.08,
+    "average_transaction_usd": 264.19,
+    "average_customer_age": 44
+  },
+  "security_note": "All analytics computed on encrypted data without decryption"
+}

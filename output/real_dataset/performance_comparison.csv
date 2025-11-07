@@ -1,0 +1,4 @@
+Metric,Pure Paillier,Hybrid System,Speedup
+Insertion Time (ms/record),902.94,571.11,1.58x
+Query Time (ms/query),123.07,165.66,0.74x
+Aggregation Time (sec),0.074,0.302,0.25x

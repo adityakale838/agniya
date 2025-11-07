@@ -1,0 +1,45 @@
+{
+  "timestamp": "2025-10-28T12:42:59.580988",
+  "dataset": "Medical Insurance (Real Data)",
+  "records": 500,
+  "comparison": {
+    "insertion_speedup": 1.58,
+    "query_speedup": 0.74,
+    "aggregation_speedup": 0.25
+  },
+  "pure_paillier": {
+    "dataset": "Medical Insurance (Real Data)",
+    "records": 500,
+    "system": "Pure Paillier-2048",
+    "performance": {
+      "initialization_time_sec": 1.66,
+      "insertion_total_sec": 451.47,
+      "insertion_rate_per_sec": 1.11,
+      "insertion_avg_ms": 902.94,
+      "query_avg_ms": 123.07,
+      "aggregation_total_sec": 0.074
+    },
+    "analytics": {
+      "total_charges_usd": 6661080.86
+    }
+  },
+  "hybrid_system": {
+    "dataset": "Medical Insurance (Real Data)",
+    "records": 500,
+    "system": "Hybrid AES-256 + Paillier-2048",
+    "performance": {
+      "initialization_time_sec": 3.85,
+      "insertion_total_sec": 285.55,
+      "insertion_rate_per_sec": 1.75,
+      "insertion_avg_ms": 571.11,
+      "query_avg_ms": 165.66,
+      "aggregation_total_sec": 0.302
+    },
+    "analytics": {
+      "total_charges_usd": 6661080.86,
+      "average_charge_usd": 13322.16,
+      "average_age": 39,
+      "average_bmi": 30.5
+    }
+  }
+}

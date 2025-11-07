@@ -1,0 +1,190 @@
+[
+  {
+    "method": "Pure Paillier",
+    "dataset": "Medical Insurance Charges",
+    "sample_size": 500,
+    "encrypt_time_ms": 33231.327533721924,
+    "avg_encrypt_ms": 66.46265506744385,
+    "throughput_rec_s": 15.046043510979766,
+    "speedup": 1.0
+  },
+  {
+    "method": "Hybrid AES+Paillier",
+    "dataset": "Medical Insurance Charges",
+    "sample_size": 50,
+    "encrypt_time_ms": 33.99229049682617,
+    "avg_encrypt_ms": 0.6798458099365234,
+    "throughput_rec_s": 1470.921766942079,
+    "speedup": 97.76136602746644
+  },
+  {
+    "method": "Multi-Level Cache",
+    "dataset": "Medical Insurance Charges",
+    "sample_size": 500,
+    "encrypt_time_ms": 4399.071931838989,
+    "avg_encrypt_ms": 8.798143863677979,
+    "throughput_rec_s": 113.66033739552421,
+    "avg_query_ms": 0.0,
+    "speedup": 7.554167799168015
+  },
+  {
+    "method": "OPE+Paillier Hybrid",
+    "dataset": "Medical Insurance Charges",
+    "sample_size": 500,
+    "encrypt_time_ms": 33206.60972595215,
+    "avg_encrypt_ms": 66.4132194519043,
+    "throughput_rec_s": 15.057243245438338,
+    "range_query_ms": 3.713369369506836,
+    "range_query_results": 91,
+    "speedup": 1.000744364088167
+  },
+  {
+    "method": "GPU Homomorphic Ops",
+    "dataset": "Medical Insurance Charges",
+    "sample_size": 500,
+    "cpu_encrypt_time_ms": 31979.371309280396,
+    "gpu_sum_time_ms": 2.999544143676758,
+    "speedup": null
+  },
+  {
+    "method": "Pure Paillier",
+    "dataset": "GDP/Salary Data",
+    "sample_size": 500,
+    "encrypt_time_ms": 33429.07094955444,
+    "avg_encrypt_ms": 66.85814189910889,
+    "throughput_rec_s": 14.957041455160878,
+    "speedup": 1.0
+  },
+  {
+    "method": "Hybrid AES+Paillier",
+    "dataset": "GDP/Salary Data",
+    "sample_size": 50,
+    "encrypt_time_ms": 21.690845489501953,
+    "avg_encrypt_ms": 0.43381690979003906,
+    "throughput_rec_s": 2305.119919101321,
+    "speedup": 154.11603464573852
+  },
+  {
+    "method": "Multi-Level Cache",
+    "dataset": "GDP/Salary Data",
+    "sample_size": 500,
+    "encrypt_time_ms": 4537.163496017456,
+    "avg_encrypt_ms": 9.074326992034912,
+    "throughput_rec_s": 110.20101004490589,
+    "avg_query_ms": 0.0,
+    "speedup": 7.367834767007442
+  },
+  {
+    "method": "OPE+Paillier Hybrid",
+    "dataset": "GDP/Salary Data",
+    "sample_size": 500,
+    "encrypt_time_ms": 34335.36911010742,
+    "avg_encrypt_ms": 68.67073822021484,
+    "throughput_rec_s": 14.562243335628311,
+    "range_query_ms": 3.9894580841064453,
+    "range_query_results": 388,
+    "speedup": 0.9736045313027903
+  },
+  {
+    "method": "GPU Homomorphic Ops",
+    "dataset": "GDP/Salary Data",
+    "sample_size": 500,
+    "cpu_encrypt_time_ms": 32334.376573562622,
+    "gpu_sum_time_ms": 2.9878616333007812,
+    "speedup": null
+  },
+  {
+    "method": "Pure Paillier",
+    "dataset": "Credit Card Transactions (Synthetic)",
+    "sample_size": 500,
+    "encrypt_time_ms": 33190.17720222473,
+    "avg_encrypt_ms": 66.38035440444946,
+    "throughput_rec_s": 15.064698116962301,
+    "speedup": 1.0
+  },
+  {
+    "method": "Hybrid AES+Paillier",
+    "dataset": "Credit Card Transactions (Synthetic)",
+    "sample_size": 50,
+    "encrypt_time_ms": 19.834041595458984,
+    "avg_encrypt_ms": 0.3966808319091797,
+    "throughput_rec_s": 2520.918379612934,
+    "speedup": 167.33945546339703
+  },
+  {
+    "method": "Multi-Level Cache",
+    "dataset": "Credit Card Transactions (Synthetic)",
+    "sample_size": 500,
+    "encrypt_time_ms": 4312.420129776001,
+    "avg_encrypt_ms": 8.624840259552002,
+    "throughput_rec_s": 115.94417634488951,
+    "avg_query_ms": 0.0,
+    "speedup": 7.696415516905752
+  },
+  {
+    "method": "OPE+Paillier Hybrid",
+    "dataset": "Credit Card Transactions (Synthetic)",
+    "sample_size": 500,
+    "encrypt_time_ms": 33413.25545310974,
+    "avg_encrypt_ms": 66.82651090621948,
+    "throughput_rec_s": 14.964121071700767,
+    "range_query_ms": 3.6134719848632812,
+    "range_query_results": 101,
+    "speedup": 0.9933236600905869
+  },
+  {
+    "method": "GPU Homomorphic Ops",
+    "dataset": "Credit Card Transactions (Synthetic)",
+    "sample_size": 500,
+    "cpu_encrypt_time_ms": 32209.595441818237,
+    "gpu_sum_time_ms": 2.9976367950439453,
+    "speedup": null
+  },
+  {
+    "method": "Pure Paillier",
+    "dataset": "Student Grades (Synthetic)",
+    "sample_size": 500,
+    "encrypt_time_ms": 33459.02109146118,
+    "avg_encrypt_ms": 66.91804218292236,
+    "throughput_rec_s": 14.943652972788291,
+    "speedup": 1.0
+  },
+  {
+    "method": "Hybrid AES+Paillier",
+    "dataset": "Student Grades (Synthetic)",
+    "sample_size": 50,
+    "encrypt_time_ms": 21.378040313720703,
+    "avg_encrypt_ms": 0.42756080627441406,
+    "throughput_rec_s": 2338.84861597484,
+    "speedup": 156.51117034327393
+  },
+  {
+    "method": "Multi-Level Cache",
+    "dataset": "Student Grades (Synthetic)",
+    "sample_size": 500,
+    "encrypt_time_ms": 897.7670669555664,
+    "avg_encrypt_ms": 1.7955341339111328,
+    "throughput_rec_s": 556.9373375385208,
+    "avg_query_ms": 0.0,
+    "speedup": 37.2691562466472
+  },
+  {
+    "method": "OPE+Paillier Hybrid",
+    "dataset": "Student Grades (Synthetic)",
+    "sample_size": 500,
+    "encrypt_time_ms": 32710.81233024597,
+    "avg_encrypt_ms": 65.42162466049194,
+    "throughput_rec_s": 15.28546570326767,
+    "range_query_ms": 0.9982585906982422,
+    "range_query_results": 97,
+    "speedup": 1.022873438716879
+  },
+  {
+    "method": "GPU Homomorphic Ops",
+    "dataset": "Student Grades (Synthetic)",
+    "sample_size": 500,
+    "cpu_encrypt_time_ms": 32303.22289466858,
+    "gpu_sum_time_ms": 1.9979476928710938,
+    "speedup": null
+  }
+]
