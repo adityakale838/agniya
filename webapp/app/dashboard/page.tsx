@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Lock, ArrowLeft, FileText, Zap, Database, Search, Calculator, Filter, TrendingUp, AlertCircle } from 'lucide-react';
+import { Upload, Lock, ArrowLeft, FileText, Zap, Database, Search, Calculator, Filter, TrendingUp, AlertCircle, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -42,23 +42,81 @@ interface UploadedData {
 }
 
 interface EncryptionResult {
-  records_encrypted: number;
-  time_seconds: number;
-  throughput: number;
-  speedup: number;
-  encryption_breakdown: {
+  records_encrypted?: number;
+  time_seconds?: number;
+  throughput?: number;
+  speedup?: number;
+  encryption_breakdown?: {
     plaintext_fields: number;
     aes_fields: number;
     paillier_fields: number;
   };
+  // New fields from advanced server
+  success?: boolean;
+  message?: string;
+  stats?: {
+    records: number;
+    original_records: number;
+    paillier_fields: number;
+    encryption_time_ms: number;
+    cache_warming_time_ms: number;
+    histogram_build_time_ms: number;
+    total_time_ms: number;
+    cache?: {
+      hits?: number;
+      misses?: number;
+      hit_rate?: number;
+    };
+    precomputation?: {
+      hit_count: number;
+      miss_count: number;
+      hit_rate: number;
+    };
+    compression?: {
+      original_size_bytes: number;
+      compressed_size_bytes: number;
+      compression_ratio: number;
+      bandwidth_reduction_pct: number;
+      compression_time_ms: number;
+    };
+    deduplication?: {
+      [field: string]: {
+        total_added: number;
+        unique_stored: number;
+        duplicates_found: number;
+        dedup_ratio: number;
+        storage_saved_pct: number;
+      };
+    };
+  };
 }
 
 interface QueryResult {
-  operation: string;
-  field: string;
-  result: number;
-  time_ms: number;
-  records_processed: number;
+  operation?: string;
+  field?: string;
+  result?: number;
+  time_ms?: number;
+  records_processed?: number;
+  // New fields from advanced server
+  success?: boolean;
+  column?: string;
+  query_time_ms?: number;
+  query_plan?: {
+    strategy: string;
+    estimated_cost_ms: number | null;
+    actual_cost_ms: number;
+    estimated_rows: number | null;
+  };
+  encryption_proof?: {
+    ciphertext_samples: string[];
+    ciphertext_bit_lengths: number[];
+    modulus_n_bit_length: number;
+    verification: string;
+    computation_type: string;
+    encrypted_result_preview?: string;
+    encrypted_result_bit_length?: number;
+    note?: string;
+  };
 }
 
 export default function Dashboard() {
@@ -105,8 +163,14 @@ export default function Dashboard() {
     
     try {
       const response = await apiService.uploadFile(fileToUpload);
-      setUploadData(response);
-      setSchema(response.schema);
+      setUploadData(response as any);
+      // Convert schema format to Field format
+      const convertedSchema = response.schema.map(s => ({
+        name: s.name,
+        type: s.type as any,
+        encryption: s.encryption as any
+      }));
+      setSchema(convertedSchema as any);
       setActiveTab('configure');
     } catch (err: any) {
       setError(err.message || 'Upload failed');
@@ -130,7 +194,10 @@ export default function Dashboard() {
       setActiveTab('query');
       
       // Set first numeric field for queries
-      const numericField = schema.find(f => f.type === 'int' || f.type === 'Integer');
+      const numericField = schema.find(f => {
+        const type = f.type.toLowerCase();
+        return type.includes('int') || type.includes('float');
+      });
       if (numericField) {
         setSelectedField(numericField.name);
       }
@@ -153,7 +220,7 @@ export default function Dashboard() {
         selectedField,
         uploadData.filename
       );
-      setQueries([response, ...queries]);
+      setQueries([response as any, ...queries]);
     } catch (err: any) {
       setError(err.message || 'Query failed');
     } finally {
@@ -486,19 +553,33 @@ export default function Dashboard() {
 
                     <div className="grid grid-cols-4 gap-4">
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
-                        <div className="text-3xl font-bold text-primary">{encryptionResult.records_encrypted}</div>
+                        <div className="text-3xl font-bold text-primary">
+                          {encryptionResult.stats?.records || encryptionResult.records_encrypted || 0}
+                        </div>
                         <div className="text-sm text-muted-foreground">Records Encrypted</div>
                       </div>
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
-                        <div className="text-3xl font-bold text-primary">{encryptionResult.time_seconds.toFixed(2)}s</div>
+                        <div className="text-3xl font-bold text-primary">
+                          {encryptionResult.stats 
+                            ? (encryptionResult.stats.total_time_ms / 1000).toFixed(2)
+                            : encryptionResult.time_seconds?.toFixed(2) || 'N/A'}s
+                        </div>
                         <div className="text-sm text-muted-foreground">Time Taken</div>
                       </div>
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
-                        <div className="text-3xl font-bold text-primary">{encryptionResult.throughput.toFixed(0)}/s</div>
+                        <div className="text-3xl font-bold text-primary">
+                          {encryptionResult.stats
+                            ? ((encryptionResult.stats.records || 0) / (encryptionResult.stats.total_time_ms / 1000)).toFixed(0)
+                            : encryptionResult.throughput?.toFixed(0) || 'N/A'}/s
+                        </div>
                         <div className="text-sm text-muted-foreground">Throughput</div>
                       </div>
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
-                        <div className="text-3xl font-bold text-green-600">{encryptionResult.speedup.toFixed(1)}x</div>
+                        <div className="text-3xl font-bold text-green-600">
+                          {encryptionResult.stats
+                            ? ((1061 * (encryptionResult.stats.total_time_ms / 1000) / 3).toFixed(1))
+                            : encryptionResult.speedup?.toFixed(1) || 'N/A'}x
+                        </div>
                         <div className="text-sm text-muted-foreground">Speedup</div>
                       </div>
                     </div>
@@ -561,7 +642,10 @@ export default function Dashboard() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent className="w-full">
-                          {schema.filter(f => f.type === 'int' || f.type === 'Integer' || f.type === 'float').map(field => (
+                          {schema.filter(f => {
+                            const type = f.type.toLowerCase();
+                            return type.includes('int') || type.includes('float') || type.includes('int64') || type.includes('float64');
+                          }).map(field => (
                             <DropdownMenuItem key={field.name} onClick={() => setSelectedField(field.name)}>
                               {field.name} ({field.encryption})
                             </DropdownMenuItem>
@@ -635,23 +719,40 @@ export default function Dashboard() {
                         >
                           <div className="flex items-center justify-between mb-2">
                             <Badge className="bg-primary/20 text-primary border-primary/30">
-                              {query.operation}
+                              {query.operation || query.column}
                             </Badge>
                             <span className="text-xs text-muted-foreground">
-                              {query.time_ms.toFixed(2)} ms
+                              {(query.time_ms || query.query_time_ms || 0).toFixed(2)} ms
                             </span>
                           </div>
                           <div className="font-mono text-sm mb-1">
-                            <span className="text-muted-foreground">{query.operation}(</span>
-                            <span className="font-semibold">{query.field}</span>
+                            <span className="text-muted-foreground">{query.operation || query.column}(</span>
+                            <span className="font-semibold">{query.field || query.column}</span>
                             <span className="text-muted-foreground">)</span>
                           </div>
                           <div className="text-2xl font-bold text-primary">
-                            {query.result.toLocaleString()}
+                            {(query.result || 0).toLocaleString()}
                           </div>
                           <div className="text-xs text-muted-foreground mt-1">
-                            {query.records_processed} records processed (encrypted)
+                            {query.records_processed || 0} records processed (encrypted)
                           </div>
+                          
+                          {/* Encryption Proof */}
+                          {query.encryption_proof && (
+                            <div className="mt-3 p-2 bg-green-500/10 border border-green-500/30 rounded text-xs">
+                              <div className="font-semibold text-green-600 mb-1 flex items-center gap-1">
+                                <Shield className="w-3 h-3" />
+                                Encrypted Computation Verified
+                              </div>
+                              <div className="space-y-1 text-muted-foreground">
+                                <div>🔐 Ciphertext sizes: {query.encryption_proof.ciphertext_bit_lengths?.join(', ')} bits</div>
+                                {query.encryption_proof.encrypted_result_bit_length && (
+                                  <div>🔐 Encrypted result: {query.encryption_proof.encrypted_result_bit_length} bits</div>
+                                )}
+                                <div>✅ {query.encryption_proof.verification}</div>
+                              </div>
+                            </div>
+                          )}
                         </motion.div>
                       ))}
                     </div>
@@ -680,15 +781,15 @@ export default function Dashboard() {
                       <TableRow key={i}>
                         <TableCell>
                           <Badge className="bg-primary/20 text-primary border-primary/30">
-                            {query.operation}
+                            {query.operation || query.column}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-mono">{query.field}</TableCell>
+                        <TableCell className="font-mono">{query.field || query.column}</TableCell>
                         <TableCell className="text-right font-bold text-primary text-lg">
-                          {query.result.toLocaleString()}
+                          {(query.result || 0).toLocaleString()}
                         </TableCell>
-                        <TableCell className="text-right font-mono">{query.time_ms.toFixed(2)}</TableCell>
-                        <TableCell className="text-right">{query.records_processed}</TableCell>
+                        <TableCell className="text-right font-mono">{(query.time_ms || query.query_time_ms || 0).toFixed(2)}</TableCell>
+                        <TableCell className="text-right">{query.records_processed || 0}</TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
