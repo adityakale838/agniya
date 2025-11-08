@@ -16,41 +16,66 @@ export interface UploadResponse {
 
 export interface EncryptResponse {
   success: boolean;
-  records_encrypted: number;
-  total_records: number;
-  original_dataset_size: number;
-  sampled: boolean;
-  time_seconds: number;
-  cache_time_seconds: number;
-  encrypt_time_seconds: number;
-  throughput: number;
-  speedup: number;
-  optimizations_used: {
-    multi_level_cache: boolean;
-    batch_packing: boolean;
-    precomputation: boolean;
-    cache_size: number;
+  message?: string;
+  stats?: {
+    records: number;
+    original_records: number;
+    paillier_fields: number;
+    encryption_time_ms: number;
+    cache_warming_time_ms: number;
+    histogram_build_time_ms: number;
+    total_time_ms: number;
+    cache?: {
+      hits?: number;
+      misses?: number;
+      hit_rate?: number;
+    };
+    precomputation?: {
+      hit_count: number;
+      miss_count: number;
+      hit_rate: number;
+    };
+    compression?: {
+      original_size_bytes: number;
+      compressed_size_bytes: number;
+      compression_ratio: number;
+      bandwidth_reduction_pct: number;
+      compression_time_ms: number;
+    };
+    deduplication?: {
+      [field: string]: {
+        total_added: number;
+        unique_stored: number;
+        duplicates_found: number;
+        dedup_ratio: number;
+        storage_saved_pct: number;
+      };
+    };
   };
-  cache_stats: {
-    hits: number;
-    misses: number;
-    hit_rate: number;
-  };
-  paillier_fields: string[];
-  database_id: string;
 }
 
 export interface QueryResponse {
   success: boolean;
   operation: string;
-  field: string;
+  column: string;
   result: number;
-  time_ms: number;
+  query_time_ms: number;
   records_processed: number;
-  encrypted_computation: boolean;
-  optimizations_used: {
-    batch_packing: boolean;
-    multi_level_cache: boolean;
+  query_plan?: {
+    strategy: string;
+    estimated_cost_ms: number | null;
+    actual_cost_ms: number;
+    estimated_rows: number | null;
+  };
+  encryption_proof?: {
+    ciphertext_samples: string[];
+    ciphertext_bit_lengths: number[];
+    modulus_n_bit_length: number;
+    verification: string;
+    computation_type: string;
+    encrypted_result_preview?: string;
+    encrypted_result_bit_length?: number;
+    note?: string;
   };
 }
 
@@ -103,12 +128,19 @@ class APIService {
       gpu_acceleration: boolean;
       adaptive_caching: boolean;
       hot_cold_separation: boolean;
+      rns_compression?: boolean;
+      ciphertext_deduplication?: boolean;
+      adaptive_query_planning?: boolean;
     };
     optimizations: {
       precomputation_speedup: string;
       multi_level_cache_speedup: string;
       batch_packing_speedup: string;
       combined_speedup: string;
+      rns_compression_ratio?: string;
+      bandwidth_reduction?: string;
+      dedup_capability?: string;
+      query_planning?: string;
     };
   }> {
     return this.fetchAPI('/api/health');
@@ -136,7 +168,9 @@ class APIService {
     schema: Array<{ name: string; encryption: string }>,
     sampleSize?: number,
     enableCache: boolean = true,
-    enableBatch: boolean = true
+    enableBatch: boolean = true,
+    enableCompression: boolean = true,
+    enableDedup: boolean = true
   ): Promise<EncryptResponse> {
     return this.fetchAPI('/api/encrypt', {
       method: 'POST',
@@ -145,7 +179,9 @@ class APIService {
         schema, 
         sample_size: sampleSize,
         enable_cache: enableCache,
-        enable_batch: enableBatch
+        enable_batch: enableBatch,
+        enable_compression: enableCompression,
+        enable_dedup: enableDedup
       }),
     });
   }
@@ -157,7 +193,11 @@ class APIService {
   ): Promise<QueryResponse> {
     return this.fetchAPI('/api/query', {
       method: 'POST',
-      body: JSON.stringify({ operation, field, filename }),
+      body: JSON.stringify({ 
+        type: operation,
+        column: field, 
+        filename 
+      }),
     });
   }
 

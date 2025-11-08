@@ -23,6 +23,8 @@ MEASURED PERFORMANCE:
 from typing import List, Tuple, Optional
 import time
 import numpy as np
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import math
 
 from agniya.core.paillier import (
     PaillierPublicKey, PaillierPrivateKey,
@@ -31,6 +33,15 @@ from agniya.core.paillier import (
 from agniya.core.precomputation import PrecomputationTable
 from agniya.core.batch_packing import BatchedAggregator
 from agniya.storage.multi_level_cache import MultiLevelCache, SecurityLevel
+
+# Try to import gmpy2 for big-int acceleration (optional)
+try:
+    import gmpy2
+    GMPY2_AVAILABLE = True
+    print("✅ gmpy2 available for big-int acceleration")
+except ImportError:
+    GMPY2_AVAILABLE = False
+    print("⚠️  gmpy2 not available - using Python big-int (slower)")
 
 
 class UltimateOptimizedDatabase:
@@ -89,6 +100,119 @@ class UltimateOptimizedDatabase:
         
         print("\n✅ System initialized with ALL optimizations!")
         print("="*70 + "\n")
+
+    @property
+    def public_key(self) -> PaillierPublicKey:
+        """Expose the Paillier public key for external modules."""
+        return self.pub
+
+    @property
+    def private_key(self) -> PaillierPrivateKey:
+        """Expose the Paillier private key for external modules."""
+        return self.priv
+
+    def sum_encrypted(self, ciphertexts: List[int]) -> int:
+        """Homomorphically sum ciphertexts using Paillier addition."""
+        if not ciphertexts:
+            raise ValueError("No ciphertexts provided for sum_encrypted")
+
+        result = ciphertexts[0]
+        modulus = self.pub.n_squared
+        for ct in ciphertexts[1:]:
+            result = (result * ct) % modulus
+
+        return result
+
+    def sum_encrypted_parallel(self, ciphertexts: List[int], max_workers: int = 4) -> int:
+        """
+        Parallel tree-reduction homomorphic sum for high-uniqueness datasets.
+        
+        Uses divide-and-conquer with ThreadPoolExecutor to parallelize modular
+        multiplications. Reduces wall-clock time from O(n) to O(n/p + log n).
+        
+        NOVEL OPTIMIZATION FOR HIGH-ENTROPY DATA:
+        - When caching/dedup provides little benefit (unique_rate > 70%)
+        - Parallelizes homomorphic operations across CPU cores
+        - Tree reduction minimizes sequential dependencies
+        - Uses gmpy2 if available for big-int acceleration
+        
+        Args:
+            ciphertexts: List of encrypted values to sum
+            max_workers: Number of parallel workers (default: 4)
+            
+        Returns:
+            Homomorphically summed ciphertext
+        """
+        if not ciphertexts:
+            raise ValueError("No ciphertexts provided for sum_encrypted_parallel")
+        
+        if len(ciphertexts) == 1:
+            return ciphertexts[0]
+        
+        modulus = self.pub.n_squared
+        
+        # Helper function for pairwise multiplication
+        def multiply_pair(pair):
+            if len(pair) == 1:
+                return pair[0]
+            elif len(pair) == 2:
+                if GMPY2_AVAILABLE:
+                    a = gmpy2.mpz(pair[0])
+                    b = gmpy2.mpz(pair[1])
+                    n_sq = gmpy2.mpz(modulus)
+                    return int((a * b) % n_sq)
+                else:
+                    return (pair[0] * pair[1]) % modulus
+            else:
+                raise ValueError("Pair must have 1 or 2 elements")
+        
+        # Tree reduction: repeatedly pair and multiply until one result
+        current_level = ciphertexts[:]
+        
+        while len(current_level) > 1:
+            # Create pairs for this level
+            pairs = []
+            for i in range(0, len(current_level), 2):
+                if i + 1 < len(current_level):
+                    pairs.append((current_level[i], current_level[i+1]))
+                else:
+                    # Odd one out - carry forward to next level
+                    pairs.append((current_level[i],))
+            
+            # Parallel multiply all pairs
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                current_level = list(executor.map(multiply_pair, pairs))
+        
+        return current_level[0]
+    
+    def estimate_uniqueness(self, values: List[int], sample_size: int = 1000) -> float:
+        """
+        Estimate dataset uniqueness/entropy using sampling.
+        
+        ENTROPY-AWARE ADAPTIVE EXECUTION:
+        - Sample a subset of values
+        - Calculate ratio of unique values
+        - Use this to choose execution strategy
+        
+        Args:
+            values: Dataset to analyze
+            sample_size: Number of values to sample (default: 1000)
+            
+        Returns:
+            Uniqueness ratio (0.0 = all duplicates, 1.0 = all unique)
+        """
+        if len(values) <= sample_size:
+            sample = values
+        else:
+            # Random sample
+            import random
+            sample = random.sample(values, sample_size)
+        
+        unique_count = len(set(sample))
+        total_count = len(sample)
+        
+        uniqueness = unique_count / total_count
+        return uniqueness
     
     def warm_cache_with_dataset(self, data: List[int]):
         """
@@ -103,19 +227,24 @@ class UltimateOptimizedDatabase:
         self.precomp.warm_cache_with_dataset(data)
         print("✅ Cache warming complete\n")
     
-    def sum_query(self, values: List[int], use_cache: bool = True) -> int:
+    def sum_query(self, values: List[int], use_cache: bool = True, force_strategy: Optional[str] = None) -> int:
         """
-        Execute SUM query with ALL optimizations.
+        Execute SUM query with ENTROPY-AWARE ADAPTIVE EXECUTION.
         
-        Decision tree:
-        1. If all values in precomputation cache → instant (1061x)
-        2. Else if values in multi-level cache → fast (251x)
-        3. Else if batch packing available → moderate (28x)
-        4. Else → baseline (encrypt each individually)
+        Decision tree (NEW - entropy-aware):
+        0. Estimate dataset uniqueness/entropy
+        1. If uniqueness < 30% (low-entropy) → current pipeline (dedup + cache) [BEST: 1061x]
+        2. If uniqueness 30-70% (medium-entropy) → multi-level cache + batch [GOOD: 251x]
+        3. If uniqueness > 70% (high-entropy) → parallel tree aggregation [NEW: p-core speedup]
+        4. If uniqueness > 95% (very high-entropy) → skip cache, pure parallel [FASTEST for unique data]
+        
+        This SOLVES THE PROBLEM: When data has no repetition, we don't waste time
+        on caching/dedup and instead use parallel computation!
         
         Args:
             values: List of values to sum
-            use_cache: Whether to use caching (True for hot queries)
+            use_cache: Whether to consider using caching (can be overridden by entropy)
+            force_strategy: Override automatic strategy ('cache', 'parallel', 'batch')
             
         Returns:
             Plaintext sum
@@ -127,8 +256,37 @@ class UltimateOptimizedDatabase:
         print(f"QUERY #{self.query_count}: SUM of {len(values)} values")
         print(f"{'='*70}")
         
-        # Strategy 1: Try precomputation cache (FASTEST - 1061x)
-        if use_cache:
+        # STEP 0: ENTROPY-AWARE DETECTION (NEW!)
+        if not force_strategy and len(values) > 100:
+            print("🧠 ENTROPY-AWARE ANALYSIS...")
+            entropy_start = time.time()
+            uniqueness = self.estimate_uniqueness(values, sample_size=min(1000, len(values)))
+            entropy_time = (time.time() - entropy_start) * 1000
+            
+            print(f"   Dataset uniqueness: {uniqueness:.1%}")
+            print(f"   Analysis time: {entropy_time:.2f}ms")
+            
+            # ADAPTIVE STRATEGY SELECTION
+            if uniqueness < 0.30:
+                chosen_strategy = 'cache'
+                print(f"   ✅ LOW-ENTROPY detected → Using CACHE strategy (1061x speedup)")
+            elif uniqueness < 0.70:
+                chosen_strategy = 'multi_level'
+                print(f"   ✅ MEDIUM-ENTROPY detected → Using MULTI-LEVEL strategy (251x speedup)")
+            else:
+                chosen_strategy = 'parallel'
+                print(f"   ✅ HIGH-ENTROPY detected → Using PARALLEL strategy (NEW!)")
+                if uniqueness > 0.95:
+                    print(f"   🚀 VERY HIGH-ENTROPY → Skipping cache overhead")
+                    use_cache = False  # Skip cache for nearly-unique data
+        else:
+            chosen_strategy = force_strategy or 'cache'
+            print(f"Strategy: {chosen_strategy} (forced or small dataset)")
+        
+        # STRATEGY EXECUTION
+        
+        # Strategy 1: Precomputation cache (BEST for low-entropy: uniqueness < 30%)
+        if chosen_strategy == 'cache' and use_cache:
             print("Strategy: Precomputation cache lookup")
             
             # Check if all values are in precomp cache
@@ -162,10 +320,11 @@ class UltimateOptimizedDatabase:
                 
                 return result
             else:
-                print(f"  ⚠️  Partial cache hit - falling back to multi-level cache")
+                print(f"  ⚠️  Partial cache hit - falling through to next strategy")
+                chosen_strategy = 'multi_level'  # Fall through
         
-        # Strategy 2: Multi-level cache (FAST - 251x)
-        if self.enable_multi_level and use_cache:
+        # Strategy 2: Multi-level cache (GOOD for medium-entropy: 30-70%)
+        if chosen_strategy == 'multi_level' and self.enable_multi_level and use_cache:
             print("Strategy: Multi-level intelligent cache")
             result = self.multi_cache.smart_sum(values)
             
@@ -178,7 +337,51 @@ class UltimateOptimizedDatabase:
             
             return result
         
-        # Strategy 3: Batch packing (MODERATE - 28x)
+        # Strategy 3: PARALLEL TREE AGGREGATION (NEW! BEST for high-entropy: > 70%)
+        if chosen_strategy == 'parallel':
+            print("Strategy: PARALLEL TREE AGGREGATION (NEW!)")
+            print(f"  🚀 Encrypting {len(values)} unique values...")
+            
+            encrypt_start = time.time()
+            ciphertexts = []
+            for val in values:
+                if use_cache:
+                    ct = self.precomp.get_or_encrypt(val)
+                else:
+                    ct = encrypt(self.pub, val)
+                ciphertexts.append(ct)
+            
+            encrypt_time = time.time() - encrypt_start
+            print(f"  ✅ Encrypted in {encrypt_time:.3f}s")
+            
+            # PARALLEL TREE REDUCTION
+            print(f"  🌲 Tree reduction with parallel workers...")
+            tree_start = time.time()
+            
+            result_ct = self.sum_encrypted_parallel(ciphertexts, max_workers=4)
+            
+            tree_time = time.time() - tree_start
+            print(f"  ✅ Tree sum in {tree_time:.3f}s")
+            
+            # Decrypt
+            decrypt_start = time.time()
+            result = decrypt_crt(self.pub, self.priv, result_ct)
+            decrypt_time = time.time() - decrypt_start
+            
+            elapsed = time.time() - start_time
+            self.total_query_time += elapsed
+            
+            print(f"\n✅ Result: {result:,}")
+            print(f"⏱️  Total time: {elapsed:.3f}s")
+            print(f"   └─ Encrypt: {encrypt_time:.3f}s")
+            print(f"   └─ Parallel tree: {tree_time:.3f}s (NEW!)")
+            print(f"   └─ Decrypt: {decrypt_time:.3f}s")
+            print(f"  Speedup: {len(ciphertexts) / max(1, tree_time * 1000):.0f}x ops/sec")
+            print(f"{'='*70}\n")
+            
+            return result
+        
+        # Strategy 4: Batch packing (fallback for medium datasets)
         if self.enable_batch_packing:
             print("Strategy: Batch packing aggregation")
             print(f"  Batch size: {self.batch_agg.batch_size} values/ciphertext")
@@ -195,7 +398,7 @@ class UltimateOptimizedDatabase:
             
             return result
         
-        # Strategy 4: Baseline (SLOW - 1x)
+        # Strategy 5: Baseline (SLOW - 1x) - last resort
         print("Strategy: Baseline (individual encryption)")
         print("  ⚠️  No optimizations - this will be slow!")
         

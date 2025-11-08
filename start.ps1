@@ -6,8 +6,8 @@ Write-Host "  Professional Encryption Interface" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "Starting Backend API Server (OPTIMIZED)..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot'; .\envb\Scripts\Activate.ps1; python api\server_optimized.py"
+Write-Host "Starting Backend API Server (ADVANCED)..." -ForegroundColor Yellow
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot'; .\envb\Scripts\Activate.ps1; python api\server_advanced.py"
 Start-Sleep -Seconds 3
 
 Write-Host ""
