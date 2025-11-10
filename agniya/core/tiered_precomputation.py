@@ -38,7 +38,8 @@ class TieredPrecomputationTable:
     def __init__(self, public_key: PaillierPublicKey, 
                  tier1_max: int = 10000,
                  tier2_max: int = 100000,
-                 cache_dir: str = "./cache"):
+                 cache_dir: str = "./cache",
+                 enable_tier2: bool = False):  # DISABLED BY DEFAULT
         """
         Initialize tiered cache.
         
@@ -47,16 +48,18 @@ class TieredPrecomputationTable:
             tier1_max: Maximum value for Tier 1 (RAM cache)
             tier2_max: Maximum value for Tier 2 (disk cache)
             cache_dir: Directory for Tier 2 disk cache
+            enable_tier2: Enable Tier 2 disk cache (DISABLED by default - takes hours to build!)
         """
         self.public_key = public_key
         self.tier1_max = tier1_max
         self.tier2_max = tier2_max
         self.cache_dir = Path(cache_dir)
+        self.enable_tier2 = enable_tier2
         
         # Tier 1: RAM cache (hot values)
         self.tier1_cache: Dict[int, int] = {}
         
-        # Tier 2: Disk mmap (warm values)
+        # Tier 2: Disk mmap (warm values) - ONLY if enabled
         self.tier2_file = None
         self.tier2_mmap = None
         self.tier2_initialized = False
@@ -76,8 +79,11 @@ class TieredPrecomputationTable:
         print(f"TIERED PRECOMPUTATION CACHE INITIALIZED")
         print(f"{'='*70}")
         print(f"Tier 1 (RAM):   0 - {tier1_max:,} values")
-        print(f"Tier 2 (Disk):  {tier1_max:,} - {tier2_max:,} values")
-        print(f"Tier 3 (Compute): >{tier2_max:,} values")
+        if enable_tier2:
+            print(f"Tier 2 (Disk):  {tier1_max:,} - {tier2_max:,} values (ENABLED - will build on first access)")
+        else:
+            print(f"Tier 2 (Disk):  DISABLED (would be {tier1_max:,} - {tier2_max:,})")
+        print(f"Tier 3 (Compute): >{tier1_max:,} values (on-demand)")
         print(f"Cache directory: {self.cache_dir.absolute()}")
         print(f"{'='*70}\n")
     
@@ -172,9 +178,12 @@ class TieredPrecomputationTable:
                 self.stats['tier1_hits'] += 1
                 return ct
         
-        # Tier 2: Disk mmap (fast)
-        if self.tier1_max < plaintext <= self.tier2_max:
+        # Tier 2: Disk mmap (fast) - ONLY if enabled
+        if self.enable_tier2 and self.tier1_max < plaintext <= self.tier2_max:
             if not self.tier2_initialized:
+                print(f"\n⚠️  WARNING: First Tier 2 access will build cache for {self.tier2_max - self.tier1_max:,} values.")
+                print(f"    This will take ~{((self.tier2_max - self.tier1_max) * 0.285 / 60):.1f} minutes.")
+                print(f"    Consider disabling Tier 2 with enable_tier2=False for faster startup.\n")
                 self._initialize_tier2()
             
             # Calculate offset in mmap
@@ -189,7 +198,7 @@ class TieredPrecomputationTable:
             self.stats['tier2_hits'] += 1
             return ciphertext
         
-        # Tier 3: Not cached (compute on demand)
+        # Tier 3: Not cached (compute on demand or Tier 2 disabled)
         return None
     
     def get_or_encrypt(self, plaintext: int) -> int:
@@ -214,12 +223,15 @@ class TieredPrecomputationTable:
     def get_stats(self) -> dict:
         """Get cache statistics."""
         total = self.stats['total_lookups']
-        if total == 0:
-            return self.stats
         
-        tier1_rate = (self.stats['tier1_hits'] / total) * 100
-        tier2_rate = (self.stats['tier2_hits'] / total) * 100
-        tier3_rate = (self.stats['tier3_computes'] / total) * 100
+        tier1_rate = 0.0
+        tier2_rate = 0.0
+        tier3_rate = 0.0
+        
+        if total > 0:
+            tier1_rate = (self.stats['tier1_hits'] / total) * 100
+            tier2_rate = (self.stats['tier2_hits'] / total) * 100
+            tier3_rate = (self.stats['tier3_computes'] / total) * 100
         
         return {
             **self.stats,

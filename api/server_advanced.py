@@ -39,7 +39,7 @@ ALLOWED_EXTENSIONS = {'csv'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max (increased for large datasets)
 
 # Global database instances
 optimized_databases: Dict[str, Dict[str, Any]] = {}
@@ -68,6 +68,24 @@ def get_data_type_from_dtype(dtype_str: str) -> type:
         return float
     else:
         return str
+
+# Error handlers for better JSON responses
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """Handle file too large error with JSON response"""
+    return jsonify({
+        'error': 'File too large',
+        'message': 'The uploaded file exceeds the maximum allowed size of 100MB',
+        'max_size': '100 MB'
+    }), 413
+
+@app.errorhandler(500)
+def internal_error(error):
+    """Handle internal server errors with JSON response"""
+    return jsonify({
+        'error': 'Internal server error',
+        'message': str(error)
+    }), 500
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
@@ -107,60 +125,82 @@ def health_check():
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
     """Handle CSV file upload and auto-detect schema"""
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file provided'}), 400
-    
-    file = request.files['file']
-    
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if file and allowed_file(file.filename):
+    try:
+        if 'file' not in request.files:
+            return jsonify({'error': 'No file provided'}), 400
+        
+        file = request.files['file']
+        
+        if file.filename == '':
+            return jsonify({'error': 'No file selected'}), 400
+        
+        if not file or not allowed_file(file.filename):
+            return jsonify({'error': 'Invalid file type. Only CSV files are allowed.'}), 400
+        
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        # Save file with progress indication
+        print(f"\n📁 Uploading file: {filename}")
         file.save(filepath)
         
-        try:
-            # Read CSV to detect schema
-            df = pd.read_csv(filepath, nrows=100)  # Sample for schema detection
+        # Get file size
+        file_size_mb = os.path.getsize(filepath) / (1024 * 1024)
+        print(f"   File size: {file_size_mb:.2f} MB")
+        
+        # Read CSV to detect schema
+        print(f"   Analyzing schema...")
+        df = pd.read_csv(filepath, nrows=100)  # Sample for schema detection
+        
+        # Auto-detect schema
+        schema = []
+        for column in df.columns:
+            dtype_str = str(df[column].dtype)
             
-            # Auto-detect schema
-            schema = []
-            for column in df.columns:
-                dtype_str = str(df[column].dtype)
-                
-                # Suggest encryption type based on data type
-                if pd.api.types.is_numeric_dtype(df[column]) and not pd.api.types.is_datetime64_any_dtype(df[column]):
-                    # Numeric (but not datetime) -> Paillier for computation
-                    suggested_enc = 'Paillier-2048'
-                elif pd.api.types.is_datetime64_any_dtype(df[column]):
-                    # Datetime -> AES encryption (no computation needed)
-                    suggested_enc = 'AES-256'
-                else:
-                    # Text -> AES
-                    suggested_enc = 'AES-256'
-                
-                schema.append({
-                    'name': column,
-                    'type': dtype_str,
-                    'encryption': suggested_enc
-                })
+            # Suggest encryption type based on data type
+            if pd.api.types.is_numeric_dtype(df[column]) and not pd.api.types.is_datetime64_any_dtype(df[column]):
+                # Numeric (but not datetime) -> Paillier for computation
+                suggested_enc = 'Paillier-2048'
+            elif pd.api.types.is_datetime64_any_dtype(df[column]):
+                # Datetime -> AES encryption (no computation needed)
+                suggested_enc = 'AES-256'
+            else:
+                # Text -> AES
+                suggested_enc = 'AES-256'
             
-            # Get full dataset stats
-            df_full = pd.read_csv(filepath)
-            
-            return jsonify({
-                'success': True,
-                'filename': filename,
-                'schema': schema,
-                'records': len(df_full),
-                'columns': len(schema)
+            schema.append({
+                'name': column,
+                'type': dtype_str,
+                'encryption': suggested_enc
             })
-            
-        except Exception as e:
-            return jsonify({'error': f'Failed to read CSV: {str(e)}'}), 400
-    
-    return jsonify({'error': 'Invalid file type'}), 400
+        
+        # Get full dataset stats
+        print(f"   Reading full dataset...")
+        df_full = pd.read_csv(filepath)
+        
+        print(f"   ✅ Upload complete: {len(df_full):,} records, {len(schema)} columns")
+        
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'file_size_mb': round(file_size_mb, 2),
+            'schema': schema,
+            'records': len(df_full),
+            'columns': len(schema)
+        })
+        
+    except pd.errors.EmptyDataError:
+        return jsonify({'error': 'The CSV file is empty'}), 400
+    except pd.errors.ParserError as e:
+        return jsonify({'error': f'Failed to parse CSV: {str(e)}'}), 400
+    except MemoryError:
+        return jsonify({
+            'error': 'File too large to process',
+            'message': 'The file is too large to load into memory. Try a smaller file or increase server memory.'
+        }), 413
+    except Exception as e:
+        print(f"❌ Upload error: {str(e)}")
+        return jsonify({'error': f'Failed to process file: {str(e)}'}), 500
 
 @app.route('/api/encrypt', methods=['POST'])
 def encrypt_dataset():
@@ -214,12 +254,13 @@ def encrypt_dataset():
         print(f"RNS compression: {'ENABLED' if enable_compression else 'DISABLED'}")
         print(f"Deduplication: {'ENABLED' if enable_dedup else 'DISABLED'}")
         
-        # Initialize ULTIMATE OPTIMIZED DATABASE
+        # Initialize ULTIMATE OPTIMIZED DATABASE with SIMPLE SMART CACHE
         db = UltimateOptimizedDatabase(
             key_size=2048,
-            cache_size=min(10000, len(df)),
+            cache_size=50000,  # Simple cache - adapts to your data!
             enable_batch_packing=enable_batch,
-            enable_multi_level=enable_cache
+            enable_multi_level=enable_cache,
+            enable_probabilistic=True
         )
         
         # Initialize NEW modules
@@ -239,16 +280,28 @@ def encrypt_dataset():
         if not paillier_data:
             return jsonify({'error': 'No numeric Paillier fields found. Please select numeric columns for encryption.'}), 400
         
-        # PRE-WARM CACHE
-        print(f"\n🔥 PRE-WARMING CACHE with {len(df)} records...")
-        cache_start = time.time()
-        
+        # Analyze data to show what we're working with
+        all_unique_values = set()
         for field, values in paillier_data.items():
-            print(f"   Caching {field}: {len(values)} values...")
-            db.warm_cache_with_dataset(values[:min(1000, len(values))])
+            all_unique_values.update(values)
         
-        cache_time = time.time() - cache_start
-        print(f"✅ Cache warmed in {cache_time:.2f}s")
+        unique_count = len(all_unique_values)
+        min_val = min(all_unique_values) if all_unique_values else 0
+        max_val = max(all_unique_values) if all_unique_values else 0
+        
+        print(f"\n📊 DATA ANALYSIS:")
+        print(f"   Unique values: {unique_count:,}")
+        print(f"   Value range: {min_val:,} to {max_val:,}")
+        print(f"   Cache capacity: {db.precomp.max_cache_size:,}")
+        
+        # NO PRE-WARMING! Cache builds naturally as we encrypt
+        # This is the beauty of simple demand-driven caching
+        print(f"\n💡 Using SMART DEMAND-DRIVEN CACHE")
+        print(f"   Cache will build naturally as values are encrypted")
+        print(f"   First occurrence: encrypt (285ms)")
+        print(f"   Subsequent: instant from cache (0.001ms)")
+        
+        cache_time = 0  # No pre-warming time!
         
         # ENCRYPT with DEDUPLICATION
         encrypt_start = time.time()
