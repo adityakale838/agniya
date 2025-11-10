@@ -254,12 +254,18 @@ def encrypt_dataset():
         print(f"RNS compression: {'ENABLED' if enable_compression else 'DISABLED'}")
         print(f"Deduplication: {'ENABLED' if enable_dedup else 'DISABLED'}")
         
-        # Initialize ULTIMATE OPTIMIZED DATABASE
+        # Determine optimal cache size based on data
+        # For customer IDs (typically 10k-20k range), we need larger cache
+        max_value_estimate = 20000  # Default estimate
+        
+        # Initialize ULTIMATE OPTIMIZED DATABASE with EXPANDED cache
         db = UltimateOptimizedDatabase(
             key_size=2048,
-            cache_size=min(10000, len(df)),
+            cache_size=max_value_estimate,  # Expanded to cover typical customer ID range
             enable_batch_packing=enable_batch,
-            enable_multi_level=enable_cache
+            enable_multi_level=enable_cache,
+            enable_tiered_cache=True,
+            enable_tier2_disk=False  # Tier 2 disabled (per earlier fix)
         )
         
         # Initialize NEW modules
@@ -279,16 +285,50 @@ def encrypt_dataset():
         if not paillier_data:
             return jsonify({'error': 'No numeric Paillier fields found. Please select numeric columns for encryption.'}), 400
         
-        # PRE-WARM CACHE
-        print(f"\n🔥 PRE-WARMING CACHE with {len(df)} records...")
+        # Analyze data range to optimize cache warming
+        all_unique_values = set()
+        for field, values in paillier_data.items():
+            all_unique_values.update(values)
+        
+        unique_count = len(all_unique_values)
+        min_val = min(all_unique_values) if all_unique_values else 0
+        max_val = max(all_unique_values) if all_unique_values else 0
+        
+        print(f"\n📊 DATA ANALYSIS:")
+        print(f"   Unique values: {unique_count:,}")
+        print(f"   Value range: {min_val:,} to {max_val:,}")
+        print(f"   Tier 1 cache covers: 0 to {db.precomp.tier1_max:,}")
+        
+        # PRE-WARM CACHE intelligently
+        print(f"\n🔥 SMART CACHE WARMING...")
         cache_start = time.time()
         
-        for field, values in paillier_data.items():
-            print(f"   Caching {field}: {len(values)} values...")
-            db.warm_cache_with_dataset(values[:min(1000, len(values))])
+        # Strategy: Only cache the ACTUAL unique values (not entire range!)
+        unique_values_to_cache = sorted(all_unique_values)
+        
+        # Warm cache with actual unique values only
+        if unique_count <= 5000:
+            # For small datasets, cache all unique values
+            print(f"   Caching {unique_count:,} unique values (small dataset)...")
+            for val in unique_values_to_cache:
+                if val <= db.precomp.tier1_max:
+                    # Pre-encrypt and cache
+                    _ = db.precomp.get_encrypted(val)
+            cached_count = unique_count
+        else:
+            # For large datasets, cache only Tier 1 range
+            tier1_values = [v for v in unique_values_to_cache if v <= db.precomp.tier1_max]
+            if tier1_values:
+                print(f"   Caching {len(tier1_values):,} values in Tier 1 range...")
+                for val in tier1_values:
+                    _ = db.precomp.get_encrypted(val)
+                cached_count = len(tier1_values)
+            else:
+                print(f"   ⚠️  Values outside Tier 1 range - using on-demand encryption")
+                cached_count = 0
         
         cache_time = time.time() - cache_start
-        print(f"✅ Cache warmed in {cache_time:.2f}s")
+        print(f"✅ Cached {cached_count:,} values in {cache_time:.2f}s")
         
         # ENCRYPT with DEDUPLICATION
         encrypt_start = time.time()
