@@ -35,7 +35,7 @@ from agniya.core.paillier import (
     PaillierPublicKey, PaillierPrivateKey,
     generate_keypair, encrypt, decrypt_crt
 )
-from agniya.core.tiered_precomputation import TieredPrecomputationTable
+from agniya.core.precomputation import PrecomputationTable  # Simple cache!
 from agniya.core.batch_packing import BatchedAggregator
 from agniya.core.probabilistic_planner import ProbabilisticQueryPlanner, ExecutionStrategy
 from agniya.storage.multi_level_cache import MultiLevelCache, SecurityLevel
@@ -59,48 +59,32 @@ class UltimateOptimizedDatabase:
     
     def __init__(self, 
                  key_size: int = 2048,
-                 cache_size: int = 10000,
+                 cache_size: int = 50000,  # Increased default for better coverage
                  enable_batch_packing: bool = True,
                  enable_multi_level: bool = True,
-                 enable_tiered_cache: bool = True,
-                 enable_tier2_disk: bool = False,  # NEW: Tier 2 disabled by default
                  enable_probabilistic: bool = True):
         """
         Initialize the ultimate optimized system.
         
         Args:
             key_size: Paillier key size (2048-bit recommended)
-            cache_size: Maximum cache entries
+            cache_size: Maximum cache entries (default 50k - enough for most datasets)
             enable_batch_packing: Enable SIMD-style batching (28x speedup)
             enable_multi_level: Enable multi-level cache (251x speedup)
-            enable_tiered_cache: Enable 3-tier precomputation (2850x speedup)
-            enable_tier2_disk: Enable Tier 2 disk cache (SLOW to build! ~7 hours for 90k values)
             enable_probabilistic: Enable probabilistic query planning (10-30% speedup)
         """
         print("="*70)
         print("AGNIYA: Ultimate Encrypted Database System")
-        print("ALL OPTIMIZATIONS ENABLED")
+        print("SIMPLIFIED SMART CACHING")
         print("="*70)
         
         # Generate keys (now uses sliding window exponentiation internally)
         print(f"\nGenerating {key_size}-bit Paillier keys...")
         self.pub, self.priv = generate_keypair(key_size)
         
-        # Layer 1: Tiered precomputation table (2850x for warm tier)
-        self.enable_tiered_cache = enable_tiered_cache
-        if enable_tiered_cache:
-            print("Initializing tiered precomputation cache (3 tiers: RAM/Disk/Compute)...")
-            self.precomp = TieredPrecomputationTable(
-                self.pub, 
-                tier1_max=cache_size,
-                tier2_max=cache_size * 10,
-                enable_tier2=enable_tier2_disk  # Pass through the parameter
-            )
-        else:
-            # Fallback to old single-tier cache
-            from agniya.core.precomputation import PrecomputationTable
-            print("Initializing basic precomputation table...")
-            self.precomp = PrecomputationTable(self.pub, max_cache_size=cache_size)
+        # Layer 1: Simple smart precomputation cache (demand-driven)
+        print(f"Initializing smart precomputation cache (max {cache_size:,} entries)...")
+        self.precomp = PrecomputationTable(self.pub, max_cache_size=cache_size)
         
         # Layer 2: Batch packing aggregator (28x for bulk operations)
         self.enable_batch_packing = enable_batch_packing
@@ -132,9 +116,9 @@ class UltimateOptimizedDatabase:
         self.query_count = 0
         self.total_query_time = 0.0
         
-        print("\n✅ System initialized with ALL optimizations!")
+        print("\n✅ System initialized with smart caching!")
         print(f"  ✓ Sliding window exponentiation (15-30% crypto speedup)")
-        print(f"  ✓ Tiered precomputation (2850x warm cache)")
+        print(f"  ✓ Smart demand-driven cache ({cache_size:,} entries)")
         print(f"  ✓ Probabilistic query planning (10-30% query speedup)")
         print(f"  ✓ Batch packing (28x aggregation speedup)")
         print(f"  ✓ Multi-level cache (251x hot data speedup)")
@@ -513,24 +497,14 @@ class UltimateOptimizedDatabase:
         if self.query_count > 0:
             print(f"  Average time per query: {self.total_query_time/self.query_count:.3f}s")
         
-        # Tiered precomputation statistics
-        if self.enable_tiered_cache:
-            print(f"\nTiered Precomputation Cache:")
-            stats = self.precomp.get_statistics()
-            print(f"  Tier 1 (RAM 0-10k):     {stats['tier1_hits']:,} hits ({stats['tier1_hit_rate']:.1%})")
-            print(f"  Tier 2 (Disk 10k-100k): {stats['tier2_hits']:,} hits ({stats['tier2_hit_rate']:.1%})")
-            print(f"  Tier 3 (Compute >100k): {stats['tier3_computes']:,} computes")
-            print(f"  Overall hit rate:       {stats['overall_hit_rate']:.1%}")
-            print(f"  Cache size:             {stats['cache_size']:,} values")
-        else:
-            # Legacy single-tier cache
-            print(f"\nPrecomputation Cache:")
-            hit_rate = (self.precomp.hit_count / (self.precomp.hit_count + self.precomp.miss_count) * 100
-                       if (self.precomp.hit_count + self.precomp.miss_count) > 0 else 0)
-            print(f"  Cached values: {len(self.precomp.cache):,}")
-            print(f"  Hit rate: {hit_rate:.1f}%")
-            print(f"  Hits: {self.precomp.hit_count:,}")
-            print(f"  Misses: {self.precomp.miss_count:,}")
+        # Simple precomputation cache statistics
+        print(f"\nSmart Precomputation Cache:")
+        hit_rate = (self.precomp.hit_count / (self.precomp.hit_count + self.precomp.miss_count) * 100
+                   if (self.precomp.hit_count + self.precomp.miss_count) > 0 else 0)
+        print(f"  Cached values: {len(self.precomp.cache):,} / {self.precomp.max_cache_size:,}")
+        print(f"  Hit rate: {hit_rate:.1f}%")
+        print(f"  Hits: {self.precomp.hit_count:,}")
+        print(f"  Misses: {self.precomp.miss_count:,}")
         
         if self.enable_multi_level:
             print(f"\nMulti-Level Cache:")
@@ -538,7 +512,7 @@ class UltimateOptimizedDatabase:
         
         print("\nOptimizations Active:")
         print(f"  ✓ Sliding window exponentiation (15-30% crypto speedup)")
-        print(f"  ✓ Tiered precomputation (2850x warm tier)" if self.enable_tiered_cache else "  - Tiered precomputation (disabled)")
+        print(f"  ✓ Smart demand-driven cache (adapts to your data)")
         print(f"  ✓ Probabilistic query planning (10-30% query speedup)" if self.enable_probabilistic else "  - Probabilistic planning (disabled)")
         print(f"  ✓ Batch packing (28x aggregation)" if self.enable_batch_packing else "  - Batch packing (disabled)")
         print(f"  ✓ Multi-level cache (251x hot data)" if self.enable_multi_level else "  - Multi-level cache (disabled)")
