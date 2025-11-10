@@ -63,6 +63,7 @@ class UltimateOptimizedDatabase:
                  enable_batch_packing: bool = True,
                  enable_multi_level: bool = True,
                  enable_tiered_cache: bool = True,
+                 enable_tier2_disk: bool = False,  # NEW: Tier 2 disabled by default
                  enable_probabilistic: bool = True):
         """
         Initialize the ultimate optimized system.
@@ -73,6 +74,7 @@ class UltimateOptimizedDatabase:
             enable_batch_packing: Enable SIMD-style batching (28x speedup)
             enable_multi_level: Enable multi-level cache (251x speedup)
             enable_tiered_cache: Enable 3-tier precomputation (2850x speedup)
+            enable_tier2_disk: Enable Tier 2 disk cache (SLOW to build! ~7 hours for 90k values)
             enable_probabilistic: Enable probabilistic query planning (10-30% speedup)
         """
         print("="*70)
@@ -91,7 +93,8 @@ class UltimateOptimizedDatabase:
             self.precomp = TieredPrecomputationTable(
                 self.pub, 
                 tier1_max=cache_size,
-                tier2_max=cache_size * 10
+                tier2_max=cache_size * 10,
+                enable_tier2=enable_tier2_disk  # Pass through the parameter
             )
         else:
             # Fallback to old single-tier cache
