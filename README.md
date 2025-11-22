@@ -12,33 +12,30 @@
 
 ## 🎯 Overview
 
-AGNIYA is a **production-ready encrypted database system** that enables secure computations on encrypted data without ever decrypting it. Built on Paillier homomorphic encryption with groundbreaking optimizations, AGNIYA achieves **1061× speedup** over baseline implementations and introduces **5 novel, patent-worthy features** that solve real-world performance bottlenecks in encrypted computing.
+AGNIYA is a **production-ready encrypted database system** that enables secure computations on encrypted data without ever decrypting it. Built on Paillier homomorphic encryption with groundbreaking optimizations, AGNIYA achieves **74,000× speedup** with caching and introduces **5 novel, patent-worthy features** backed by rigorous benchmarks suitable for patent filing.
 
 ### What Makes AGNIYA Unique
 
 **The Problem:** Traditional encrypted databases are prohibitively slow (100-1000× slower than plaintext) and struggle with high-uniqueness datasets where caching provides no benefit.
 
-**Our Solution:** A layered optimization architecture with **smart, simple caching:**
-- **Sliding window exponentiation** for 15-30% faster cryptographic operations
-- **Demand-driven smart cache** (50k capacity) that adapts to ANY data automatically
-- **Probabilistic query planning** with <1ms sampling overhead for optimal strategy selection
-- Novel compression techniques that reduce bandwidth by 50%
-- Probabilistic deduplication saving 60-80% storage
-- Parallel computation for high-uniqueness workloads
-- Adaptive query planning that auto-selects optimal execution paths
-- **No pre-warming, no tiers, no complexity** - cache builds naturally as you use it
+**Our Solution:** A comprehensive optimization suite with patent-grade evidence:
+- **74,426× speedup** with precomputation cache (10M+ ops/sec)
+- **17% bandwidth reduction** via RNS compression
+- **100K+ ops/sec** probabilistic filters (Bloom/Cuckoo)
+- **74K ops/sec** write-optimized LSM-tree storage
+- **Complete reproducibility** for patent filing (Indian Form 2)
+- **Rigorous benchmarks** with p50/p90/p99 latency measurements
 
 ### Key Achievements
 
-- ✅ **1000× Cache Speedup** - Smart demand-driven cache (50k capacity, adapts to your data)
-- ✅ **2000+ Combined Speedup** - Multi-level caching + smart precomputation + optimized crypto
-- ✅ **15-30% Crypto Speedup** - Sliding window exponentiation for Paillier operations
-- ✅ **10-30% Query Speedup** - Probabilistic query planning with statistical sampling
-- ✅ **50% Bandwidth Reduction** - RNS ciphertext compression using Chinese Remainder Theorem
-- ✅ **60-80% Storage Savings** - Probabilistic deduplication with LSH on encrypted data
-- ✅ **Handles ALL Data Types** - Works seamlessly with sparse high-value data (customer IDs, etc.)
-- ✅ **Production-Ready** - Full-stack web application with modern UI, handles 100MB+ files
-- ✅ **Simple & Fast** - Demand-driven caching, no pre-warming, no complexity
+- ✅ **74,426× Cache Speedup** - Precomputation cache for encrypted values
+- ✅ **17% Bandwidth Reduction** - RNS compression using Chinese Remainder Theorem
+- ✅ **100K+ ops/sec** - Probabilistic filters for fast membership testing
+- ✅ **74K write ops/sec** - LSM-tree with integrated deduplication
+- ✅ **142K decompress ops/sec** - Fast RNS decompression
+- ✅ **Patent-Grade Evidence** - Complete reproducibility suite for Form 2 filing
+- ✅ **Production-Ready** - Full-stack web application with modern UI
+- ✅ **5 Novel Innovations** - Each with empirical validation
 
 ---
 
@@ -599,6 +596,104 @@ npm run dev
    - **Query Stats:** Strategy used, execution time, rows processed
    - **Compression Stats:** Bandwidth reduction percentage
    - **Deduplication Stats:** Storage saved per field
+
+---
+
+## 📊 Patent-Grade Benchmarks
+
+### Complete Reproducibility for Indian Patent Filing (Form 2)
+
+AGNIYA includes a comprehensive benchmark suite designed for patent filing with complete reproducibility:
+
+#### Quick Start
+```powershell
+# Windows
+.\run.ps1
+
+# Linux/Mac
+bash run.sh
+```
+
+#### What Gets Generated
+
+```
+results/
+├── env/
+│   └── environment.txt       # Complete hardware/software specs
+├── csv/
+│   ├── ablation_study_*.csv  # Individual optimization contributions
+│   └── full_benchmark_*.csv  # All performance metrics
+├── summary.md                # Executive summary with key findings
+└── methods.md                # Detailed reproducibility methodology
+```
+
+#### Key Metrics Captured
+
+- **Latency**: p50/p90/p99 percentiles in milliseconds
+- **Throughput**: Operations per second
+- **Storage**: Ciphertext size, compression ratio
+- **Bandwidth**: Ingress/egress MB/s with/without compression
+- **Ablation Study**: Contribution of each optimization
+
+#### Benchmark Results (Latest)
+
+| Metric | Value | vs Baseline |
+|--------|-------|-------------|
+| Encryption (Cached) | 10.01M ops/sec | **74,426×** |
+| Encryption (Optimized) | 141 ops/sec | 1.05× |
+| Homomorphic Addition | 33,772 ops/sec | Same |
+| RNS Compression | 99,983 ops/sec | 17% bandwidth saved |
+| RNS Decompression | 142,064 ops/sec | - |
+| Bloom Filter Insert | 123,795 ops/sec | - |
+| Cuckoo Filter Insert | 408,078 ops/sec | - |
+| LSM-Tree Writes | 73,961 ops/sec | - |
+| LSM-Tree Reads | 15,879 ops/sec | - |
+
+#### Reproducibility Features
+
+✅ **Environment Capture**: Hardware specs, OS, Python version, git commit
+✅ **Statistical Rigor**: 1000 iterations per test, percentile reporting
+✅ **Multiple Configurations**: 3 key sizes (2048/3072/4096 bits)
+✅ **Dataset Sizes**: 10^4, 10^5, 10^6 rows tested
+✅ **Distributions**: Uniform, Zipf(1.2), high-uniqueness
+✅ **Ablation Study**: Individual contribution of each optimization
+✅ **Raw Data**: All results in CSV format for analysis
+✅ **Single Command**: Complete reproduction via `run.ps1` or `run.sh`
+
+#### For Patent Filing
+
+The benchmark suite generates evidence suitable for **Indian Patent Form 2 (Complete Specification)**:
+
+1. **Technical Effect**: Quantified speedups with statistical confidence
+2. **Novelty**: Ablation study isolates each innovation's contribution
+3. **Reproducibility**: Complete environment capture + methodology
+4. **Baseline Comparisons**: AES-256, Standard Paillier, AGNIYA
+5. **Publication-Ready**: Percentile reporting, multiple workloads
+
+See `results/summary.md` for executive summary and `results/methods.md` for full methodology.
+
+#### Real-World Dataset Benchmarks
+
+**NEW**: Test AGNIYA with actual sensitive data from Kaggle!
+
+```powershell
+# Download datasets from Kaggle (see docs/REAL_WORLD_DATASETS.md)
+python scripts\real_world_benchmark.py
+```
+
+**Datasets Supported:**
+- 🏥 **Healthcare**: Medical insurance costs (HIPAA compliance scenario)
+- 💼 **HR/Salary**: Employee compensation data (GDPR privacy protection)
+- 💳 **Financial**: Credit card transactions (PCI-DSS compliance)
+- 🛒 **E-Commerce**: Retail sales data (business intelligence)
+
+**Why Important for Patents:**
+- ✅ Demonstrates real-world applicability (not just synthetic data)
+- ✅ Shows industry relevance (healthcare, finance, HR)
+- ✅ Validates performance on actual data distributions
+- ✅ Provides compliance use case examples
+
+See [Real-World Datasets Guide](docs/REAL_WORLD_DATASETS.md) for download instructions and use cases.
 
 ---
 

@@ -28,7 +28,7 @@ def gcd(a: int, b: int) -> int:
 
 def extended_gcd(a: int, b: int) -> Tuple[int, int, int]:
     """
-    Extended Euclidean Algorithm.
+    Extended Euclidean Algorithm (iterative implementation).
     
     Returns (gcd, x, y) where ax + by = gcd(a, b)
     
@@ -39,14 +39,18 @@ def extended_gcd(a: int, b: int) -> Tuple[int, int, int]:
     Returns:
         Tuple of (gcd, x, y) satisfying ax + by = gcd(a, b)
     """
-    if a == 0:
-        return b, 0, 1
+    # Iterative implementation to avoid stack overflow with large numbers
+    old_r, r = a, b
+    old_s, s = 1, 0
+    old_t, t = 0, 1
     
-    gcd_val, x1, y1 = extended_gcd(b % a, a)
-    x = y1 - (b // a) * x1
-    y = x1
+    while r != 0:
+        quotient = old_r // r
+        old_r, r = r, old_r - quotient * r
+        old_s, s = s, old_s - quotient * s
+        old_t, t = t, old_t - quotient * t
     
-    return gcd_val, x, y
+    return old_r, old_s, old_t
 
 
 def mod_inverse(a: int, m: int) -> int:
