@@ -46,3 +46,5 @@ desktop.ini
 .pytest_cache/
 .coverage
 htmlcov/
+
+data/real_world/*.csv
