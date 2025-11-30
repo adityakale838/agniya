@@ -336,7 +336,7 @@ export default function Dashboard() {
                 className={`p-12 border-2 border-dashed transition-all duration-300 glass-morphism ${
                   isDragging
                     ? 'border-primary bg-primary/10 scale-105'
-                    : 'border-border/50'
+                    : 'border-zinc-300 dark:border-zinc-700'
                 }`}
                 onDrop={handleDrop}
                 onDragOver={(e) => {

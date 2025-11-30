@@ -25,11 +25,11 @@ from agniya.core.number_theory import (
 try:
     from agniya.core.optimized_modexp import optimized_powmod, GMPY2_AVAILABLE
     USE_OPTIMIZED_POWMOD = True
-    print("✅ Optimized modular exponentiation available (15-30% speedup)")
+    print("[OK] Optimized modular exponentiation available (15-30% speedup)")
 except ImportError:
     USE_OPTIMIZED_POWMOD = False
     GMPY2_AVAILABLE = False
-    print("⚠️  Using standard pow() - install optimized_modexp for speedup")
+    print("[WARN] Using standard pow() - install optimized_modexp for speedup")
 
 
 def _powmod(base: int, exponent: int, modulus: int) -> int:

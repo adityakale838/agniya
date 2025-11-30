@@ -14,8 +14,10 @@ import secrets
 try:
     import gmpy2
     GMPY2_AVAILABLE = True
+    print("[OK] gmpy2 available for big-int acceleration")
 except ImportError:
     GMPY2_AVAILABLE = False
+    # Silently continue without gmpy2
 
 
 class SlidingWindowExponentiator:

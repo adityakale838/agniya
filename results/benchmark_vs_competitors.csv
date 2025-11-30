@@ -1,0 +1,9 @@
+Metric,AGNIYA,TenSEAL,PyFHEL
+Key Generation (s),4.533223,0.375553,0.170182
+Single Encryption (s),0.007040,0.003503,N/A
+Batch Encryption (s),7.147777,0.003113,N/A
+Per-Value Encryption (s),0.007148,0.000003,N/A
+Homomorphic Addition (s),0.000000,N/A,N/A
+SUM Aggregation (s),0.340546,0.096667,N/A
+Memory Usage (MB),0.222656,138.945312,13.300781
+Cache Speedup (x),0.00,N/A,N/A
