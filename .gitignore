@@ -70,3 +70,4 @@ desktop.ini
 htmlcov/
 
 data/real_world/*.csv
+backup/data_archive_20251122_191209/creditcard.csv
