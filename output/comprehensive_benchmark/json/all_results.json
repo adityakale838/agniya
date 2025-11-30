@@ -1,0 +1,317 @@
+{
+  "cryptographic": [
+    {
+      "key_size": 1024,
+      "keygen_mean": 0.5164676666259765,
+      "keygen_std": 0.1332173240935126,
+      "encrypt_mean": 0.00010128021240234375,
+      "encrypt_std": 0.0002025604248046875,
+      "batch_encrypt_mean": 1.0325774192810058,
+      "batch_encrypt_std": 0.0107221623587986,
+      "throughput": 968.4503857311835,
+      "addition_mean": 0.0,
+      "addition_std": 0.0,
+      "decrypt_mean": 0.0006052970886230469,
+      "decrypt_std": 0.0004942290147584175
+    },
+    {
+      "key_size": 2048,
+      "keygen_mean": 2.302680492401123,
+      "keygen_std": 0.8905743931155601,
+      "encrypt_mean": 0.0014062881469726562,
+      "encrypt_std": 0.002812576293945312,
+      "batch_encrypt_mean": 6.9306200504302975,
+      "batch_encrypt_std": 0.03801273909899144,
+      "throughput": 144.28723443552695,
+      "addition_mean": 0.0,
+      "addition_std": 0.0,
+      "decrypt_mean": 0.002205181121826172,
+      "decrypt_std": 0.0004051027994391267
+    },
+    {
+      "key_size": 3072,
+      "keygen_mean": 8.674613857269287,
+      "keygen_std": 3.5623747867115423,
+      "encrypt_mean": 0.004535102844238281,
+      "encrypt_std": 0.00907020568847656,
+      "batch_encrypt_mean": 22.497576332092287,
+      "batch_encrypt_std": 0.08005743447782968,
+      "throughput": 44.449232452365216,
+      "addition_mean": 0.0,
+      "addition_std": 0.0,
+      "decrypt_mean": 0.0067919731140136715,
+      "decrypt_std": 0.0005790675895698397
+    },
+    {
+      "key_size": 4096,
+      "keygen_mean": 47.48841495513916,
+      "keygen_std": 15.69069877079464,
+      "encrypt_mean": 0.008126354217529297,
+      "encrypt_std": 0.016252708435058594,
+      "batch_encrypt_mean": 41.14276914596557,
+      "batch_encrypt_std": 0.11033185429856728,
+      "throughput": 24.305607540713122,
+      "addition_mean": 0.0,
+      "addition_std": 0.0,
+      "decrypt_mean": 0.014786291122436523,
+      "decrypt_std": 0.0005319038755570592
+    }
+  ],
+  "caching": [
+    {
+      "uniqueness": 0.01,
+      "dataset_size": 1000,
+      "cold_time": 0.030685901641845703,
+      "warm_time": 0.0009989738464355469,
+      "speedup": 30.717422434367542,
+      "cache_memory_mb": 0.0,
+      "hit_rate": 0.99,
+      "unique_values": 10,
+      "cached_lookups": 990
+    },
+    {
+      "uniqueness": 0.05,
+      "dataset_size": 1000,
+      "cold_time": 0.32512640953063965,
+      "warm_time": 0.0,
+      "speedup": 0,
+      "cache_memory_mb": 0.0,
+      "hit_rate": 0.95,
+      "unique_values": 50,
+      "cached_lookups": 950
+    },
+    {
+      "uniqueness": 0.1,
+      "dataset_size": 1000,
+      "cold_time": 0.691598653793335,
+      "warm_time": 0.0010006427764892578,
+      "speedup": 691.1543959971408,
+      "cache_memory_mb": 0.0,
+      "hit_rate": 0.9,
+      "unique_values": 100,
+      "cached_lookups": 900
+    },
+    {
+      "uniqueness": 0.199,
+      "dataset_size": 1000,
+      "cold_time": 1.4232046604156494,
+      "warm_time": 0.0,
+      "speedup": 0,
+      "cache_memory_mb": 0.0,
+      "hit_rate": 0.801,
+      "unique_values": 199,
+      "cached_lookups": 801
+    },
+    {
+      "uniqueness": 0.433,
+      "dataset_size": 1000,
+      "cold_time": 3.1369612216949463,
+      "warm_time": 0.0,
+      "speedup": 0,
+      "cache_memory_mb": 0.0390625,
+      "hit_rate": 0.567,
+      "unique_values": 433,
+      "cached_lookups": 567
+    },
+    {
+      "uniqueness": 0.534,
+      "dataset_size": 1000,
+      "cold_time": 3.878796339035034,
+      "warm_time": 0.0,
+      "speedup": 0,
+      "cache_memory_mb": 0.0,
+      "hit_rate": 0.466,
+      "unique_values": 534,
+      "cached_lookups": 466
+    },
+    {
+      "uniqueness": 0.604,
+      "dataset_size": 1000,
+      "cold_time": 4.398675441741943,
+      "warm_time": 0.0,
+      "speedup": 0,
+      "cache_memory_mb": 0.0,
+      "hit_rate": 0.396,
+      "unique_values": 604,
+      "cached_lookups": 396
+    },
+    {
+      "uniqueness": 0.633,
+      "dataset_size": 1000,
+      "cold_time": 4.691086292266846,
+      "warm_time": 0.0010008811950683594,
+      "speedup": 4686.956169604574,
+      "cache_memory_mb": 0.0,
+      "hit_rate": 0.367,
+      "unique_values": 633,
+      "cached_lookups": 367
+    }
+  ],
+  "query": [
+    {
+      "dataset_size": 10,
+      "sum_mean": 0.017628812789916994,
+      "sum_std": 0.02749453695999759,
+      "sum_p95": 0.05889620780944823,
+      "count_mean": 0.0,
+      "count_std": 0.0,
+      "avg_mean": 0.004210281372070313,
+      "avg_std": 0.0006697400752426991,
+      "throughput": 567.2531734933176
+    },
+    {
+      "dataset_size": 50,
+      "sum_mean": 0.05900263786315918,
+      "sum_std": 0.10647997936858021,
+      "sum_p95": 0.21886973381042477,
+      "count_mean": 0.0,
+      "count_std": 0.0,
+      "avg_mean": 0.00523686408996582,
+      "avg_std": 0.00019495678337767933,
+      "throughput": 847.4197393676129
+    },
+    {
+      "dataset_size": 100,
+      "sum_mean": 0.04285268783569336,
+      "sum_std": 0.07163320348397675,
+      "sum_p95": 0.15052094459533688,
+      "count_mean": 0.0,
+      "count_std": 0.0,
+      "avg_mean": 0.006783246994018555,
+      "avg_std": 0.0003826405914455529,
+      "throughput": 2333.575909717076
+    },
+    {
+      "dataset_size": 500,
+      "sum_mean": 0.17420535087585448,
+      "sum_std": 0.0022842858626750946,
+      "sum_p95": 0.17657370567321778,
+      "count_mean": 0.0,
+      "count_std": 0.0,
+      "avg_mean": 0.17692551612854004,
+      "avg_std": 0.0024101142369434224,
+      "throughput": 2870.1759015216444
+    },
+    {
+      "dataset_size": 1000,
+      "sum_mean": 0.02981905937194824,
+      "sum_std": 0.03513912958194605,
+      "sum_p95": 0.08268141746520995,
+      "count_mean": 0.0,
+      "count_std": 0.0,
+      "avg_mean": 0.011986684799194337,
+      "avg_std": 0.0005999455218262717,
+      "throughput": 33535.59840793411
+    },
+    {
+      "dataset_size": 5000,
+      "sum_mean": 0.05173325538635254,
+      "sum_std": 0.0011052050965880565,
+      "sum_p95": 0.05308985710144043,
+      "count_mean": 0.0,
+      "count_std": 0.0,
+      "avg_mean": 0.05118527412414551,
+      "avg_std": 0.0006141422989714581,
+      "throughput": 96649.63015876674
+    }
+  ],
+  "scalability": [
+    {
+      "dataset_size": 100,
+      "init_time": 2.28312087059021,
+      "encryption_time": 0.7154510021209717,
+      "aggregation_time": 0.006848335266113281,
+      "total_time": 3.005420207977295,
+      "memory_init_mb": 0.0,
+      "memory_encryption_mb": 0.0,
+      "memory_peak_mb": 203.3359375,
+      "encryption_throughput": 139.7719755839989
+    },
+    {
+      "dataset_size": 500,
+      "init_time": 3.359252691268921,
+      "encryption_time": 2.8640964031219482,
+      "aggregation_time": 0.17514920234680176,
+      "total_time": 6.398498296737671,
+      "memory_init_mb": 0.0,
+      "memory_encryption_mb": 0.0,
+      "memory_peak_mb": 203.3359375,
+      "encryption_throughput": 174.57512933397965
+    },
+    {
+      "dataset_size": 1000,
+      "init_time": 3.0589969158172607,
+      "encryption_time": 4.708211898803711,
+      "aggregation_time": 0.34354066848754883,
+      "total_time": 8.11074948310852,
+      "memory_init_mb": 0.0,
+      "memory_encryption_mb": 0.0,
+      "memory_peak_mb": 203.3359375,
+      "encryption_throughput": 212.39485849268715
+    },
+    {
+      "dataset_size": 5000,
+      "init_time": 1.3131103515625,
+      "encryption_time": 7.402918100357056,
+      "aggregation_time": 0.12606263160705566,
+      "total_time": 8.842091083526611,
+      "memory_init_mb": 0.0,
+      "memory_encryption_mb": -0.00390625,
+      "memory_peak_mb": 185.01171875,
+      "encryption_throughput": 675.4093361857997
+    },
+    {
+      "dataset_size": 10000,
+      "init_time": 0.7459743022918701,
+      "encryption_time": 7.4370810985565186,
+      "aggregation_time": 0.24755072593688965,
+      "total_time": 8.430606126785278,
+      "memory_init_mb": -3.9609375,
+      "memory_encryption_mb": 0.3359375,
+      "memory_peak_mb": 164.9140625,
+      "encryption_throughput": 1344.6135476377856
+    }
+  ],
+  "competitor": {
+    "library": [
+      "AGNIYA",
+      "TenSEAL"
+    ],
+    "key_gen": [
+      2.1617136001586914,
+      0.37885093688964844
+    ],
+    "encryption": [
+      4.63078761100769,
+      2.5265254974365234
+    ],
+    "sum_agg": [
+      0.3527817726135254,
+      0.08759212493896484
+    ],
+    "throughput": [
+      215.9459867308389,
+      395.8004781723459
+    ]
+  },
+  "real_world": [
+    {
+      "dataset": "insurance_age",
+      "size": 1000,
+      "uniqueness": 0.047,
+      "top10_coverage": 0.294,
+      "encryption_time": 0.3383171558380127,
+      "sum_time": 0.03399848937988281,
+      "count_time": 0.0
+    },
+    {
+      "dataset": "bank_age",
+      "size": 1000,
+      "uniqueness": 0.039,
+      "top10_coverage": 0.432,
+      "encryption_time": 0.0,
+      "sum_time": 0.03533005714416504,
+      "count_time": 0.0
+    }
+  ]
+}
