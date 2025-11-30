@@ -25,6 +25,28 @@ data/real_datasets/**/*.xlsx
 # Benchmark Results (can be regenerated)
 data/benchmark_results/*.json
 data/benchmark_results/*.csv
+results/*.csv
+results/*.json
+results/*.png
+results/csv/*.csv
+results/figs/*.png
+results/real_world/*.csv
+
+# Comprehensive Benchmark Outputs (can be regenerated)
+output/comprehensive_benchmark/csv/*.csv
+output/comprehensive_benchmark/plots/*.png
+output/comprehensive_benchmark/json/*.json
+output/comprehensive_benchmark/latex/*.tex
+output/comprehensive_benchmark/*.csv
+output/comprehensive_benchmark/*.json
+
+# Other Output Directories
+output/real_dataset/*.csv
+output/real_dataset/*.png
+output/real_dataset/*.json
+output/analytics_*.csv
+output/analytics_*.json
+output/analytics_*.html
 
 # IDE
 .vscode/
