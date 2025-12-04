@@ -7,6 +7,7 @@ gmpy2>=2.2.0
 
 # Cryptography
 cryptography>=45.0.0
+pyope>=0.4.0  # Order-Preserving Encryption for range queries
 
 # Testing
 pytest>=8.4.0

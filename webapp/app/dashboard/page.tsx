@@ -215,10 +215,23 @@ export default function Dashboard() {
     setError(null);
     
     try {
+      // Parse range values (convert to numbers or undefined)
+      const minVal = rangeMin.trim() !== '' ? parseInt(rangeMin) : undefined;
+      const maxVal = rangeMax.trim() !== '' ? parseInt(rangeMax) : undefined;
+      
+      // Validate range if both are provided
+      if (minVal !== undefined && maxVal !== undefined && minVal > maxVal) {
+        setError('Invalid range: minimum must be less than or equal to maximum');
+        setIsQuerying(false);
+        return;
+      }
+      
       const response = await apiService.executeQuery(
         selectedOperation,
         selectedField,
-        uploadData.filename
+        uploadData.filename,
+        minVal,
+        maxVal
       );
       setQueries([response as any, ...queries]);
     } catch (err: any) {
@@ -735,7 +748,29 @@ export default function Dashboard() {
                           </div>
                           <div className="text-xs text-muted-foreground mt-1">
                             {query.records_processed || 0} records processed (encrypted)
+                            {query.filter_applied && (
+                              <div className="text-blue-600 dark:text-blue-400 mt-1">
+                                🔍 Range filter: [{query.range?.min} - {query.range?.max}] 
+                                ({Math.round((query.filter_selectivity || 0) * 100)}% of data)
+                              </div>
+                            )}
                           </div>
+                          
+                          {/* Range Filter Info */}
+                          {query.filter_applied && (
+                            <div className="mt-3 p-2 bg-blue-500/10 border border-blue-500/30 rounded text-xs">
+                              <div className="font-semibold text-blue-600 mb-1 flex items-center gap-1">
+                                <Filter className="w-3 h-3" />
+                                OPE Range Filter Applied
+                              </div>
+                              <div className="space-y-1 text-muted-foreground">
+                                <div>📊 Total records: {query.records_before_filter || 0}</div>
+                                <div>✅ Filtered records: {query.records_processed || 0}</div>
+                                <div>🎯 Selectivity: {Math.round((query.filter_selectivity || 0) * 100)}%</div>
+                                <div>🔐 {query.security_note}</div>
+                              </div>
+                            </div>
+                          )}
                           
                           {/* Encryption Proof */}
                           {query.encryption_proof && (

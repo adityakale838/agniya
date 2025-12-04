@@ -1,0 +1,2 @@
+2025-12-04 10:51:18,197 - INFO - Operation: QUERY | IP: 127.0.0.1 | Data: {'type': 'COUNT', 'column': 'age', 'filename': 'random_fitness_dataset_1.csv', 'rangeMin': 10, 'rangeMax': 50}
+2025-12-04 10:51:18,204 - INFO - Operation: QUERY | IP: 127.0.0.1 | Status: SUCCESS

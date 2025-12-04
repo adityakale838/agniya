@@ -61,6 +61,14 @@ export interface QueryResponse {
   result: number;
   query_time_ms: number;
   records_processed: number;
+  filter_applied?: boolean;
+  range?: {
+    min: number;
+    max: number;
+  };
+  records_before_filter?: number;
+  filter_selectivity?: number;
+  security_note?: string;
   query_plan?: {
     strategy: string;
     estimated_cost_ms: number | null;
@@ -76,6 +84,8 @@ export interface QueryResponse {
     encrypted_result_preview?: string;
     encrypted_result_bit_length?: number;
     note?: string;
+    dataset_uniqueness?: string;
+    execution_strategy?: string;
   };
 }
 
@@ -189,15 +199,27 @@ class APIService {
   async executeQuery(
     operation: string,
     field: string,
-    filename: string
+    filename: string,
+    rangeMin?: number,
+    rangeMax?: number
   ): Promise<QueryResponse> {
+    const body: any = { 
+      type: operation,
+      column: field, 
+      filename 
+    };
+    
+    // Add range parameters if provided
+    if (rangeMin !== undefined && rangeMin !== null && rangeMin !== '') {
+      body.rangeMin = rangeMin;
+    }
+    if (rangeMax !== undefined && rangeMax !== null && rangeMax !== '') {
+      body.rangeMax = rangeMax;
+    }
+    
     return this.fetchAPI('/api/query', {
       method: 'POST',
-      body: JSON.stringify({ 
-        type: operation,
-        column: field, 
-        filename 
-      }),
+      body: JSON.stringify(body),
     });
   }
 
