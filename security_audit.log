@@ -1,2 +1,8 @@
 2025-12-04 10:51:18,197 - INFO - Operation: QUERY | IP: 127.0.0.1 | Data: {'type': 'COUNT', 'column': 'age', 'filename': 'random_fitness_dataset_1.csv', 'rangeMin': 10, 'rangeMax': 50}
 2025-12-04 10:51:18,204 - INFO - Operation: QUERY | IP: 127.0.0.1 | Status: SUCCESS
+2025-12-04 10:54:34,883 - INFO - Operation: QUERY | IP: 127.0.0.1 | Data: {'type': 'COUNT', 'column': 'age', 'filename': 'random_fitness_dataset_2.csv', 'rangeMin': 10, 'rangeMax': 50}
+2025-12-04 10:54:34,891 - INFO - Operation: QUERY | IP: 127.0.0.1 | Status: SUCCESS
+2025-12-04 10:54:40,454 - INFO - Operation: QUERY | IP: 127.0.0.1 | Data: {'type': 'COUNT', 'column': 'heart_rate_avg', 'filename': 'random_fitness_dataset_2.csv', 'rangeMin': 10, 'rangeMax': 50}
+2025-12-04 10:54:40,460 - INFO - Operation: QUERY | IP: 127.0.0.1 | Status: SUCCESS
+2025-12-04 10:54:48,990 - INFO - Operation: QUERY | IP: 127.0.0.1 | Data: {'type': 'AVG', 'column': 'heart_rate_avg', 'filename': 'random_fitness_dataset_2.csv', 'rangeMin': 10, 'rangeMax': 50}
+2025-12-04 10:54:49,007 - INFO - Operation: QUERY | IP: 127.0.0.1 | Status: SUCCESS
