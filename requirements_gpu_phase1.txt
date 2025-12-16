@@ -1,0 +1,27 @@
+# Phase 1 Requirements - Cross-Platform (Windows & Linux)
+# GPU Foundation Setup for RTX 4070 Laptop (8GB VRAM)
+
+# Core dependencies
+numpy>=1.24.0
+pycryptodome>=3.18.0
+numba>=0.57.0
+
+# GPU packages
+pycuda>=2022.2.2
+cupy>=12.0.0
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0
+
+# Monitoring & utilities
+nvidia-ml-py3>=7.2.0
+gpustat>=1.1.1
+requests>=2.31.0
+
+# API & Flask (from existing project)
+Flask>=3.1.0
+flask-cors>=4.0.0
+
+# Additional GPU optimization
+scipy>=1.10.0
+pandas>=2.0.0
