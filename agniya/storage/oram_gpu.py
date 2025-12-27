@@ -55,7 +55,8 @@ AUTHORS: AGNIYA Team
 DATE: December 2025
 """
 
-from typing import Dict, List, Tuple, Optional, Any
+from __future__ import annotations
+from typing import Dict, List, Tuple, Optional, Any, TYPE_CHECKING
 import numpy as np
 import time
 import threading
@@ -67,9 +68,15 @@ try:
     import cupy as cp
     from cupyx.scipy import sparse as cp_sparse
     GPU_AVAILABLE = True
+    # Type alias for better IDE support
+    if TYPE_CHECKING:
+        CuPyArray = cp.ndarray
+    else:
+        CuPyArray = Any
 except ImportError:
     cp = None
     GPU_AVAILABLE = False
+    CuPyArray = Any
 
 # Standard crypto
 try:
@@ -281,7 +288,7 @@ class GPUAcceleratedORAM:
             self.encrypt_kernel = None
             self.lookup_kernel = None
     
-    def _gpu_encrypt_batch(self, data_array: cp.ndarray) -> cp.ndarray:
+    def _gpu_encrypt_batch(self, data_array: CuPyArray) -> CuPyArray:
         """
         GPU-accelerated batch encryption.
         
@@ -321,11 +328,11 @@ class GPUAcceleratedORAM:
         
         return encrypted
     
-    def _gpu_decrypt_batch(self, encrypted_array: cp.ndarray) -> cp.ndarray:
+    def _gpu_decrypt_batch(self, encrypted_array: CuPyArray) -> CuPyArray:
         """GPU-accelerated batch decryption (XOR is symmetric)."""
         return self._gpu_encrypt_batch(encrypted_array)
     
-    def _gpu_position_lookup_batch(self, block_ids: cp.ndarray) -> cp.ndarray:
+    def _gpu_position_lookup_batch(self, block_ids: CuPyArray) -> CuPyArray:
         """
         GPU-accelerated position map lookup.
         

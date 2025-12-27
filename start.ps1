@@ -2,16 +2,16 @@
 
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host "  AGNIYA Web Application" -ForegroundColor Cyan
-Write-Host "  Professional Encryption Interface" -ForegroundColor Cyan
+Write-Host "  GPU/JIT/ORAM Optimized System" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "Starting Backend API Server (ADVANCED)..." -ForegroundColor Yellow
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot'; .\envb\Scripts\Activate.ps1; python api\server_advanced.py"
+Write-Host "Starting Backend API Server (OPTIMIZED - GPU/JIT/ORAM)..." -ForegroundColor Yellow
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot'; .\envb\Scripts\Activate.ps1; python api\server_optimized.py"
 Start-Sleep -Seconds 3
 
 Write-Host ""
-Write-Host "Starting Frontend React App..." -ForegroundColor Yellow
+Write-Host "Starting Frontend Next.js App..." -ForegroundColor Yellow
 Set-Location "$PSScriptRoot\webapp"
 Start-Process "http://localhost:3000"
 npm run dev
