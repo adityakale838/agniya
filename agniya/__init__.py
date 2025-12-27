@@ -44,15 +44,16 @@ class Database:
         >>> print(result)  # 60
     """
     
-    def __init__(self, key_size=2048, cache_size=10000):
+    def __init__(self, key_size=2048, cache_size=10000, verbose=True):
         """
         Initialize AGNIYA database with encryption keys.
         
         Args:
             key_size (int): Size of Paillier key (1024, 2048, or 4096)
             cache_size (int): Size of precomputation cache
+            verbose (bool): Enable detailed logging (disable for production performance)
         """
-        self._db = UltimateOptimizedDatabase(key_size=key_size, cache_size=cache_size)
+        self._db = UltimateOptimizedDatabase(key_size=key_size, cache_size=cache_size, verbose=verbose)
         self.public_key = self._db.public_key
         self.private_key = self._db.private_key
     

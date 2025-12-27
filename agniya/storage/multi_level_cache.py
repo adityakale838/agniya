@@ -130,7 +130,8 @@ class MultiLevelCache:
                  high_priv: PaillierPrivateKey,
                  max_cache_size: int = 10000,
                  auto_generate_low_keys: bool = True,
-                 aes_key: bytes = None):
+                 aes_key: bytes = None,
+                 verbose: bool = True):
         """
         Initialize multi-level cache.
         
@@ -140,14 +141,17 @@ class MultiLevelCache:
             max_cache_size: Maximum cache entries
             auto_generate_low_keys: Generate 1024-bit keys automatically
             aes_key: AES-256 key (32 bytes). If None, generates random key.
+            verbose: Enable verbose logging
         """
         # High security keys (storage level)
         self.high_pub = high_pub
         self.high_priv = high_priv
+        self.verbose = verbose
         
         # Low security keys (compute level) - generate if needed
         if auto_generate_low_keys:
-            print("Generating low-security compute keys (1024-bit)...")
+            if self.verbose:
+                print("Generating low-security compute keys (1024-bit)...")
             self.low_pub, self.low_priv = generate_keypair(1024)
         else:
             self.low_pub = None
@@ -155,7 +159,8 @@ class MultiLevelCache:
         
         # AES cipher for fast encryption
         self.aes_cipher = AESCipher(aes_key)
-        print("✅ AES-256-GCM cipher initialized for cache")
+        if self.verbose:
+            print("✅ AES-256-GCM cipher initialized for cache")
         
         # LRU cache
         self.cache = LRUCache(max_cache_size)
@@ -346,9 +351,10 @@ class MultiLevelCache:
         Returns:
             Plaintext sum
         """
-        print(f"\n{'='*70}")
-        print(f"Multi-Level Smart SUM ({len(values)} values)")
-        print(f"{'='*70}")
+        if self.verbose:
+            print(f"\n{'='*70}")
+            print(f"Multi-Level Smart SUM ({len(values)} values)")
+            print(f"{'='*70}")
         
         # Decision: use low security if all values are accessed frequently
         # (assuming they're hot data suitable for fast computation)
@@ -358,11 +364,13 @@ class MultiLevelCache:
         pub = self.low_pub if use_low_security else self.high_pub
         priv = self.low_priv if use_low_security else self.high_priv
         
-        print(f"Decision: Using {level.name} for computation")
-        print(f"Expected speedup: {4 if use_low_security else 1}x")
+        if self.verbose:
+            print(f"Decision: Using {level.name} for computation")
+            print(f"Expected speedup: {4 if use_low_security else 1}x")
         
         # Get encrypted values (uses cache when possible)
-        print(f"Fetching encrypted values...")
+        if self.verbose:
+            print(f"Fetching encrypted values...")
         start = time.time()
         
         ciphertexts = []
@@ -371,12 +379,14 @@ class MultiLevelCache:
             ciphertexts.append(ct)
         
         fetch_time = time.time() - start
-        print(f"  Fetch time: {fetch_time:.3f}s")
-        print(f"  Cache stats: {self.stats['hits']} hits, {self.stats['misses']} misses")
-        print(f"  Hit rate: {self.stats['hits']/(self.stats['hits']+self.stats['misses'])*100:.1f}%")
+        if self.verbose:
+            print(f"  Fetch time: {fetch_time:.3f}s")
+            print(f"  Cache stats: {self.stats['hits']} hits, {self.stats['misses']} misses")
+            print(f"  Hit rate: {self.stats['hits']/(self.stats['hits']+self.stats['misses'])*100:.1f}%")
         
         # Compute sum homomorphically
-        print(f"Computing homomorphic SUM...")
+        if self.verbose:
+            print(f"Computing homomorphic SUM...")
         start = time.time()
         
         result_ct = ciphertexts[0]
@@ -384,20 +394,24 @@ class MultiLevelCache:
             result_ct = (result_ct * ct) % pub.n_squared
         
         compute_time = time.time() - start
-        print(f"  Compute time: {compute_time:.3f}s")
+        if self.verbose:
+            print(f"  Compute time: {compute_time:.3f}s")
         
         # Decrypt result
-        print(f"Decrypting result...")
+        if self.verbose:
+            print(f"Decrypting result...")
         start = time.time()
         
         result = decrypt_crt(pub, priv, result_ct) if priv else decrypt(pub, priv, result_ct)
         
         decrypt_time = time.time() - start
-        print(f"  Decrypt time: {decrypt_time:.3f}s")
+        if self.verbose:
+            print(f"  Decrypt time: {decrypt_time:.3f}s")
         
         total_time = fetch_time + compute_time + decrypt_time
-        print(f"\nTotal time: {total_time:.3f}s")
-        print(f"{'='*70}\n")
+        if self.verbose:
+            print(f"\nTotal time: {total_time:.3f}s")
+            print(f"{'='*70}\n")
         
         return result
     
