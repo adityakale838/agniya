@@ -17,14 +17,18 @@ except ImportError:
     def jit(*args, **kwargs):
         def decorator(func):
             return func
+        if args and callable(args[0]):
+            return args[0]
         return decorator
     def vectorize(*args, **kwargs):
         def decorator(func):
             return func
+        if args and callable(args[0]):
+            return args[0]
         return decorator
     prange = range
-    int64 = int
-    uint64 = int
+    int64 = None
+    uint64 = None
 
 
 @jit(nopython=True, cache=True, fastmath=True, inline='always')
@@ -49,10 +53,16 @@ def fast_modular_mul(a: int, b: int, modulus: int) -> int:
 
 
 # SIMD vectorized operations for better CPU utilization
-@vectorize([int64(int64, int64, int64)], nopython=True, cache=True, fastmath=True)
-def vectorized_mod_mul(a, b, modulus):
-    """SIMD-vectorized modular multiplication"""
-    return (a * b) % modulus
+if NUMBA_AVAILABLE:
+    @vectorize(['int64(int64, int64, int64)'], nopython=True, cache=True, fastmath=True)
+    def vectorized_mod_mul(a, b, modulus):
+        """SIMD-vectorized modular multiplication"""
+        return (a * b) % modulus
+else:
+    # Fallback without vectorization
+    def vectorized_mod_mul(a, b, modulus):
+        """Fallback modular multiplication"""
+        return (a * b) % modulus
 
 
 @jit(nopython=True, parallel=True, cache=True, fastmath=True)
