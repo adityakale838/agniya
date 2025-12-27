@@ -381,11 +381,11 @@ export default function Dashboard() {
                         id="file-upload"
                         onChange={handleFileSelect}
                       />
-                      <label htmlFor="file-upload">
-                        <Button variant="outline" className="cursor-pointer gradient-primary text-white border-0">
-                          <FileText className="w-4 h-4 mr-2" />
+                      <label htmlFor="file-upload" className="inline-block">
+                        <div className="cursor-pointer px-6 py-2 rounded-lg bg-gradient-to-r from-primary to-primary/80 text-white font-medium inline-flex items-center gap-2 hover:opacity-90 transition-opacity">
+                          <FileText className="w-4 h-4" />
                           Select CSV File
-                        </Button>
+                        </div>
                       </label>
                     </>
                   )}

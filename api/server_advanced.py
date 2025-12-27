@@ -446,6 +446,10 @@ def encrypt_dataset():
         
         print(f"\n📊 BUILDING QUERY HISTOGRAMS...")
         histogram_start = time.time()
+        
+        for field, values in paillier_data.items():
+            query_planner.build_histogram(field, values)
+        
         histogram_time = time.time() - histogram_start
         print(f"   ✅ Histograms built in {histogram_time:.3f}s")
         
@@ -515,10 +519,6 @@ def encrypt_dataset():
                     print(f"   ✅ {field} dual-encrypted in {dual_time:.2f}ms ({len(paillier_data[field])/dual_time*1000:.1f} enc/s)")
         else:
             print(f"\n💡 No OPE+Paillier fields selected - using standard Paillier only")
-            encrypted_fields_dual[field] = dual_ciphertexts
-            dual_time = (time.time() - dual_start) * 1000
-            
-            print(f"   ✅ {field} dual-encrypted in {dual_time:.2f}ms ({len(values)/dual_time*1000:.1f} enc/s)")
         
         # Store database instance
         optimized_databases[filename] = {

@@ -186,12 +186,17 @@ def encrypt_dataset():
         print(f"Multi-level cache: {'ENABLED' if enable_cache else 'DISABLED'}")
         print(f"Batch packing: {'ENABLED' if enable_batch else 'DISABLED'}")
         
-        # Initialize ULTIMATE OPTIMIZED DATABASE
+        # Initialize ULTIMATE OPTIMIZED DATABASE with ALL optimizations
         db = UltimateOptimizedDatabase(
             key_size=2048,
             cache_size=min(10000, len(df)),
-            enable_batch_packing=enable_batch,
-            enable_multi_level=enable_cache
+            enable_gpu_encryption=True,      # GPU acceleration
+            enable_gpu_pipeline=True,        # GPU pipeline
+            enable_jit=True,                 # JIT compilation (CPU)
+            enable_batch_packing=enable_batch,  # Batch packing aggregation
+            enable_multi_level=enable_cache,    # Multi-level cache
+            enable_oram=False,               # ORAM (disable for API performance)
+            verbose=False                    # Silent mode for API
         )
         
         # Extract Paillier data for optimization
