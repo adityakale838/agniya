@@ -275,9 +275,12 @@ def encrypt_dataset():
 def execute_query():
     """Execute homomorphic query on encrypted data"""
     data = request.json
-    operation = data.get('operation')  # SUM, AVG, COUNT
-    field = data.get('field')
+    operation = data.get('type') or data.get('operation')  # Accept 'type' or 'operation'
+    field = data.get('column') or data.get('field')  # Accept 'column' or 'field'
     filename = data.get('filename')
+    
+    # Normalize operation to uppercase
+    operation = operation.upper() if operation else None
     
     if not all([operation, field, filename]):
         return jsonify({'error': 'Missing parameters'}), 400

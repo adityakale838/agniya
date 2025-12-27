@@ -8,6 +8,21 @@ __pycache__/
 dist/
 build/
 
+# C++ Build Output (DO NOT COMMIT)
+agniya-cpp/
+*.o
+*.obj
+*.exe
+*.out
+*.a
+*.lib
+*.dll
+*.so
+*.dylib
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+
 # Virtual Environment (DO NOT COMMIT)
 envb/
 venv/
