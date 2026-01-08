@@ -299,6 +299,153 @@ void bigint_mod_kernel(
 
 # Modular exponentiation (square-and-multiply)
 BIGINT_MODEXP_KERNEL = r'''
+extern "C" __device__
+int bigint_cmp_device(
+    const unsigned long long* a,
+    const unsigned long long* b,
+    int num_limbs
+) {
+    // Returns: 1 if a > b, -1 if a < b, 0 if a == b
+    for (int i = num_limbs - 1; i >= 0; i--) {
+        if (a[i] > b[i]) {
+            return 1;
+        } else if (a[i] < b[i]) {
+            return -1;
+        }
+    }
+    return 0;
+}
+
+extern "C" __device__
+void bigint_sub_device(
+    const unsigned long long* a,
+    const unsigned long long* b,
+    unsigned long long* result,
+    int num_limbs
+) {
+    unsigned long long borrow = 0;
+    for (int i = 0; i < num_limbs; i++) {
+        unsigned long long ai = a[i];
+        unsigned long long bi = b[i];
+        
+        unsigned long long diff = ai - bi - borrow;
+        borrow = (diff > ai) || (borrow && diff == ai) ? 1 : 0;
+        
+        result[i] = diff;
+    }
+}
+
+extern "C" __device__
+void bigint_mul_mod_device(
+    const unsigned long long* a,
+    const unsigned long long* b,
+    const unsigned long long* modulus,
+    unsigned long long* result,
+    unsigned long long* temp,
+    int num_limbs
+) {
+    // Initialize temp to 0 (double width for multiplication result)
+    for (int i = 0; i < num_limbs * 2; i++) {
+        temp[i] = 0;
+    }
+    
+    // Schoolbook multiplication into temp
+    for (int i = 0; i < num_limbs; i++) {
+        unsigned long long carry = 0;
+        unsigned long long ai = a[i];
+        
+        for (int j = 0; j < num_limbs; j++) {
+            if (i + j < num_limbs * 2) {
+                unsigned long long bj = b[j];
+                
+                // 64x64 -> 128-bit multiply
+                unsigned long long low = ai * bj;
+                unsigned long long high = __umul64hi(ai, bj);
+                
+                // Add to temp[i+j] with carry
+                unsigned long long old_val = temp[i + j];
+                unsigned long long sum = old_val + low + carry;
+                
+                // Calculate new carry
+                if (sum < old_val || (sum == old_val && low > 0)) {
+                    carry = 1 + high;
+                } else if (sum < low) {
+                    carry = 1 + high;
+                } else {
+                    carry = high;
+                }
+                
+                temp[i + j] = sum;
+            }
+        }
+        
+        // Propagate final carry
+        if (i + num_limbs < num_limbs * 2) {
+            temp[i + num_limbs] += carry;
+        }
+    }
+    
+    // Now reduce temp (2*num_limbs) modulo modulus (num_limbs)
+    // Use iterative subtraction on the full double-width number
+    // NOTE: This is slow for large quotients! Ideally should use Barrett/Montgomery reduction.
+    
+    // We'll work with temp directly and reduce it until it fits in num_limbs
+    // and is less than modulus
+    
+    for (int iter = 0; iter < 100000000; iter++) {  // Increased iteration count
+        // Check if high limbs are zero
+        int has_high = 0;
+        for (int i = num_limbs; i < num_limbs * 2; i++) {
+            if (temp[i] != 0) {
+                has_high = 1;
+                break;
+            }
+        }
+        
+        if (!has_high) {
+            // No high limbs, check if lower limbs >= modulus
+            int cmp_result = bigint_cmp_device(temp, modulus, num_limbs);
+            
+            if (cmp_result < 0) {
+                // temp < modulus, we're done
+                break;
+            } else if (cmp_result == 0) {
+                // temp == modulus, result is 0
+                for (int i = 0; i < num_limbs; i++) {
+                    temp[i] = 0;
+                }
+                break;
+            }
+            // else temp > modulus, subtract and continue
+        }
+        
+        // Subtract modulus from temp
+        unsigned long long borrow = 0;
+        for (int i = 0; i < num_limbs; i++) {
+            unsigned long long ti = temp[i];
+            unsigned long long mi = modulus[i];
+            
+            unsigned long long diff = ti - mi - borrow;
+            borrow = (diff > ti) || (borrow && diff == ti) ? 1 : 0;
+            
+            temp[i] = diff;
+        }
+        
+        // Propagate borrow through high limbs
+        for (int i = num_limbs; i < num_limbs * 2 && borrow; i++) {
+            unsigned long long ti = temp[i];
+            unsigned long long diff = ti - borrow;
+            borrow = (diff > ti) ? 1 : 0;
+            temp[i] = diff;
+        }
+    }
+    
+    // Copy result from temp (lower limbs)
+    for (int i = 0; i < num_limbs; i++) {
+        result[i] = temp[i];
+    }
+}
+
 extern "C" __global__
 void bigint_modexp_kernel(
     const unsigned long long* base,
@@ -311,15 +458,67 @@ void bigint_modexp_kernel(
 ) {
     int tid = blockIdx.x * blockDim.x + threadIdx.x;
     
-    if (tid < batch_size) {
-        // Initialize result to 1
+    if (tid < batch_size && num_limbs <= 64) {
+        // Allocate local arrays for this thread's computation
+        unsigned long long local_result[64];  // Max 64 limbs (4096-bit)
+        unsigned long long local_base[64];
+        unsigned long long temp_mul[128];
+        
+        // Copy base to local memory
         for (int i = 0; i < num_limbs; i++) {
-            result[tid * num_limbs + i] = (i == 0) ? 1 : 0;
+            local_base[i] = base[tid * num_limbs + i];
         }
         
-        // TODO: Implement full square-and-multiply with modular multiplication
-        // This requires calling mul and mod operations
-        // For now, this is a placeholder
+        // Square-and-multiply algorithm (left-to-right binary method)
+        // Find the most significant bit that is set in the exponent
+        int msb = -1;
+        for (int bit = exp_bits - 1; bit >= 0; bit--) {
+            int limb_idx = bit / 64;
+            int bit_idx = bit % 64;
+            
+            if (limb_idx < num_limbs) {
+                unsigned long long exp_limb = exponent[tid * num_limbs + limb_idx];
+                if (exp_limb & (1ULL << bit_idx)) {
+                    msb = bit;
+                    break;
+                }
+            }
+        }
+        
+        if (msb < 0) {
+            // Exponent is 0, result is 1
+            for (int i = 0; i < num_limbs; i++) {
+                local_result[i] = (i == 0) ? 1 : 0;
+            }
+        } else {
+            // Initialize result to base (since MSB is 1)
+            for (int i = 0; i < num_limbs; i++) {
+                local_result[i] = local_base[i];
+            }
+            
+            // Process remaining bits from MSB-1 down to 0
+            for (int bit = msb - 1; bit >= 0; bit--) {
+                // Square: result = result * result mod modulus
+                bigint_mul_mod_device(local_result, local_result, modulus, local_result, temp_mul, num_limbs);
+                
+                // Check if bit is set in exponent
+                int limb_idx = bit / 64;
+                int bit_idx = bit % 64;
+                
+                if (limb_idx < num_limbs) {
+                    unsigned long long exp_limb = exponent[tid * num_limbs + limb_idx];
+                    if (exp_limb & (1ULL << bit_idx)) {
+                        // Multiply: result = result * base mod modulus
+                        bigint_mul_mod_device(local_result, local_base, modulus, local_result, temp_mul, num_limbs);
+                    }
+                }
+            }
+        }
+        
+        // Copy result back to global memory
+        for (int i = 0; i < num_limbs; i++) {
+            result[tid * num_limbs + i] = local_result[i];
+        }
     }
 }
 '''

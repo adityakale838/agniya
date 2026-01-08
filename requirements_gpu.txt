@@ -1,22 +1,18 @@
 # GPU-Accelerated AGNIYA Requirements
-# Install CUDA toolkit first: https://developer.nvidia.com/cuda-downloads
+# Hybrid CPU/GPU approach: gmpy2 for correctness + parallel execution for speed
 
-# Core dependencies (from requirements.txt)
-gmpy2>=2.1.0
+# RECOMMENDED: gmpy2 for 3-5x faster modular arithmetic (CPU-based, proven correct)
+gmpy2>=2.1.5
+
+# Core dependencies
 pycryptodome>=3.19.0
 numpy>=1.24.0
 pandas>=2.0.0
 
-# GPU acceleration
+# GPU acceleration (optional - used for homomorphic operations)
 cupy-cuda11x>=12.0.0  # For CUDA 11.x
 # OR cupy-cuda12x>=12.0.0  # For CUDA 12.x
 # Use: pip install cupy-cuda11x (or cupy-cuda12x based on your CUDA version)
 
-# For systems without CUDA (CPU fallback)
-# CuPy will gracefully fail, code will use NumPy instead
-
-# Optional: GPU-accelerated matrix operations
-# numba>=0.57.0  # JIT compilation for GPU kernels
-
 # Check CUDA version with: nvidia-smi
-# Install matching cupy version
+# Note: System works without GPU by using parallel CPU execution

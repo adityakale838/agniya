@@ -78,7 +78,7 @@ class GPUPaillierEncryptor:
         
         self.n = public_key.n
         self.g = public_key.g
-        self.nsquare = public_key.nsquare
+        self.nsquare = public_key.n_squared  # FIX: use n_squared not nsquare
         self.adaptive_batching = adaptive_batching
         
         # Transfer constants to GPU (one-time cost)

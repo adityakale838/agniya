@@ -299,11 +299,11 @@ def encrypt_dataset():
                 'ciphertext_bit_lengths': ciphertext_bit_lengths,
                 'modulus_n_bit_length': opt.public_key.n.bit_length(),
                 'verification': 'Computation performed on encrypted ciphertexts',
-                'computation_type': 'Homomorphic Paillier with GPU Acceleration
-    if not db:
-        return jsonify({'error': 'Dataset not encrypted yet. Please encrypt first.'}), 400
-    
-    try:
+                'computation_type': 'Homomorphic Paillier with Hybrid CPU/GPU Acceleration'
+            }
+        })
+        
+    except Exception as e:
         df = pd.read_csv(filepath)
         
         # Ensure field is numeric

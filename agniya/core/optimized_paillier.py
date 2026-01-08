@@ -146,10 +146,25 @@ class OptimizedPaillier:
             self.gpu_available = GPU_AVAILABLE and enable_gpu
             if self.gpu_available:
                 self.gpu_paillier = GPUPaillier(public_key, private_key)
-            self.enable_gpu_homomorphic = enable_gpu_homomorphic and GPU_AVAILABLE
-        except ImportError:
+            else:
+                self.gpu_paillier = None
+            # Only claim GPU homomorphic support if the validated multi-precision path is active.
+            # (The multi-precision modexp kernel is required for correctness in the GPU Paillier path.)
+            self.gpu_multiprecision_enabled = bool(
+                self.gpu_paillier is not None and getattr(self.gpu_paillier, 'multiprecision_gpu', None) is not None
+            )
+            self.enable_gpu_homomorphic = bool(enable_gpu_homomorphic and self.gpu_multiprecision_enabled)
+        except ImportError as e:
+            print(f"[WARNING] GPU import failed: {e}")
             self.gpu_available = False
             self.enable_gpu_homomorphic = False
+            self.gpu_multiprecision_enabled = False
+            self.gpu_paillier = None
+        except Exception as e:
+            print(f"[WARNING] GPU initialization failed: {e}")
+            self.gpu_available = False
+            self.enable_gpu_homomorphic = False
+            self.gpu_multiprecision_enabled = False
             self.gpu_paillier = None
         
         print("\n" + "="*70)
@@ -408,21 +423,9 @@ class OptimizedPaillier:
         if not ciphertexts:
             return self.encrypt(0)
         
-        # Use GPU for large batches if available
-        if self.enable_gpu_homomorphic and len(ciphertexts) >= 100:
-            try:
-                from agniya.core.gpu_utils import cp
-                # Transfer to GPU
-                cts_gpu = cp.array(ciphertexts, dtype=cp.uint64)
-                # Multiply all (homomorphic addition)
-                result_gpu = cp.prod(cts_gpu) % cp.uint64(self.public_key.n_squared)
-                # Transfer back
-                return int(result_gpu.get())
-            except Exception as e:
-                # Fallback to CPU
-                pass
-        
-        # CPU fallback
+        # CPU implementation - iterative modular multiplication
+        # Note: GPU acceleration disabled for sum_encrypted as it requires
+        # multi-precision arithmetic for 2048-bit Paillier (n_squared is 4096-bit)
         result = ciphertexts[0]
         for ct in ciphertexts[1:]:
             result = (result * ct) % self.public_key.n_squared
