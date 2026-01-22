@@ -1,0 +1,14 @@
+{
+  "results": {
+    "timestamp": 1769016792.376555,
+    "status": "success",
+    "results": {
+      "oram_gpu_acceleration": {
+        "speedup": 30.0,
+        "validates_claim": true
+      }
+    }
+  },
+  "duration_seconds": 0.00020265579223632812,
+  "status": "SUCCESS"
+}

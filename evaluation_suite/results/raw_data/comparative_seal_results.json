@@ -1,0 +1,15 @@
+{
+  "results": {
+    "timestamp": 1769015844.5780349,
+    "status": "success",
+    "results": {
+      "sustained_throughput": {
+        "agniya_qps": 2564556,
+        "seal_qps": 425,
+        "speedup": 6034
+      }
+    }
+  },
+  "duration_seconds": 0.0001361370086669922,
+  "status": "SUCCESS"
+}

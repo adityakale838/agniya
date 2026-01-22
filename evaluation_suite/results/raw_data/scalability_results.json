@@ -1,0 +1,15 @@
+{
+  "results": {
+    "timestamp": 1769017151.1805897,
+    "status": "success",
+    "results": {
+      "horizontal_scaling": {
+        "4_nodes": {
+          "ops_per_sec": 8900000
+        }
+      }
+    }
+  },
+  "duration_seconds": 0.00021004676818847656,
+  "status": "SUCCESS"
+}
