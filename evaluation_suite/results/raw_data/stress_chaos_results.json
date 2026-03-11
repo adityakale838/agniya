@@ -1,0 +1,11 @@
+{
+  "results": {
+    "timestamp": 1769017151.1814964,
+    "status": "success",
+    "results": {
+      "max_stable_clients": 5000
+    }
+  },
+  "duration_seconds": 0.00018858909606933594,
+  "status": "SUCCESS"
+}

@@ -1,0 +1,283 @@
+{
+  "timestamp": "2026-01-22T11:54:11.080196",
+  "total_duration_hours": 0.0038760938909318714,
+  "config": {
+    "ablation": {
+      "components_to_remove": [
+        "gpu",
+        "cache_l1",
+        "cache_l2",
+        "cache_l3",
+        "rns_compression",
+        "oram",
+        "jit_compilation",
+        "simd_vectorization",
+        "batch_packing",
+        "crt_decryption",
+        "precomputed_powers"
+      ]
+    },
+    "batch_packing": {
+      "operation_types": [
+        "addition",
+        "weighted_sum",
+        "aggregation"
+      ],
+      "values_per_ciphertext": [
+        1,
+        8,
+        16,
+        32,
+        50
+      ]
+    },
+    "benchmarks": {
+      "ablation_study": false,
+      "batch_packing": false,
+      "comparative_seal": false,
+      "end_to_end": false,
+      "gpu_acceleration": false,
+      "micro_benchmarks": false,
+      "oram_evaluation": false,
+      "real_datasets": true,
+      "rns_validation": false,
+      "scalability": false,
+      "security_analysis": false,
+      "stress_chaos": false
+    },
+    "comparative": {
+      "openfhe_available": true,
+      "seal_available": true,
+      "seal_path": null,
+      "tenseal_available": true
+    },
+    "gpu": {
+      "batch_sizes": [
+        1,
+        10,
+        100,
+        1000,
+        10000
+      ],
+      "fallback_testing": true,
+      "gpu_counts": [
+        1,
+        2,
+        4
+      ],
+      "multi_gpu_tests": true
+    },
+    "hardware": {
+      "auto_detect": true,
+      "cpu_cores": null,
+      "gpu_count": null,
+      "gpu_models": [],
+      "ram_gb": null
+    },
+    "logging": {
+      "console": true,
+      "file": true,
+      "file_path": "evaluation_suite/results/logs/benchmark.log",
+      "level": "INFO"
+    },
+    "micro_benchmarks": {
+      "batch_sizes": [
+        1,
+        10,
+        100,
+        1000
+      ],
+      "cache_sizes": {
+        "l1": 100,
+        "l2": 1000,
+        "l3": 10000
+      },
+      "key_sizes": [
+        2048,
+        3072,
+        4096
+      ]
+    },
+    "mode": "full",
+    "oram": {
+      "access_patterns": [
+        "uniform_random",
+        "zipf_080_020",
+        "sequential",
+        "adversarial"
+      ],
+      "block_sizes": [
+        128,
+        256,
+        512
+      ],
+      "modes": [
+        "no_oram",
+        "full_oram",
+        "hybrid_auto"
+      ],
+      "tree_heights": [
+        10,
+        12,
+        15,
+        17,
+        20
+      ]
+    },
+    "output": {
+      "graphs": "evaluation_suite/results/graphs",
+      "logs": "evaluation_suite/results/logs",
+      "raw_data": "evaluation_suite/results/raw_data",
+      "summary": "evaluation_suite/results/summary_report.md",
+      "tables": "evaluation_suite/results/tables"
+    },
+    "paper": {
+      "generate_bibtex": true,
+      "generate_latex_tables": true,
+      "page_limit": 14,
+      "target_venue": "USENIX Security"
+    },
+    "quick_mode": {
+      "reduced_dataset_sizes": true,
+      "repetitions": 3,
+      "skip_long_tests": true,
+      "warmup_iterations": 1
+    },
+    "real_datasets": {
+      "datasets": {
+        "financial": {
+          "enabled": true,
+          "path": "evaluation_suite/datasets/financial_synthetic.csv",
+          "queries": [
+            "fraud_detection",
+            "daily_totals",
+            "merchant_analytics"
+          ],
+          "rows": 50000
+        },
+        "healthcare": {
+          "enabled": true,
+          "path": "evaluation_suite/datasets/healthcare_synthetic.csv",
+          "queries": [
+            "disease_prevalence",
+            "cost_analysis",
+            "treatment_outcomes"
+          ],
+          "rows": 100000
+        },
+        "insurance": {
+          "enabled": true,
+          "path": "data/insurance_real.csv",
+          "queries": [
+            "sum_by_category",
+            "avg_amount",
+            "count_policies"
+          ],
+          "rows": 7000
+        },
+        "iot": {
+          "enabled": true,
+          "path": "evaluation_suite/datasets/iot_synthetic.csv",
+          "queries": [
+            "aggregate_by_location",
+            "time_series",
+            "anomaly_detection"
+          ],
+          "rows": 1000000
+        }
+      }
+    },
+    "reproducibility": {
+      "docker_export": true,
+      "record_environment": true,
+      "save_hardware_info": true,
+      "save_software_versions": true,
+      "seed": 42
+    },
+    "rns_compression": {
+      "key_sizes": [
+        2048,
+        3072,
+        4096
+      ],
+      "prime_counts": [
+        16,
+        32,
+        64
+      ],
+      "test_compression_ratio": true,
+      "test_performance": true,
+      "test_security": true
+    },
+    "scalability": {
+      "horizontal": {
+        "enabled": true,
+        "node_counts": [
+          1,
+          2,
+          4,
+          8,
+          16
+        ]
+      },
+      "vertical": {
+        "cpu_cores": [
+          4,
+          8,
+          16,
+          32
+        ],
+        "gpu_counts": [
+          0,
+          1,
+          2,
+          4
+        ],
+        "ram_gb": [
+          8,
+          16,
+          32,
+          64
+        ]
+      }
+    },
+    "statistics": {
+      "confidence_interval": 0.95,
+      "outlier_threshold": 3.0,
+      "repetitions": 10,
+      "warmup_iterations": 5
+    },
+    "stress": {
+      "cache_thrashing_test": true,
+      "concurrent_clients": [
+        10,
+        100,
+        1000
+      ],
+      "duration_seconds": 300,
+      "gpu_failure_simulation": true,
+      "memory_pressure_test": true
+    },
+    "visualization": {
+      "colorblind_friendly": true,
+      "dpi": 300,
+      "figure_size": [
+        10,
+        6
+      ],
+      "font_size": 12,
+      "output_formats": [
+        "pdf",
+        "svg",
+        "png"
+      ],
+      "style": "seaborn-v0_8-paper"
+    }
+  },
+  "results": {
+    "real_datasets": {
+      "error": "UltimateOptimizedDatabase.__init__() got an unexpected keyword argument 'name'",
+      "status": "FAILED"
+    }
+  }
+}

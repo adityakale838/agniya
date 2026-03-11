@@ -98,12 +98,36 @@ def load_iot_sensor_dataset() -> pd.DataFrame:
 def benchmark_cold_cache_queries(df: pd.DataFrame, num_queries: int = 1000) -> Tuple[float, float]:
     """
     Benchmark cold cache performance (no cache warm-up).
-    Simulates first-time queries.
+    Uses UltimateOptimizedDatabase without cache preloading.
     """
-    from agniya.core.paillier import generate_keypair, encrypt
+    from agniya.core.paillier import generate_keypair
+    from agniya.core.ultimate_system import UltimateOptimizedDatabase
+    from agniya.hybrid.schema import Schema, Field, FieldType
+    from agniya.storage.multi_level_cache import SecurityLevel
     
     # Generate 4096-bit keys
     public_key, private_key = generate_keypair(bit_length=4096)
+    
+    # Create schema for dataset
+    schema = Schema(
+        table_name="benchmark",
+        fields=[
+            Field(name="id", field_type=FieldType.PLAINTEXT, data_type=int),
+            Field(name="value", field_type=FieldType.PAILLIER_ENCRYPTED, data_type=int)
+        ]
+    )
+    
+    # Create optimized database WITHOUT precomputation (cold cache)
+    db = UltimateOptimizedDatabase(
+        name="cold_benchmark",
+        schema=schema,
+        public_key=public_key,
+        private_key=private_key,
+        enable_cache=False,  # Disabled for cold cache test
+        enable_batch_packing=False,  # No batch for cold test
+        enable_gpu=True,
+        security_level=SecurityLevel.PAILLIER_HIGH
+    )
     
     # Take sample column for encryption
     values = df.iloc[:, 1].values[:num_queries]  # First numeric column
@@ -111,8 +135,8 @@ def benchmark_cold_cache_queries(df: pd.DataFrame, num_queries: int = 1000) -> T
     start_time = time.perf_counter()
     
     for val in values:
-        # Encrypt value (cold cache - no pre-computation)
-        ciphertext = encrypt(public_key, int(val))
+        # Encrypt using optimized system (cold - no cache)
+        encrypted_val = db.encrypt_value("value", int(val))
     
     end_time = time.perf_counter()
     elapsed = end_time - start_time
@@ -121,43 +145,71 @@ def benchmark_cold_cache_queries(df: pd.DataFrame, num_queries: int = 1000) -> T
     return qps, elapsed
 
 
-def benchmark_warm_cache_queries(df: pd.DataFrame, num_queries: int = 1000, cache_hit_rate: float = 0.9167) -> Tuple[float, float]:
+def benchmark_warm_cache_queries(df: pd.DataFrame, num_queries: int = 1000) -> Tuple[float, float]:
     """
-    Benchmark warm cache performance (realistic workload with cache).
-    Simulates production scenario with 91.67% cache hit rate.
+    Benchmark warm cache performance with UltimateOptimizedDatabase.
+    Uses production configuration with multi-level cache.
     """
-    from agniya.core.paillier import generate_keypair, encrypt
+    from agniya.core.paillier import generate_keypair
+    from agniya.core.ultimate_system import UltimateOptimizedDatabase
+    from agniya.hybrid.schema import Schema, Field, FieldType
+    from agniya.storage.multi_level_cache import SecurityLevel
     
     # Generate keys
     public_key, private_key = generate_keypair(bit_length=4096)
     
+    # Create schema
+    schema = Schema(
+        table_name="benchmark",
+        fields=[
+            Field(name="id", field_type=FieldType.PLAINTEXT, data_type=int),
+            Field(name="value", field_type=FieldType.PAILLIER_ENCRYPTED, data_type=int)
+        ]
+    )
+    
+    # Create optimized database WITH full cache (warm cache)
+    db = UltimateOptimizedDatabase(
+        name="warm_benchmark",
+        schema=schema,
+        public_key=public_key,
+        private_key=private_key,
+        enable_cache=True,  # Enabled for warm cache
+        enable_batch_packing=True,  # Batch packing enabled
+        enable_gpu=True,
+        security_level=SecurityLevel.PAILLIER_HIGH
+    )
+    
     # Take sample values
     values = df.iloc[:, 1].values[:num_queries]
     
-    # Benchmark queries with simulated cache (91.67% hit rate means most queries are instant)
+    # Warm up cache with first 10% of queries
+    warmup_size = num_queries // 10
+    for val in values[:warmup_size]:
+        db.encrypt_value("value", int(val))
+    
+    # Benchmark with warm cache
     start_time = time.perf_counter()
     
     cache_hits = 0
     cache_misses = 0
     
     for val in values:
-        key = int(val)
+        # Query with cache (most will be cache hits due to Zipf distribution)
+        encrypted_val = db.encrypt_value("value", int(val))
         
-        # Simulate cache behavior (91.67% hit rate)
-        if np.random.random() < cache_hit_rate:
-            # Cache hit - instant (no encryption needed)
-            cache_hits += 1
-        else:
-            # Cache miss - must encrypt
-            cache_misses += 1
-            ct = encrypt(public_key, key)
+        # Track cache statistics
+        if hasattr(db, 'cache') and db.cache:
+            cache_hits = db.cache.hits
+            cache_misses = db.cache.misses
     
     end_time = time.perf_counter()
     elapsed = end_time - start_time
     qps = num_queries / elapsed
     
-    actual_hit_rate = cache_hits / num_queries
-    logger.info(f"  Cache hit rate: {actual_hit_rate:.2%} (target: {cache_hit_rate:.2%})")
+    # Calculate actual hit rate
+    total_accesses = cache_hits + cache_misses
+    actual_hit_rate = cache_hits / total_accesses if total_accesses > 0 else 0.0
+    logger.info(f"  Cache hit rate: {actual_hit_rate:.2%} (target: 91.67%)")
     
     return qps, elapsed
 
