@@ -79,7 +79,7 @@ print(f"Encrypted sum: {result}")  # 150
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/agniya.git
+git clone https://github.com/adityakale838/agniya.git
 cd agniya
 
 # Install dependencies
@@ -1865,13 +1865,6 @@ benchmark           : ✅ PASSED
 ## 📄 License
 
 MIT License - Free for commercial and personal use.
-
----
-
-## 👥 Contact
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/agniya/issues)
-- **Documentation**: See README.md and HOSTING_OPTIONS.md
 
 ---
 
