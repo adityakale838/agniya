@@ -2,7 +2,7 @@
 
 **GPU-Accelerated Homomorphic Encryption • 6.7M ops/sec • Production-Ready**
 
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 [![Python](https://img.shields.io/badge/Python-3.10+-green.svg)](https://www.python.org/)
 [![CUDA](https://img.shields.io/badge/CUDA-12.0+-green.svg)](https://developer.nvidia.com/cuda-toolkit)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-blue.svg)](https://www.typescriptlang.org/)
