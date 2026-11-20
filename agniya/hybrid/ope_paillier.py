@@ -17,6 +17,7 @@ computations on encrypted data."
 
 from typing import List, Tuple, Dict, Optional
 from dataclasses import dataclass
+import secrets
 import time
 
 from pyope.ope import OPE, ValueRange
@@ -100,7 +101,7 @@ class OrderPreservingPaillier:
         
         # OPE cipher with random key
         self.ope_cipher = OPE(
-            b'0123456789abcdef',  # 16-byte key (in production, generate randomly)
+            secrets.token_bytes(32),
             in_range=ValueRange(ope_in_range[0], ope_in_range[1]),
             out_range=ValueRange(ope_out_range[0], ope_out_range[1])
         )
@@ -129,11 +130,8 @@ class OrderPreservingPaillier:
         # Encrypt with Paillier (slow: ~7 ops/sec) - use original value
         paillier_ct = encrypt(self.paillier_pub, plaintext)
         
-        return DualCiphertext(
-            ope_ct=ope_ct,
-            paillier_ct=paillier_ct,
-            plaintext_hash=hash(plaintext)
-        )
+        # no plaintext hash: hash(int) == int in Python, it would store the value in clear
+        return DualCiphertext(ope_ct=ope_ct, paillier_ct=paillier_ct)
     
     def encrypt_batch_dual(self, plaintexts: List[int], verbose: bool = True) -> List[DualCiphertext]:
         """

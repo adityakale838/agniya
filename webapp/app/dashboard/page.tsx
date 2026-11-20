@@ -42,53 +42,12 @@ interface UploadedData {
 }
 
 interface EncryptionResult {
+  success?: boolean;
+  message?: string;
   records_encrypted?: number;
   time_seconds?: number;
   throughput?: number;
-  speedup?: number;
-  encryption_breakdown?: {
-    plaintext_fields: number;
-    aes_fields: number;
-    paillier_fields: number;
-  };
-  // New fields from advanced server
-  success?: boolean;
-  message?: string;
-  stats?: {
-    records: number;
-    original_records: number;
-    paillier_fields: number;
-    encryption_time_ms: number;
-    cache_warming_time_ms: number;
-    histogram_build_time_ms: number;
-    total_time_ms: number;
-    cache?: {
-      hits?: number;
-      misses?: number;
-      hit_rate?: number;
-    };
-    precomputation?: {
-      hit_count: number;
-      miss_count: number;
-      hit_rate: number;
-    };
-    compression?: {
-      original_size_bytes: number;
-      compressed_size_bytes: number;
-      compression_ratio: number;
-      bandwidth_reduction_pct: number;
-      compression_time_ms: number;
-    };
-    deduplication?: {
-      [field: string]: {
-        total_added: number;
-        unique_stored: number;
-        duplicates_found: number;
-        dedup_ratio: number;
-        storage_saved_pct: number;
-      };
-    };
-  };
+  ciphertexts?: number;
 }
 
 interface QueryResult {
@@ -101,6 +60,12 @@ interface QueryResult {
   success?: boolean;
   column?: string;
   query_time_ms?: number;
+  ciphertexts_aggregated?: number;
+  filter_applied?: boolean;
+  range?: { min: number | null; max: number | null };
+  records_before_filter?: number;
+  filter_selectivity?: number;
+  security_note?: string;
   query_plan?: {
     strategy: string;
     estimated_cost_ms: number | null;
@@ -567,33 +532,27 @@ export default function Dashboard() {
                     <div className="grid grid-cols-4 gap-4">
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
                         <div className="text-3xl font-bold text-primary">
-                          {encryptionResult.stats?.records || encryptionResult.records_encrypted || 0}
+                          {encryptionResult.records_encrypted || 0}
                         </div>
                         <div className="text-sm text-muted-foreground">Records Encrypted</div>
                       </div>
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
                         <div className="text-3xl font-bold text-primary">
-                          {encryptionResult.stats 
-                            ? (encryptionResult.stats.total_time_ms / 1000).toFixed(2)
-                            : encryptionResult.time_seconds?.toFixed(2) || 'N/A'}s
+                          {encryptionResult.time_seconds?.toFixed(2) ?? 'N/A'}s
                         </div>
                         <div className="text-sm text-muted-foreground">Time Taken</div>
                       </div>
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
                         <div className="text-3xl font-bold text-primary">
-                          {encryptionResult.stats
-                            ? ((encryptionResult.stats.records || 0) / (encryptionResult.stats.total_time_ms / 1000)).toFixed(0)
-                            : encryptionResult.throughput?.toFixed(0) || 'N/A'}/s
+                          {encryptionResult.throughput?.toFixed(0) ?? 'N/A'}/s
                         </div>
                         <div className="text-sm text-muted-foreground">Throughput</div>
                       </div>
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
                         <div className="text-3xl font-bold text-green-600">
-                          {encryptionResult.stats
-                            ? ((1061 * (encryptionResult.stats.total_time_ms / 1000) / 3).toFixed(1))
-                            : encryptionResult.speedup?.toFixed(1) || 'N/A'}x
+                          {encryptionResult.ciphertexts ?? 'N/A'}
                         </div>
-                        <div className="text-sm text-muted-foreground">Speedup</div>
+                        <div className="text-sm text-muted-foreground">Ciphertexts stored</div>
                       </div>
                     </div>
 

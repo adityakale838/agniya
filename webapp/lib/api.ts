@@ -17,41 +17,10 @@ export interface UploadResponse {
 export interface EncryptResponse {
   success: boolean;
   message?: string;
-  stats?: {
-    records: number;
-    original_records: number;
-    paillier_fields: number;
-    encryption_time_ms: number;
-    cache_warming_time_ms: number;
-    histogram_build_time_ms: number;
-    total_time_ms: number;
-    cache?: {
-      hits?: number;
-      misses?: number;
-      hit_rate?: number;
-    };
-    precomputation?: {
-      hit_count: number;
-      miss_count: number;
-      hit_rate: number;
-    };
-    compression?: {
-      original_size_bytes: number;
-      compressed_size_bytes: number;
-      compression_ratio: number;
-      bandwidth_reduction_pct: number;
-      compression_time_ms: number;
-    };
-    deduplication?: {
-      [field: string]: {
-        total_added: number;
-        unique_stored: number;
-        duplicates_found: number;
-        dedup_ratio: number;
-        storage_saved_pct: number;
-      };
-    };
-  };
+  records_encrypted?: number;
+  time_seconds?: number;
+  throughput?: number;
+  ciphertexts?: number;
 }
 
 export interface QueryResponse {
@@ -210,10 +179,10 @@ class APIService {
     };
     
     // Add range parameters if provided
-    if (rangeMin !== undefined && rangeMin !== null && rangeMin !== '') {
+    if (rangeMin !== undefined && rangeMin !== null) {
       body.rangeMin = rangeMin;
     }
-    if (rangeMax !== undefined && rangeMax !== null && rangeMax !== '') {
+    if (rangeMax !== undefined && rangeMax !== null) {
       body.rangeMax = rangeMax;
     }
     
