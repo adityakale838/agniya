@@ -1,6 +1,10 @@
 """
 Reproducible checks of AGNIYA's README claims against the actual code.
 
+NOTE: this audits `main` @ 340c4cd (before the phase0 cleanup). Run it from a checkout of
+that commit; on the cleaned branch the deleted modules report as errors. For the current
+code use tools/bench.py.
+
 Run:  envb\\Scripts\\python.exe tools\\verify_claims.py [--key-bits 2048] [--quick]
 Writes results to tools/verify_claims_results.json and prints a summary.
 Every check is self-contained; a failing check is reported, not fatal.

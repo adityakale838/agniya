@@ -1,0 +1,52 @@
+{
+  "env": {
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "cpu": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+    "cpus": 8,
+    "gmpy2": "2.3.2"
+  },
+  "keygen_2048": {
+    "seconds": 0.148,
+    "n_bits": 2048
+  },
+  "single_value_ms": {
+    "encrypt": 15.233,
+    "decrypt": 16.707,
+    "decrypt_crt": 3.906
+  },
+  "randomness_pool": {
+    "offline_ms_per_rn_all_cores": 6.141,
+    "online_us_per_encryption": 31.66,
+    "all_ciphertexts_distinct": true
+  },
+  "homomorphic_add": {
+    "ciphertexts": 2048,
+    "ms": 23.24,
+    "adds_per_sec": 88110
+  },
+  "packed_column": {
+    "rows": 20000,
+    "values_per_ciphertext": 62,
+    "ciphertexts": 323,
+    "exact": true,
+    "encrypt_s": 2.354,
+    "encrypt_rows_per_sec": 8497,
+    "sum_ms": 10.35,
+    "sum_rows_per_sec": 1931621
+  },
+  "server_insurance_charges": {
+    "rows": 1338,
+    "encrypt_s": 0.497,
+    "ciphertexts": 24,
+    "query_ms": 4.23,
+    "sum": 17755824.988,
+    "pandas_sum": 17755824.9908,
+    "abs_error": 0.002759
+  },
+  "seal_bfv_reference": {
+    "values_per_ciphertext": 4096,
+    "encrypt_ms": 7.39,
+    "us_per_value": 1.805
+  }
+}

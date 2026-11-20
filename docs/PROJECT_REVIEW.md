@@ -6,6 +6,27 @@ Every number below was measured on this machine with `tools/verify_claims.py`. R
 
 ---
 
+## 0. Status update: Phase 0 done on branch `phase0-honest-baseline`
+
+Sections 1–8 describe `main` @ `340c4cd`. On the branch:
+
+| Finding | Status |
+|---|---|
+| Private key committed (§5.2) | `cache/` removed and ignored; keys never written to disk. **The old key stays in git history: treat it as burned.** |
+| Deterministic cache (§5.1) | Replaced by a one-time rⁿ pool (`precomputation.py`): online encryption 32 µs, every ciphertext distinct |
+| Server stores plaintext, quantized SUM (§5.3, §6.2) | `/api/encrypt` encrypts packed columns; SUM on insurance charges is exact to the 4-decimal fixed point (error 0.003 vs 43,256) |
+| 1024/512-bit keys (§5.4) | Removed; `PaillierCryptosystem`/`Database` refuse < 2048 bits |
+| Packing overflow (§6.1) | Slots sized with headroom; tests with saturated slots and 5k cent-valued salaries |
+| RNS, LSH dedup, GPU, JIT, SIMD, ORAM, multi-level cache, planners, 3 extra servers, 8 stub benchmarks | Deleted (110 files, ~29k lines); recoverable from `main` |
+| Keygen 2047-bit / slow (§6.5) | Exact length, sieve + gmpy2: 2.0 s → 0.15 s |
+| Fabricated UI/API metrics | Removed; README numbers come from `tools/bench.py` |
+| OPE hard-coded key, `hash(plaintext)` stored | Fixed |
+| Tests / types | 87 tests pass, incl. API exactness + OPE range filters (was 91 + 1 failing + 2 broken files); `tsc` errors 10 → 0 |
+
+Current numbers are in `README.md` and `tools/bench_results.json`. Phase 1 (§9) starts from them.
+
+---
+
 ## 1. Verdict in one paragraph
 
 AGNIYA is a Python Paillier (additively homomorphic) library with a Flask API and a Next.js dashboard. The Paillier core works: keygen, encrypt, decrypt and CRT decrypt are textbook-correct and 91 of 92 unit tests pass. Almost every headline number in the README comes from one of these instead:
