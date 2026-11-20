@@ -118,22 +118,26 @@ def is_prime(n: int, k: int = 20) -> bool:
     return True
 
 
+_SMALL_PRIMES = [p for p in range(3, 2000, 2) if all(p % d for d in range(3, int(p ** 0.5) + 1, 2))]
+
+try:
+    from gmpy2 import is_prime as _gmp_is_prime
+except ImportError:  # pragma: no cover
+    _gmp_is_prime = None
+
+
 def generate_prime(bit_length: int) -> int:
     """
-    Generate a random prime number of specified bit length.
-    
-    Args:
-        bit_length: Desired bit length of the prime
-        
-    Returns:
-        Random prime number of specified bit length
+    Random prime with exactly `bit_length` bits and its top TWO bits set,
+    so the product of two such primes has exactly 2*bit_length bits.
+    Candidates come from `secrets`; small factors are sieved before Miller-Rabin.
     """
+    top2 = 3 << (bit_length - 2)
     while True:
-        # Generate random odd number of specified bit length using secrets
-        candidate = secrets.randbits(bit_length)
-        candidate |= (1 << bit_length - 1) | 1  # Set MSB and LSB
-        
-        if is_prime(candidate):
+        candidate = secrets.randbits(bit_length) | top2 | 1
+        if any(candidate % sp == 0 for sp in _SMALL_PRIMES):
+            continue
+        if (_gmp_is_prime(candidate, 40) if _gmp_is_prime else is_prime(candidate)):
             return candidate
 
 
