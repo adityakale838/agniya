@@ -1,0 +1,153 @@
+{
+  "env": {
+    "python": "3.12.10",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "cpu": "Intel64 Family 6 Model 140 Stepping 1, GenuineIntel",
+    "gmpy2": "2.3.2",
+    "cpus": 8
+  },
+  "keygen": {
+    "key_bits": 2048,
+    "n_bits_actual": 2048,
+    "seconds": 2.05,
+    "_check_seconds": 2.05
+  },
+  "encrypt_latency": {
+    "agniya_encrypt_ms": 19.406,
+    "textbook_builtin_pow_ms": 104.769,
+    "g_shortcut+gmpy2_ms": 13.105,
+    "crt_owner_side_ms": 10.463,
+    "readme_claim_baseline_ms": 285,
+    "readme_claim_optimized_ms": 0.24,
+    "python-paillier(phe)_encrypt_ms": 17.708,
+    "_check_seconds": 1.98
+  },
+  "decrypt_latency": {
+    "decrypt_ms": 17.334,
+    "decrypt_crt_ms": 6.01,
+    "readme_claim": "100ms -> 25ms",
+    "_check_seconds": 0.47
+  },
+  "homomorphic_add_throughput": {
+    "adds_per_sec": 18921,
+    "readme_claim": 33772,
+    "_check_seconds": 3.64
+  },
+  "sliding_window_vs_builtin_pow": {
+    "gmpy2_installed_so_sliding_window_never_runs": true,
+    "pure_python_sliding_window_ms": 101.4,
+    "builtin_pow_ms": 105.15,
+    "gmpy2_powmod_ms": 12.66,
+    "sliding_vs_pow_speedup": 1.04,
+    "readme_claim": "15-30% faster than pow()",
+    "_check_seconds": 0.9
+  },
+  "precompute_cache_determinism": {
+    "init_precompute_1001_values_s": 16.82,
+    "cache_returns_identical_ciphertext": true,
+    "plain_paillier_returns_identical_ciphertext": false,
+    "cached_lookups_per_sec": 2297451,
+    "plain_python_dict_get_per_sec": 9445636,
+    "readme_claims": "1000x / 74,426x / 6.7M ops/sec",
+    "_check_seconds": 16.97
+  },
+  "rns_compression_roundtrip": {
+    "ciphertext_bytes": 512,
+    "compressed_bytes": 128,
+    "M_bits(info_capacity)": 993,
+    "roundtrip_equal": false,
+    "decrypts_to_original": false,
+    "decrypted_value": "8570451100389089743106862185186574366885",
+    "readme_claim": "50% lossless, zero security loss",
+    "_check_seconds": 0.03
+  },
+  "lsh_dedup_on_real_ciphertexts": {
+    "distinct_plaintexts": 10,
+    "rows": 300,
+    "dedup_saved_pct_with_proper_paillier": 0.0,
+    "dedup_saved_pct_with_agniya_cache": 96.7,
+    "readme_claim": "60-80% savings, works with probabilistic encryption",
+    "_check_seconds": 4.76
+  },
+  "batch_packing_overflow": {
+    "slots_per_ciphertext": 32,
+    "small_values_correct": true,
+    "small_500_values_s": 0.369,
+    "large_values_expected": 179703269645,
+    "large_values_got": 42264316204,
+    "large_values_correct": false,
+    "_check_seconds": 16.5
+  },
+  "multi_level_cache_key_downgrade": {
+    "low_key_bits_used_for_queries_over_100_rows": 1023,
+    "storage_key_bits": 2048,
+    "_check_seconds": 0.54
+  },
+  "jit_encryptor": {
+    "error": "ValueError: high is out of bounds for uint64",
+    "trace": "Traceback (most recent call last):\n  File \"D:\\AGNIYA 2.0\\tools\\verify_claims.py\", line 33, in run\n    R[name] = fn(*a)\n              ^^^^^^\n  File \"D:\\AGNIYA 2.0\\tools\\verify_claims.py\", line 235, in c_jit\n    JITEncryptor(pub).encrypt_batch([1, 2, 3])\n  File \"D:\\AGNIYA 2.0\\agniya\\core\\paillier_jit.py\", line 233, in encrypt_batch\n    randoms_np = np.random.randint(\n                 ^^^^^^^^^^^^^^^^^^\nValueError: high is out of bounds for uint64\n",
+    "_check_seconds": 0.0
+  },
+  "gpu_int64_representation": {
+    "fits_int64": false,
+    "note": "paillier_gpu/oram_gpu cast n to cp.int64 -> init fails, silently CPU",
+    "err": "int too big to convert",
+    "_check_seconds": 0.0
+  },
+  "parallel_tree_vs_sequential": {
+    "n": 2048,
+    "sequential_python_int_ms": 103.4,
+    "sequential_gmpy2_single_thread_ms": 17.1,
+    "parallel_tree_ms": 86.5,
+    "tree_vs_python_seq": 1.2,
+    "tree_vs_gmpy2_seq": 0.2,
+    "readme_claim": "1.5-3x",
+    "_check_seconds": 1.93
+  },
+  "batch_encrypt_threads_vs_processes": {
+    "n": 160,
+    "sequential_s": 2.68,
+    "threadpool8_s": 2.52,
+    "processpool_g_shortcut_s": 0.66,
+    "thread_speedup": 1.06,
+    "process_speedup": 4.05,
+    "_check_seconds": 9.09
+  },
+  "honest_precompute_randomness_pool": {
+    "offline_ms_per_r^n": 17.026,
+    "online_us_per_encryption": 34.5,
+    "online_encryptions_per_sec": 28984,
+    "ciphertexts_all_distinct": true,
+    "_check_seconds": 3.45
+  },
+  "plaintext_baseline": {
+    "python_sum_10k_ms": 0.096,
+    "note": "sum_query() takes plaintext and holds the private key; compare against this",
+    "_check_seconds": 0.01
+  },
+  "server_end_to_end_sum": {
+    "column": "charges",
+    "rows": 1338,
+    "encrypt_endpoint_s": 32.76,
+    "encrypt_reported_encrypt_time_s": 0,
+    "exact_sum": 17755165,
+    "server_sum": 17798421.027027026,
+    "sum_rel_error_pct": 0.244,
+    "exact_avg": 13269.93,
+    "server_avg": 13302.257867733204,
+    "server_reported_cache_hit_rate": 0.0,
+    "server_reported_ops_per_sec": 16193.0,
+    "loaded_committed_private_key_from_repo": true,
+    "_check_seconds": 35.18
+  },
+  "tenseal_bfv_reference": {
+    "scheme": "BFV N=8192 (TenSEAL 0.3.18 / SEAL)",
+    "values_per_ciphertext": 4096,
+    "encrypt_batch_ms": 8.02,
+    "amortized_us_per_value": 1.958,
+    "ct_add_ms(4096 values)": 0.257,
+    "full_encrypted_sum_ms": 70.1,
+    "sum_correct": true,
+    "ct_bytes": 432452
+  }
+}
