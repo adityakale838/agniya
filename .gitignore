@@ -93,3 +93,4 @@ cache/
 *.log
 api/uploads/
 uploads/
+output/
