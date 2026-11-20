@@ -298,3 +298,36 @@ class TestBatchPerformance:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestPackingHeadroom:
+    """Slot sums must never overflow into neighbouring slots."""
+
+    @pytest.fixture(scope="class")
+    def aggregator(self):
+        pub, priv = generate_keypair(2048)
+        return BatchedAggregator(pub, priv)
+
+    def test_large_sums_exact(self, aggregator):
+        import random
+        rng = random.Random(7)
+        values = [rng.randint(3_000_000, 15_000_000) for _ in range(5_000)]  # salaries in cents
+        assert aggregator.sum_values(values) == sum(values)
+
+    def test_max_values_exact(self, aggregator):
+        values = [2**32 - 1] * 3_000  # every slot saturated
+        assert aggregator.sum_values(values) == sum(values)
+
+    def test_layout_has_headroom(self, aggregator):
+        bits, slots = aggregator.layout(max_value=10**6, count=100_000)
+        per_slot = -(-100_000 // slots)
+        assert per_slot * 10**6 < 2**bits
+        assert slots * bits < aggregator.public_key.n.bit_length()
+
+    def test_negative_values_exact(self, aggregator):
+        values = [5, -20, 300, -7, 0] * 50
+        assert aggregator.sum_values(values) == sum(values)
+
+    def test_rejects_floats(self, aggregator):
+        with pytest.raises(ValueError):
+            aggregator.sum_values([1.5, 2.0])

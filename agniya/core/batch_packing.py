@@ -1,18 +1,16 @@
 """
-Batch Packing for Paillier Operations (Major Patent Innovation)
+Packing several plaintexts into one Paillier ciphertext.
 
-This module implements SIMD-style batch operations by packing multiple
-plaintexts into a single Paillier ciphertext, achieving 8-32x throughput
-improvement regardless of key size.
-
-Patent Claim: A method for encoding multiple database values into single
-homomorphic ciphertexts using slot-based representation, enabling parallel
-encrypted computation with dramatic performance improvements.
+Values are laid out in fixed-width slots of one plaintext: v0 + v1*2^b + v2*2^2b ...
+One encryption then covers many values, and multiplying ciphertexts adds all
+slots at once. This is a well-known technique (e.g. Ge & Zdonik, VLDB 2007).
+Correctness requires headroom: each slot must hold the SUM of everything that
+lands in it, which BatchedAggregator.layout() guarantees.
 """
 
-import numpy as np
-from typing import List, Tuple
-from agniya.core.paillier import PaillierPublicKey, PaillierPrivateKey, encrypt, decrypt
+from typing import Callable, Dict, List, Optional, Tuple
+from agniya.core.paillier import (PaillierPublicKey, PaillierPrivateKey, encrypt, decrypt,
+                                  decrypt_crt, sum_ciphertexts)
 
 
 class BatchPacker:
@@ -236,108 +234,66 @@ class BatchOperations:
 
 
 class BatchedAggregator:
-    """
-    High-level interface for batch aggregations (SUM, COUNT, AVG).
-    
-    This shows the practical benefit for database queries.
-    """
-    
-    def __init__(self, public_key: PaillierPublicKey,
-                 private_key: PaillierPrivateKey):
-        """
-        Initialize aggregator.
-        
-        Args:
-            public_key: Paillier public key
-            private_key: Paillier private key
-        """
+    """SUM / COUNT / AVG over non-negative integers using packed ciphertexts."""
+
+    def __init__(self, public_key: PaillierPublicKey, private_key: PaillierPrivateKey,
+                 encrypt_batch: Optional[Callable[[List[int]], List[int]]] = None):
         self.public_key = public_key
         self.private_key = private_key
-        
-        # Create packer (32-bit slots)
         self.packer = BatchPacker(slot_size_bits=32, max_slots=32)
-        
-        # Create batch operations
         self.batch_ops = BatchOperations(public_key, self.packer)
-        
-        self.batch_size = self.batch_ops.batch_size
-    
+        self.batch_size = self.batch_ops.batch_size  # low-level default; sum_values sizes slots itself
+        self.encrypt_batch = encrypt_batch or (lambda ms: [encrypt(public_key, m) for m in ms])
+
+    def layout(self, max_value: int, count: int) -> Tuple[int, int]:
+        """(slot_bits, slots) such that no slot can overflow when all `count` values are summed."""
+        usable = self.public_key.n.bit_length() - 1  # packed plaintext stays < n
+        slots = max(1, usable // (max(max_value, 1).bit_length() + 1))
+        while True:
+            per_slot = -(-count // slots)  # ceil
+            bits = max(max_value, 1).bit_length() + per_slot.bit_length()  # sum < 2^bits
+            if slots * bits <= usable:
+                return bits, slots
+            if slots == 1:
+                raise ValueError("Sum of values does not fit in one plaintext; use a larger key")
+            slots -= 1
+
+    def encrypt_column(self, values: List[int]) -> Dict:
+        """Encrypt a column of ints into packed ciphertexts (negatives handled by a public offset)."""
+        if any(not isinstance(v, int) for v in values):
+            raise ValueError("Packed columns hold integers only (scale decimals first)")
+        offset = min(0, min(values, default=0))
+        shifted = [v - offset for v in values]
+        bits, slots = self.layout(max(shifted, default=0), len(shifted))
+        packed = []
+        for i in range(0, len(shifted), slots):
+            acc = 0
+            for j, v in enumerate(shifted[i:i + slots]):
+                acc |= v << (j * bits)
+            packed.append(acc)
+        return {'ciphertexts': self.encrypt_batch(packed), 'slot_bits': bits,
+                'slots': slots, 'count': len(values), 'offset': offset}
+
+    def sum_column(self, column: Dict) -> int:
+        """Homomorphic sum of a packed column: one ciphertext product, one decryption."""
+        if not column['ciphertexts']:
+            return 0
+        ct = sum_ciphertexts(self.public_key, column['ciphertexts'])
+        packed_sum = decrypt_crt(self.public_key, self.private_key, ct)
+        bits, mask = column['slot_bits'], (1 << column['slot_bits']) - 1
+        slot_total = sum((packed_sum >> (k * bits)) & mask for k in range(column['slots']))
+        return slot_total + column['offset'] * column['count']
+
     def sum_values(self, values: List[int]) -> int:
-        """
-        Compute SUM of values using batch packing.
-        
-        Traditional: Encrypt N values individually = N encryptions
-        Batched: Encrypt N/batch_size packed values = N/batch_size encryptions
-        
-        Speedup: batch_size × (e.g., 8-32×)
-        
-        Args:
-            values: List of integers to sum
-            
-        Returns:
-            Plaintext sum
-        """
         if not values:
             return 0
-        
-        # Split into batches
-        batches = []
-        for i in range(0, len(values), self.batch_size):
-            batch = values[i:i + self.batch_size]
-            
-            # Pad last batch with zeros if needed
-            if len(batch) < self.batch_size:
-                batch = batch + [0] * (self.batch_size - len(batch))
-            
-            # Encrypt batch
-            encrypted = self.batch_ops.encrypt_batch(batch)
-            batches.append(encrypted)
-        
-        # Sum all batches homomorphically
-        sum_encrypted = self.batch_ops.sum_batches(batches)
-        
-        # Decrypt result
-        sums = self.batch_ops.decrypt_batch(
-            self.private_key, sum_encrypted, self.batch_size
-        )
-        
-        # Sum the individual slot results
-        total = sum(sums)
-        
-        return total
-    
+        return self.sum_column(self.encrypt_column(list(values)))
+
     def count_matching(self, values: List[int], target: int) -> int:
-        """
-        Count how many values equal target.
-        
-        Args:
-            values: List of values
-            target: Value to count
-            
-        Returns:
-            Count of matching values
-        """
-        # Convert to binary: 1 if match, 0 otherwise
-        matches = [1 if v == target else 0 for v in values]
-        
-        # Sum the matches (batched)
-        return self.sum_values(matches)
-    
+        return self.sum_values([1 if v == target else 0 for v in values])
+
     def average_values(self, values: List[int]) -> float:
-        """
-        Compute average using batched operations.
-        
-        Args:
-            values: List of values
-            
-        Returns:
-            Average value
-        """
-        if not values:
-            return 0.0
-        
-        total = self.sum_values(values)
-        return total / len(values)
+        return self.sum_values(values) / len(values) if values else 0.0
 
 
 def demonstrate_batch_packing():
