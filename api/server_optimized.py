@@ -8,8 +8,13 @@ What it does, precisely:
                   order and get one OPE tag per row, so a range is a run of slots
 - /api/query    : SUM / AVG / COUNT computed by multiplying ciphertexts, then ONE decryption
 
-Trust model (demo): this process generates and holds the private key in memory only.
-It is the data owner, not an untrusted server. Keys are never written to disk.
+Two trust models:
+- /api/upload, /api/encrypt, /api/query (dashboard demo): this process receives the plaintext
+  CSV and generates and holds the private key in memory. It is the data owner.
+- /api/v2/columns, /api/v2/aggregate (use agniya.client.AgniyaClient): the client keeps the
+  private key and the OPE keys. This process only ever sees the public modulus n, packed
+  ciphertexts, values per ciphertext, row counts and sorted OPE tags, and returns ciphertexts.
+  It is honest-but-curious: nothing here protects the integrity of results.
 Decimal columns are stored as fixed-point integers with FIXED_POINT_DECIMALS digits.
 """
 
@@ -28,6 +33,8 @@ from werkzeug.utils import secure_filename
 from pyope.ope import ValueRange
 
 from agniya.core.ultimate_system import UltimateOptimizedDatabase
+from agniya.core.paillier import MIN_KEY_BITS, PaillierPublicKey
+from agniya.core.batch_packing import range_plan
 from agniya.hybrid.fast_ope import FastOPE
 
 FIXED_POINT_DECIMALS = 4
@@ -239,6 +246,76 @@ def list_databases():
     return jsonify({'databases': [
         {'filename': name, 'records': ds['record_count'], 'paillier_fields': list(ds['columns'])}
         for name, ds in encrypted_datasets.items()]})
+
+
+# ---- client-held keys: public key + ciphertexts in, ciphertexts out ------------------------
+# dataset -> {'pub': PaillierPublicKey, 'columns': {name: {'cts', 'slots', 'count', 'tags'}}}
+owner_datasets = {}
+
+
+def _hex_ints(xs, bound, what):
+    out = [int(x, 16) for x in xs]
+    if any(not 0 < v < bound for v in out):
+        raise ValueError(f'{what} out of range')
+    return out
+
+
+@app.route('/api/v2/columns', methods=['POST'])
+def v2_store_column():
+    d = request.json or {}
+    try:
+        name, column = str(d['dataset']), str(d['column'])
+        n = int(d['n'], 16)
+        if n.bit_length() < MIN_KEY_BITS or n % 2 == 0:
+            raise ValueError(f'n must be an odd modulus of at least {MIN_KEY_BITS} bits')
+        cts = _hex_ints(d['ciphertexts'], n * n, 'ciphertext')
+        slots, count = int(d['slots']), int(d['count'])
+        if slots < 1 or not slots * (len(cts) - 1) < count <= slots * len(cts):
+            raise ValueError('count does not match ciphertexts and slots')
+        tags = d.get('ope_tags')
+        if tags is not None:
+            tags = [int(t) for t in tags]
+            if len(tags) != count or any(a > b for a, b in zip(tags, tags[1:])):
+                raise ValueError('ope_tags must be sorted, one per value')
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({'error': f'Bad column upload: {e}'}), 400
+    ds = owner_datasets.setdefault(name, {'pub': PaillierPublicKey(n, n + 1, n * n, n.bit_length()), 'columns': {}})
+    if ds['pub'].n != n:
+        return jsonify({'error': f'Dataset {name} uses a different public key'}), 409
+    ds['columns'][column] = {'cts': cts, 'slots': slots, 'count': count, 'tags': tags}
+    return jsonify({'success': True, 'dataset': name, 'column': column, 'ciphertexts': len(cts),
+                    'count': count, 'range_filterable': tags is not None})
+
+
+@app.route('/api/v2/aggregate', methods=['POST'])
+def v2_aggregate():
+    """Encrypted SUM over a column, optionally over rows whose OPE tag is in [lo_tag, hi_tag]."""
+    d = request.json or {}
+    ds = owner_datasets.get(d.get('dataset'))
+    col = ds['columns'].get(d.get('column')) if ds else None
+    if col is None:
+        return jsonify({'error': 'Unknown dataset or column'}), 404
+    start = time.perf_counter()
+    i, j = 0, col['count']
+    if d.get('lo_tag') is not None or d.get('hi_tag') is not None:
+        if col['tags'] is None:
+            return jsonify({'error': 'Column was uploaded without OPE tags'}), 400
+        try:
+            if d.get('lo_tag') is not None:
+                i = bisect_left(col['tags'], int(d['lo_tag']))
+            if d.get('hi_tag') is not None:
+                j = bisect_right(col['tags'], int(d['hi_tag']))
+        except (TypeError, ValueError):
+            return jsonify({'error': 'Tags must be integers'}), 400
+    product, edges = range_plan(ds['pub'], col['cts'], col['slots'], col['count'], i, j) if i < j else (None, [])
+    s = col['slots']
+    return jsonify({
+        'count': max(j - i, 0),
+        'product': format(product, 'x') if product is not None else None,
+        'edges': [{'ciphertext': format(c, 'x'), 'first_slot': lo, 'end_slot': hi} for c, lo, hi in edges],
+        'ciphertexts_used': (j - 1) // s - i // s + 1 if i < j else 0,
+        'time_ms': round((time.perf_counter() - start) * 1000, 2),
+    })
 
 
 if __name__ == '__main__':

@@ -233,6 +233,35 @@ class BatchOperations:
         return result
 
 
+def range_plan(public_key: PaillierPublicKey, ciphertexts: List[int], slots: int, count: int,
+               i: int, j: int) -> Tuple[Optional[int], List[Tuple[int, int, int]]]:
+    """Public-key half of a range SUM over packed values i..j-1 (0 <= i < j <= count).
+
+    Returns (product of the ciphertexts wholly inside the range, or None) and the (at most
+    two) ciphertexts cut by the range edges as (ciphertext, first_slot, end_slot). The
+    key holder decrypts the product once and each edge on its own, so it sees the edge
+    slots individually; whoever runs this function sees no plaintext."""
+    full, edges = [], []
+    for c in range(i // slots, (j - 1) // slots + 1):
+        lo, hi = max(i, c * slots) - c * slots, min(j, (c + 1) * slots, count) - c * slots
+        if lo == 0 and hi == min(slots, count - c * slots):
+            full.append(ciphertexts[c])
+        else:
+            edges.append((ciphertexts[c], lo, hi))
+    return (sum_ciphertexts(public_key, full) if full else None), edges
+
+
+def decrypt_range(public_key: PaillierPublicKey, private_key: PaillierPrivateKey, product: Optional[int],
+                  edges: List[Tuple[int, int, int]], slot_bits: int, slots: int) -> int:
+    """Private-key half of range_plan: slot sums of the product plus the selected edge slots."""
+    mask = (1 << slot_bits) - 1
+    total = 0
+    for ct, lo, hi in ([(product, 0, slots)] if product is not None else []) + list(edges):
+        m = decrypt_crt(public_key, private_key, ct)
+        total += sum((m >> (k * slot_bits)) & mask for k in range(lo, hi))
+    return total
+
+
 class BatchedAggregator:
     """SUM / COUNT / AVG over non-negative integers using packed ciphertexts."""
 
@@ -285,29 +314,13 @@ class BatchedAggregator:
         return slot_total + column['offset'] * column['count']
 
     def sum_range(self, column: Dict, i: int, j: int) -> int:
-        """Sum of values i..j-1 (in column order).
-
-        Ciphertexts wholly inside the range are multiplied and decrypted once; the (at most
-        two) ciphertexts cut by the range edges are decrypted on their own, so the KEY HOLDER
-        sees those slots individually. The aggregating party never decrypts anything."""
-        s, bits, count = column['slots'], column['slot_bits'], column['count']
-        i, j = max(i, 0), min(j, count)
+        """Sum of values i..j-1 (in column order). See range_plan for who sees what."""
+        i, j = max(i, 0), min(j, column['count'])
         if i >= j:
             return 0
-        mask = (1 << bits) - 1
-        full, total = [], 0
-        cts = column['ciphertexts']
-        for c in range(i // s, (j - 1) // s + 1):
-            lo, hi = max(i, c * s) - c * s, min(j, (c + 1) * s, count) - c * s
-            if lo == 0 and hi == min(s, count - c * s):
-                full.append(cts[c])
-            else:
-                m = decrypt_crt(self.public_key, self.private_key, cts[c])
-                total += sum((m >> (k * bits)) & mask for k in range(lo, hi))
-        if full:
-            m = decrypt_crt(self.public_key, self.private_key, sum_ciphertexts(self.public_key, full))
-            total += sum((m >> (k * bits)) & mask for k in range(s))
-        return total + column['offset'] * (j - i)
+        product, edges = range_plan(self.public_key, column['ciphertexts'], column['slots'], column['count'], i, j)
+        return decrypt_range(self.public_key, self.private_key, product, edges, column['slot_bits'],
+                             column['slots']) + column['offset'] * (j - i)
 
     def sum_values(self, values: List[int]) -> int:
         if not values:

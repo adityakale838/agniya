@@ -14,6 +14,17 @@ col = db.encrypt_column(list(range(1, 20_001)))   # packed: ~60-200 values per c
 db.sum_column(col)                    # 200010000, one ciphertext product + one decryption
 ```
 
+With the keys kept by the data owner and an untrusted server (`/api/v2`):
+
+```python
+from agniya.client import AgniyaClient
+
+c = AgniyaClient("http://127.0.0.1:5000", dataset="claims")    # private key + OPE keys stay here
+c.upload("charges", charges, decimals=4, range_filter=True)      # server gets ciphertexts + OPE tags
+c.query("charges")                    # {'sum', 'count', 'avg'}: server multiplies, client decrypts
+c.query("charges", lo=5000, hi=20000)
+```
+
 ## Measured performance
 
 2048-bit keys. The table below is **generated** by `python -X utf8 tools/bench.py` (do not edit by hand);
@@ -55,7 +66,8 @@ small per-value ciphertexts and simplicity. The plan for closing the gap is in
 
 ## Security model and limitations (read this)
 
-- The API server generates and holds the private key (in memory only). In this demo it is the **data owner**, not an untrusted cloud server. A deployment against an untrusted server must keep the private key on the client and send the server only the public key and ciphertexts; `sum_encrypted` and `BatchedAggregator.sum_column`'s first step need only the public key.
+- **Two modes.** The dashboard endpoints (`/api/upload`, `/api/encrypt`, `/api/query`) receive the plaintext CSV and the server generates and holds the private key in memory: there the server **is the data owner**. The `/api/v2` endpoints with `agniya.client.AgniyaClient` keep the private key, the OPE keys and all plaintext on the client; the server stores and sees only the public modulus `n`, packed ciphertexts, values per ciphertext, row counts and sorted OPE tags, and answers with ciphertexts (`range_plan` needs only the public key).
+- The `/api/v2` server is assumed **honest-but-curious**: nothing verifies that it computed the product correctly. Keys live in client memory only (no key storage yet).
 - Paillier is IND-CPA secure under DCR with `AGNIYA_RN_METHOD=standard`; the default DJN randomness additionally assumes short exponents are indistinguishable (Damgård, Jurik, Nielsen 2010). Neither is **post-quantum**.
 - Packed ciphertexts reveal the number of rows. The fixed-point scale and the column offset are public.
 - **OPE tags leak the order of values** and more (Boldyreva et al. 2011; Naveed et al., CCS 2015). Use `OPE+Paillier` only for columns where that is acceptable. Sorted packing reveals nothing beyond that order. For a range SUM the key holder decrypts the (at most two) ciphertexts cut by the range edges on their own, so it sees those slots' values individually.
@@ -94,10 +106,13 @@ API server options (environment variables): `AGNIYA_HOST` (default `127.0.0.1`),
 | `POST /api/encrypt` | `{filename, schema: [{name, encryption: "Paillier-2048" \| "OPE+Paillier" \| "AES-256" \| "Plaintext"}], sample_size?}` | records, seconds, ciphertext counts per field |
 | `POST /api/query` | `{filename, type: "SUM" \| "AVG" \| "COUNT", column, rangeMin?, rangeMax?}` | result, time_ms, ciphertexts aggregated |
 | `GET /api/databases` | | encrypted datasets in memory |
+| `POST /api/v2/columns` | `{dataset, column, n, ciphertexts: [hex], slots, count, ope_tags?: [int, sorted]}` (sent by `AgniyaClient.upload`) | stored ciphertext count |
+| `POST /api/v2/aggregate` | `{dataset, column, lo_tag?, hi_tag?}` | `{count, product: hex, edges: [{ciphertext, first_slot, end_slot}]}`, decrypted by `AgniyaClient.query` |
 
 ## Layout
 
 ```
+agniya/client.py   AgniyaClient: data-owner side of /api/v2 (keys, encryption, decryption)
 agniya/core/       paillier.py, precomputation.py (rⁿ pool), batch_packing.py, ultimate_system.py (Database)
 agniya/hybrid/     AES-GCM, key wrapping, schema, OPE+Paillier, hybrid row storage
 agniya/storage/    generic data structures (Bloom/Cuckoo filters, LSM tree, wavelet tree, erasure coding)

@@ -176,6 +176,30 @@ def main():
                                     "ms": ms(stats(lambda: cl.post("/api/query", json=rbody), max(5, reps // 3)))})
         section(f"api_insurance_{schema_name}", out)
 
+    # Client-held keys (/api/v2): the client encrypts, tags and decrypts; the server sees only
+    # n, ciphertexts and OPE tags. In-process HTTP (Flask test client): JSON encoding included,
+    # network latency not. Key generation is excluded here (see keygen_ms).
+    from agniya.client import AgniyaClient
+
+    def tc(path, body):
+        resp = cl.post(path, json=body)
+        assert resp.status_code == 200, resp.get_json()
+        return resp.get_json()
+
+    oc = AgniyaClient(tc, dataset="bench_split")
+    t = time.perf_counter()
+    oc.upload("charges", df["charges"], decimals=4, range_filter=True)
+    t_up = time.perf_counter() - t
+    assert abs(oc.query("charges")["sum"] - df["charges"].sum()) < len(df) * 0.5e-4
+    sel = df["charges"][(df["charges"] >= 5000) & (df["charges"] <= 20000.5)]
+    rq = oc.query("charges", 5000, 20000.5)
+    assert rq["count"] == len(sel) and abs(rq["sum"] - sel.sum()) < len(sel) * 0.5e-4
+    section("split_insurance_charges_ope", {
+        "rows": len(df), "encrypt_upload_s_excl_keygen": round(t_up, 3),
+        "sum_query_ms": ms(stats(lambda: oc.query("charges"), max(5, reps // 3))),
+        "range_query": {"min": 5000, "max": 20000.5, "rows_selected": len(sel),
+                        "ms": ms(stats(lambda: oc.query("charges", 5000, 20000.5), max(5, reps // 3)))}})
+
     # Baselines in the same harness.
     vals = [random.randint(1, 10**6) for _ in range(100_000)]
     section("baseline_plain_python_sum_100k_ms", ms(stats(lambda: sum(vals), reps)))
@@ -237,6 +261,11 @@ def update_readme(results_path=None):
     if ope:
         rows.append((f"API, insurance_real.csv charges as OPE+Paillier: encrypt / range SUM",
                      f"{ope['encrypt_s']:.2f} s / {ope['range_query']['ms']['median']:.1f} ms"))
+    sp = r.get("split_insurance_charges_ope")
+    if sp:
+        rows.append(("Client-held keys (`/api/v2`), same column: encrypt + upload / SUM / range SUM",
+                     f"{sp['encrypt_upload_s_excl_keygen']:.2f} s / {sp['sum_query_ms']['median']:.1f} ms / "
+                     f"{sp['range_query']['ms']['median']:.1f} ms"))
     if "baseline_seal_bfv_4096_values" in r:
         rows.append(("Reference: SEAL BFV (TenSEAL), 4,096 values", f"{r['baseline_seal_bfv_4096_values']['us_per_value']} µs/value"))
     if "baseline_phe_encrypt_one_value_ms" in r:
