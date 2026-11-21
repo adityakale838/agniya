@@ -141,10 +141,22 @@ Bit-identical OPE tags were not guaranteed: JS and CPython could round `log` dif
 | Encrypt `insurance_real.csv`: `age` and `charges` as OPE, `bmi` and `children` packed (1,338 rows, 52 ciphertexts, including key generation and upload) | — | 1.37 s |
 | Range SUM / AVG with decryption | — | ~120 ms |
 
+**Web Worker:** all of this now runs in `webapp/lib/agniya-worker.ts`, reached from the page through a small RPC wrapper (`agniya-worker-client.ts`). The private key and the OPE keys exist only inside the worker. Leaving the page, switching modes or re-encrypting terminates the worker, and with it the key. Main-thread stalls during "Encrypt", measured with a `MessageChannel` ping loop on `insurance_real.csv`:
+
+| | Longest main-thread stall | Long tasks (>50 ms) | Total time |
+|---|---|---|---|
+| Before (main thread, 4 packed columns) | 314 ms | 217, 223, 52, 313 ms | 1.15 s |
+| Worker (same 4 columns) | 38 ms | none | 1.04 s |
+| Worker (`age` and `charges` with OPE) | 48 ms | none | 1.75 s |
+
+**Bug found and fixed while verifying this:** the browser rounded fixed-point values with `Math.round` (half up), while Python uses half-to-even. In `insurance_real.csv`, **155 of 1,338** `charges` values have 5 decimals ending in 5, so `value × 10⁴` is exactly `.5`. The browser's `SUM(charges)` over 5,000–20,000.5 came out 0.0088 too high (7,405,671.8321 instead of 7,405,671.8233). The end-to-end test allowed ±0.035, so it didn't catch this. `fixedPoint()` now rounds half to even, and two test changes would catch it:
+- a new test compares the browser's rounding with Python's on every `charges` value plus edge cases;
+- the end-to-end test now requires the exact fixed-point sum.
+
+The dashboard's `SUM(charges)` is now 17,755,824.988, identical to Python.
+
 **Not done:**
-- The crypto runs on the main thread, so the page freezes during key generation and encryption. Move it to a Web Worker before handling large files.
 - There's no browser key file. WebCrypto has no scrypt, so it needs PBKDF2 or a small scrypt implementation, and a format the Python client can read.
-- Values are rounded with `Math.round` (half up) where Python uses round-half-even. The two differ only for values exactly halfway between two 4-decimal fixed-point steps.
 - The dashboard's existing lint errors (10 `no-explicit-any`) are unchanged.
 
 ## 1. Verdict in one paragraph

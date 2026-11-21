@@ -80,10 +80,21 @@ def test_browser_client_end_to_end(tmp_path):
             "queries": queries}}, tmp_path)
     finally:
         httpd.shutdown()
+    scale = {"charges": 10**4, "age": 1, "bmi": 10**4}
     for (col, lo, hi), ans in zip(queries, a["answers"]):
         x = df[col]
         sel = x[(x >= (lo if lo is not None else -1e18)) & (x <= (hi if hi is not None else 1e18))]
+        exact = sum(int(round(float(v) * scale[col])) for v in sel) / scale[col]  # what Python stores
         assert ans["count"] == len(sel), (col, lo, hi)
-        assert ans["sum"] == pytest.approx(sel.sum(), abs=len(sel) * 0.5e-4), (col, lo, hi)
+        assert ans["sum"] == pytest.approx(exact, abs=1e-9), (col, lo, hi)
     stored = json.dumps({k: str(v) for k, v in srv.owner_datasets["browser-e2e"]["columns"]["charges"].items()})
     assert a["p"] not in stored and format(int(a["p"]), "x") not in stored
+
+
+def test_fixed_point_rounding_matches_python(tmp_path):
+    """Exact .5 cases are common (5-decimal data at scale 10^4): both sides must round half to even."""
+    df = pd.read_csv(os.path.join(ROOT, "data", "insurance_real.csv"))
+    values = df["charges"].tolist() + [0.00005, 0.00015, -2.5, -3.5, 2.5, 1e-9, 123456.78905]
+    for scale in (1, 10**4):
+        a = run_ts({"fixed": {"values": values, "scale": scale}}, tmp_path)
+        assert [int(v) for v in a["fixed"]] == [int(round(float(v) * scale)) for v in values]

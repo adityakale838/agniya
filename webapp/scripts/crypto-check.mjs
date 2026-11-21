@@ -29,6 +29,7 @@ if (job.ope) {
   out.ope_ms = performance.now() - t;
   out.tags = job.ope.values.map(v => tags.get(big(v)).toString());
 }
+if (job.fixed) out.fixed = job.fixed.values.map(v => A.fixedPoint(v, job.fixed.scale).toString());
 if (job.client) {  // end to end against a running server
   const c = new A.BrowserClient(A.httpPost(job.client.url), job.client.dataset);
   for (const col of job.client.columns) await c.upload(col.name, col.values, col.decimals, col.range);

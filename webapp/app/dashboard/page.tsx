@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, Lock, ArrowLeft, FileText, Zap, Database, Search, Calculator, Filter, TrendingUp, AlertCircle, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -26,7 +26,8 @@ import {
 } from '@/components/ui/table';
 import Link from 'next/link';
 import { apiService, API_BASE_URL } from '@/lib/api';
-import { BrowserClient, httpPost, parseCsv } from '@/lib/agniya-browser';
+import { parseCsv } from '@/lib/agniya-browser';
+import { CryptoWorker } from '@/lib/agniya-worker-client';
 
 const PAILLIER: string[] = ['Paillier-2048', 'OPE+Paillier'];
 
@@ -107,16 +108,20 @@ export default function Dashboard() {
   
   const [error, setError] = useState<string | null>(null);
 
-  // Browser mode: the CSV is parsed and encrypted here; keys never leave this tab (/api/v2).
+  // Browser mode: the CSV is parsed here and encrypted in a Web Worker that holds the keys (/api/v2).
   const [browserMode, setBrowserMode] = useState(true);
   const csvRef = useRef<{ header: string[]; rows: string[][] } | null>(null);
-  const clientRef = useRef<BrowserClient | null>(null);
+  const workerRef = useRef<CryptoWorker | null>(null);
+
+  const dropWorker = () => { workerRef.current?.terminate(); workerRef.current = null; };  // drops the key
+  useEffect(() => () => workerRef.current?.terminate(), []);  // leaving the page drops the key too
 
   const switchMode = (browser: boolean) => {
     setBrowserMode(browser);
     setFile(null); setUploadData(null); setEncryptionResult(null); setSchema([]); setQueries([]);
     setSelectedField(''); setRangeMin(''); setRangeMax('');
-    csvRef.current = null; clientRef.current = null;
+    csvRef.current = null;
+    dropWorker();
     setActiveTab('upload');
   };
 
@@ -142,30 +147,30 @@ export default function Dashboard() {
   };
 
   const encryptLocally = async (): Promise<EncryptionResult> => {
-    await new Promise(r => setTimeout(r, 50));  // let the spinner paint: key generation blocks ~0.5-2 s
     const t0 = performance.now();
     const fields = schema.filter(f => PAILLIER.includes(f.encryption));
     if (!fields.length) throw new Error('Choose Paillier-2048 or OPE+Paillier for at least one numeric field.');
-    const client = new BrowserClient(httpPost(API_BASE_URL), `${uploadData!.filename}-${crypto.randomUUID().slice(0, 8)}`);
+    dropWorker();  // re-encrypting starts a fresh key pair
+    const worker = new CryptoWorker();
+    workerRef.current = worker;
+    await worker.init(API_BASE_URL, `${uploadData!.filename}-${crypto.randomUUID().slice(0, 8)}`);
     let ciphertexts = 0;
     for (const f of fields) {
       const vals = columnValues(f.name);
       if (!vals.every(Number.isFinite)) throw new Error(`${f.name} is not numeric`);
       const decimals = vals.every(Number.isInteger) ? 0 : 4;
-      ciphertexts += (await client.upload(f.name, vals, decimals, f.encryption === 'OPE+Paillier')).ciphertexts;
+      ciphertexts += (await worker.upload(f.name, vals, decimals, f.encryption === 'OPE+Paillier')).ciphertexts;
     }
-    clientRef.current = client;
     const secs = (performance.now() - t0) / 1000;
     const records = csvRef.current!.rows.length;
     return { success: true, records_encrypted: records, time_seconds: secs, throughput: records / secs, ciphertexts };
   };
 
   const queryLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
-    const client = clientRef.current!;
     const t0 = performance.now();
-    const a = await client.query(selectedField, minVal, maxVal);
+    const a = await workerRef.current!.query(selectedField, minVal, maxVal);
     const time_ms = performance.now() - t0;
-    const total = client.columns.get(selectedField)!.count;
+    const total = a.total;
     const filtered = minVal !== undefined || maxVal !== undefined;
     return {
       operation: selectedOperation, field: selectedField, column: selectedField,

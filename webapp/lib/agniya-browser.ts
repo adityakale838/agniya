@@ -330,6 +330,13 @@ export interface QueryAnswer {
   ciphertextsUsed: number; ciphertextBits: number[]; serverMs: number;
 }
 
+/** int(round(v * scale)) exactly as Python: round half to even. Data with one more decimal than the
+ *  scale (e.g. 12268.63225 at 4 decimals) hits exact .5 often, where Math.round would round up. */
+export function fixedPoint(v: number, scale: number): bigint {
+  const x = v * scale, f = Math.floor(x), d = x - f;
+  return BigInt(d > 0.5 || (d === 0.5 && f % 2 !== 0) ? f + 1 : f);
+}
+
 const hex = (x: bigint) => x.toString(16);
 const unhex = (s: string) => BigInt('0x' + s);
 
@@ -350,7 +357,7 @@ export class BrowserClient {
   /** Encrypt here; the server receives n, packed ciphertexts, slots, count and (optionally) sorted OPE tags. */
   async upload(column: string, values: number[], decimals: number, rangeFilter: boolean): Promise<{ ciphertexts: number }> {
     const scale = 10 ** decimals;
-    const ints = values.map(v => BigInt(Math.round(v * scale)));
+    const ints = values.map(v => fixedPoint(v, scale));
     const meta: ColumnMeta = { scale, slotBits: 0, slots: 0, offset: 0n, count: ints.length };
     const body: Record<string, unknown> = { dataset: this.dataset, column, n: hex(this.pub.n) };
     if (rangeFilter && ints.length) {
@@ -388,8 +395,8 @@ export class BrowserClient {
     const empty: QueryAnswer = { sum: 0, count: 0, avg: 0, ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0 };
     if (lo !== undefined || hi !== undefined) {
       if (!m.ope) throw new Error(`Range filters need ${column} encrypted as OPE+Paillier`);
-      const loS = lo !== undefined ? BigInt(Math.round(lo * m.scale)) - m.opeOffset! : 0n;
-      const hiS = hi !== undefined ? BigInt(Math.round(hi * m.scale)) - m.opeOffset! : m.opeTop!;
+      const loS = lo !== undefined ? fixedPoint(lo, m.scale) - m.opeOffset! : 0n;
+      const hiS = hi !== undefined ? fixedPoint(hi, m.scale) - m.opeOffset! : m.opeTop!;
       if (loS > m.opeTop! || hiS < 0n || loS > hiS) return empty;  // never reaches the server
       const tags = await m.ope.encryptMany([loS > 0n ? loS : 0n, hiS < m.opeTop! ? hiS : m.opeTop!]);
       body.lo_tag = tags.get(loS > 0n ? loS : 0n)!.toString();
