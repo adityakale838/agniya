@@ -27,7 +27,7 @@ Current numbers are in `README.md` and `tools/bench_results.json`. Phase 1 (§9)
 
 ## 0b. Status update: Phase 1 on branch `phase1-fast-encryption`
 
-Both runs: same laptop (i5-1145G7, 16 GB, Windows 11, Python 3.12.10, gmpy2 2.3.2), clean git tree, 25 repetitions, medians, every result checked exact. Baseline: `tools/bench_baseline_phase0.json` @ `be09265`. Phase 1: `tools/bench_results.json` @ `04a2969`.
+Both runs: same laptop (i5-1145G7, 16 GB, Windows 11, Python 3.12.10, gmpy2 2.3.2), clean git tree, 25 repetitions, medians, every result checked exact. Baseline: `tools/bench_baseline_phase0.json` @ `4d5bb9c`. Phase 1: `tools/bench_results.json` @ `0e79b54`.
 
 | Metric | Phase 0 | Phase 1 | Change |
 |---|---|---|---|
@@ -59,9 +59,9 @@ Both runs: same laptop (i5-1145G7, 16 GB, Windows 11, Python 3.12.10, gmpy2 2.3.
 4. **3072-bit keys (128-bit security):** measure end-to-end cost; expect ~2.5× per value.
 5. **Native backends**, only if profiling shows the comb multiplications dominate: Intel's Paillier library (AVX-512 IFMA is available on this CPU) or a small C/Rust extension.
 
-## 0c. Status update: OPE columns (commit `bee2832`, same branch)
+## 0c. Status update: OPE columns (commit `8a1a6b6`, same branch)
 
-Results: `tools/bench_results.json` @ `bee2832`, clean tree, same laptop. The "before" column is the Phase 1 run @ `04a2969`. Paths this change did not touch came out ~7% slower in this run (e.g. 1M-row encrypt 6.75 s vs 6.28 s), which is laptop variance (rule 5 above).
+Results: `tools/bench_results.json` @ `8a1a6b6`, clean tree, same laptop. The "before" column is the Phase 1 run @ `0e79b54`. Paths this change did not touch came out ~7% slower in this run (e.g. 1M-row encrypt 6.75 s vs 6.28 s), which is laptop variance (rule 5 above).
 
 | `insurance_real.csv`, 1,338 rows, via the API | Phase 1 | Now |
 |---|---|---|
@@ -81,7 +81,7 @@ Results: `tools/bench_results.json` @ `bee2832`, clean tree, same laptop. The "b
 - Parallelize FastOPE across processes for high-cardinality columns. This is worth it only above roughly 10k distinct values, because of the ~1 s Windows process start-up.
 - Replace pyope's sampler only behind an identical-output test.
 
-## 0d. Status update: client-held keys (commit `830ef2e`, same branch)
+## 0d. Status update: client-held keys (commit `a307c2b`, same branch)
 
 `agniya/client.py` (`AgniyaClient`) is the data owner. It generates the Paillier key pair and one OPE key per range-filterable column, then encrypts, packs and tags locally. It uploads to `POST /api/v2/columns` and decrypts the answers of `POST /api/v2/aggregate`.
 
@@ -96,7 +96,7 @@ It does **not** see the slot width, the packing offset, the fixed-point scale, t
 
 **Query:** the server bisects the tags, multiplies the ciphertexts wholly inside the range (`range_plan`, public key only), and returns that product plus the at most two edge ciphertexts. The client decrypts them (`decrypt_range`). An empty range never reaches the server.
 
-Measured @ `830ef2e`, in-process HTTP (Flask test client: JSON included, network latency not), `insurance_real.csv` charges, 1,338 rows, OPE on:
+Measured @ `a307c2b`, in-process HTTP (Flask test client: JSON included, network latency not), `insurance_real.csv` charges, 1,338 rows, OPE on:
 
 | | Server holds key (`/api/encrypt`) | Client holds key (`/api/v2`) |
 |---|---|---|
