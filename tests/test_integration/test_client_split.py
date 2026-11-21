@@ -33,6 +33,8 @@ def setup():
     c.upload("amount", df["amount"], decimals=4)
     c.upload("age", df["age"], range_filter=True)
     c.upload("score", df["score"], decimals=2, range_filter=True)
+    c.upload_by("amount", df["amount"], by="age", by_values=df["age"], decimals=4)
+    c.upload_by("age", df["age"], by="score", by_values=df["score"], by_decimals=2)
     return c, df
 
 
@@ -53,6 +55,25 @@ def test_range_matches_pandas(setup, col, lo, hi):
     sel = x[(x >= (lo if lo is not None else -1e9)) & (x <= (hi if hi is not None else 1e9))]
     r = c.query(col, lo, hi)
     assert r["count"] == len(sel) and r["sum"] == pytest.approx(sel.sum(), abs=1e-6)
+
+
+@pytest.mark.parametrize("col,by,lo,hi", [("amount", "age", 30, 40), ("amount", "age", None, 20),
+                                          ("amount", "age", 200, 300), ("age", "score", -10.5, 120.25),
+                                          ("age", "score", 12.34, 12.34), ("age", "score", None, None)])
+def test_sum_where_other_column_in_range(setup, col, by, lo, hi):
+    c, df = setup
+    b = df[by]
+    sel = df[col][(b >= (lo if lo is not None else -1e9)) & (b <= (hi if hi is not None else 1e9))]
+    r = c.query(col, lo, hi, by=by)
+    assert r["count"] == len(sel) and r["sum"] == pytest.approx(sel.sum(), abs=1e-6)
+
+
+def test_upload_by_skips_missing_rows(setup):
+    c, _ = setup
+    c.upload_by("x", [1, None, 3, float("nan"), 5], by="y", by_values=[10, 20, None, 40, 50])
+    assert c.query("x", 0, 100, by="y") == {"sum": 6, "count": 2, "avg": 3.0}
+    with pytest.raises(ValueError, match="upload_by"):
+        c.query("amount", 1, 2, by="score")
 
 
 def test_server_never_sees_private_key_or_plaintext(setup):
@@ -102,6 +123,7 @@ def test_key_file_round_trip(setup, tmp_path):
     c2 = AgniyaClient.load(path, "correct horse", transport)
     assert c2.pub.n == c.pub.n and c2.priv.p == c.priv.p and c2.dataset == "split"
     assert c2.query("score", -10.5, 120.25) == c.query("score", -10.5, 120.25)
+    assert c2.query("age", -10.5, 120.25, by="score") == c.query("age", -10.5, 120.25, by="score")
     assert c2.query("amount")["sum"] == pytest.approx(df["amount"].sum(), abs=1e-6)
 
 

@@ -10,6 +10,8 @@ ciphertexts and are decrypted here.
     c.upload("charges", charges, decimals=4, range_filter=True)
     c.query("charges")                       # {'sum', 'count', 'avg'}
     c.query("charges", lo=5000, hi=20000)    # rows with 5000 <= charges <= 20000
+    c.upload_by("charges", charges, by="age", by_values=ages, decimals=4)
+    c.query("charges", lo=30, hi=45, by="age")  # SUM(charges) WHERE 30 <= age <= 45
 
     c.save("claims.agniya-key", password)    # scrypt + AES-256-GCM; losing it loses the data
     c = AgniyaClient.load("claims.agniya-key", password, "http://127.0.0.1:5000")
@@ -72,7 +74,7 @@ class AgniyaClient:
             raise ValueError('A password is required')
         cols = {}
         for name, m in self.columns.items():
-            c = {k: m[k] for k in ('scale', 'slot_bits', 'slots', 'offset', 'count') if k in m}
+            c = {k: m[k] for k in ('scale', 'fscale', 'slot_bits', 'slots', 'offset', 'count') if k in m}
             if 'ope' in m:
                 c.update(ope_key=base64.b64encode(m['ope'].key).decode(), ope_offset=m['ope_offset'], ope_top=m['ope_top'])
             cols[name] = c
@@ -115,14 +117,29 @@ class AgniyaClient:
         """Encrypt a numeric column here and store only ciphertexts (and OPE tags) on the server."""
         scale = 10 ** decimals
         ints = [int(round(v * scale)) for v in values]  # fixed point; NaN raises
-        meta = {'scale': scale}
-        body = {'dataset': self.dataset, 'column': column, 'n': format(self.pub.n, 'x')}
-        if range_filter and ints:
+        if range_filter:
             ints.sort()  # sorted packing: a value range is a contiguous run of slots
-            off, top = ints[0], max(ints[-1] - ints[0], 1)
+        return self._upload(column, ints, scale, ints if range_filter else None, scale)
+
+    def upload_by(self, column: str, values: Iterable[float], by: str, by_values: Iterable[float],
+                  decimals: int = 0, by_decimals: int = 0) -> dict:
+        """Store `column` packed in the order of `by` (one row each, same order), so that
+        query(column, lo, hi, by=by) sums `column` over rows with lo <= by <= hi. Rows where either
+        value is missing (None/NaN) are left out. The server gets OPE tags of `by` under a fresh key."""
+        s, fs = 10 ** decimals, 10 ** by_decimals
+        rows = sorted((int(round(b * fs)), int(round(a * s))) for a, b in zip(values, by_values, strict=True)
+                      if a is not None and b is not None and a == a and b == b)  # x == x is False for NaN
+        return self._upload(f'{column}|{by}', [a for _, a in rows], s, [b for b, _ in rows], fs)
+
+    def _upload(self, name: str, ints: list, scale: int, keys: Optional[list], fscale: int) -> dict:
+        """Pack and encrypt `ints`; `keys` (sorted, one per value) become the OPE tags."""
+        meta = {'scale': scale, 'fscale': fscale}
+        body = {'dataset': self.dataset, 'column': name, 'n': format(self.pub.n, 'x')}
+        if keys:
+            off, top = keys[0], max(keys[-1] - keys[0], 1)
             ope = FastOPE(secrets.token_bytes(32), in_range=ValueRange(0, top),
                           out_range=ValueRange(0, 2 ** 64 - 1))
-            body['ope_tags'] = ope.encrypt_list([v - off for v in ints])
+            body['ope_tags'] = ope.encrypt_list([k - off for k in keys])
             meta.update(ope=ope, ope_offset=off, ope_top=top)
         # DJN randomness only on admissible moduli (our keys); e.g. browser-made keys get textbook r^n
         pool = RandomnessPool(self.pub, method=None if self._djn_ok else 'standard')
@@ -132,7 +149,7 @@ class AgniyaClient:
         body.update(ciphertexts=[format(c, 'x') for c in packed['ciphertexts']],
                     slots=packed['slots'], count=packed['count'])
         r = self.post('/api/v2/columns', body)
-        self.columns[column] = meta
+        self.columns[name] = meta
         return r
 
     def delete(self) -> dict:
@@ -141,15 +158,22 @@ class AgniyaClient:
         self.columns.clear()
         return r
 
-    def query(self, column: str, lo: Optional[float] = None, hi: Optional[float] = None) -> dict:
-        """SUM / COUNT / AVG over the column, optionally only rows with lo <= value <= hi."""
-        m = self.columns[column]
-        body = {'dataset': self.dataset, 'column': column}
+    def query(self, column: str, lo: Optional[float] = None, hi: Optional[float] = None,
+              by: Optional[str] = None) -> dict:
+        """SUM / COUNT / AVG over the column, optionally only rows with lo <= value <= hi, where
+        value is the column itself or, with by=, the column `by` (needs upload_by first)."""
+        name = f'{column}|{by}' if by and by != column else column
+        if name not in self.columns:
+            raise ValueError(f'Call upload_by({column!r}, ..., by={by!r}) first' if name != column
+                             else f'Unknown column {column!r}')
+        m = self.columns[name]
+        body = {'dataset': self.dataset, 'column': name}
         if lo is not None or hi is not None:
             if 'ope' not in m:
                 raise ValueError(f'{column} was uploaded without range_filter=True')
-            lo_s = int(round(lo * m['scale'])) - m['ope_offset'] if lo is not None else 0
-            hi_s = int(round(hi * m['scale'])) - m['ope_offset'] if hi is not None else m['ope_top']
+            fs = m.get('fscale', m['scale'])  # key files from before upload_by have no fscale
+            lo_s = int(round(lo * fs)) - m['ope_offset'] if lo is not None else 0
+            hi_s = int(round(hi * fs)) - m['ope_offset'] if hi is not None else m['ope_top']
             if lo_s > m['ope_top'] or hi_s < 0 or lo_s > hi_s:
                 return {'sum': 0, 'count': 0, 'avg': 0}  # empty range: nothing to ask the server
             body.update(lo_tag=m['ope'].encrypt(max(lo_s, 0)), hi_tag=m['ope'].encrypt(min(hi_s, m['ope_top'])))

@@ -404,6 +404,7 @@ export function httpPost(baseUrl: string): Post {
 interface ColumnMeta {
   scale: number; slotBits: number; slots: number; offset: bigint; count: number;
   ope?: OPE; opeOffset?: bigint; opeTop?: bigint;
+  fscale?: number;  // scale of the filter values when they differ (Python upload_by columns "a|b")
 }
 
 export interface QueryAnswer {
@@ -476,8 +477,9 @@ export class BrowserClient {
     const empty: QueryAnswer = { sum: 0, count: 0, avg: 0, ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0 };
     if (lo !== undefined || hi !== undefined) {
       if (!m.ope) throw new Error(`Range filters need ${column} encrypted as OPE+Paillier`);
-      const loS = lo !== undefined ? fixedPoint(lo, m.scale) - m.opeOffset! : 0n;
-      const hiS = hi !== undefined ? fixedPoint(hi, m.scale) - m.opeOffset! : m.opeTop!;
+      const fs = m.fscale ?? m.scale;
+      const loS = lo !== undefined ? fixedPoint(lo, fs) - m.opeOffset! : 0n;
+      const hiS = hi !== undefined ? fixedPoint(hi, fs) - m.opeOffset! : m.opeTop!;
       if (loS > m.opeTop! || hiS < 0n || loS > hiS) return empty;  // never reaches the server
       const tags = await m.ope.encryptMany([loS > 0n ? loS : 0n, hiS < m.opeTop! ? hiS : m.opeTop!]);
       body.lo_tag = tags.get(loS > 0n ? loS : 0n)!.toString();
@@ -504,6 +506,7 @@ export class BrowserClient {
     for (const [name, m] of this.columns) {
       const c: Record<string, unknown> = { scale: m.scale, slot_bits: m.slotBits, slots: m.slots,
                                            offset: safeNum(m.offset), count: m.count };
+      if (m.fscale !== undefined) c.fscale = m.fscale;
       if (m.ope) Object.assign(c, { ope_key: b64(m.ope.key), ope_offset: safeNum(m.opeOffset!), ope_top: safeNum(m.opeTop!) });
       columns[name] = c;
     }
@@ -537,6 +540,7 @@ export class BrowserClient {
     for (const [name, c] of Object.entries(s.columns as Record<string, Record<string, number | string>>)) {
       const meta: ColumnMeta = { scale: c.scale as number, slotBits: c.slot_bits as number, slots: c.slots as number,
                                  offset: BigInt(c.offset), count: (c.count as number) ?? 0 };
+      if (c.fscale !== undefined) meta.fscale = c.fscale as number;
       if (c.ope_key !== undefined) {
         meta.ope = new OPE(unb64(c.ope_key as string), BigInt(c.ope_top));
         meta.opeOffset = BigInt(c.ope_offset);

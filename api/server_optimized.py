@@ -141,7 +141,7 @@ def encrypt_dataset():
 
     start = time.perf_counter()
     db = UltimateOptimizedDatabase(keys=SERVER_KEYS)
-    columns, total_cts = {}, 0
+    columns, total_cts, tag_of = {}, 0, {}
     for f in fields:
         name = f['name']
         values, scale = _to_fixed_point(df[name])
@@ -156,9 +156,25 @@ def encrypt_dataset():
             offset, top = values[0], max(values[-1] - values[0], 1)
             ope = FastOPE(secrets.token_bytes(32), in_range=ValueRange(0, top),
                           out_range=ValueRange(0, 2 ** 64 - 1))
-            state.update(offset=offset, ope=ope, ope_max=top,
-                         ope_tags=ope.encrypt_list([v - offset for v in values]))  # sorted, like values
+            tags = ope.encrypt_list([v - offset for v in values])  # sorted, like values
+            state.update(offset=offset, ope=ope, ope_max=top, ope_tags=tags, by={})
+            tag_of[name] = dict(zip(values, tags))
         columns[name] = state
+
+    # SUM(a) WHERE b in range: for each OPE column b, a copy of every other column a packed in b's
+    # order, over the rows where both are present, with b's tags for those rows.
+    # ponytail: one extra packed copy per (OPE column, other column) pair; fine for a few columns.
+    for b, tag in tag_of.items():
+        bs = columns[b]
+        for a, cs in columns.items():
+            rows = df[[a, b]].dropna()
+            if a == b or rows.empty:
+                continue
+            pairs = sorted((int(round(float(y) * bs['scale'])), int(round(float(x) * cs['scale'])))
+                           for x, y in zip(rows[a], rows[b]))
+            packed = db.encrypt_column([x for _, x in pairs])
+            bs['by'][a] = {'packed': packed, 'tags': [tag[y] for y, _ in pairs]}
+            total_cts += len(packed['ciphertexts'])
 
     db.pool.close()  # release worker processes; queries need no new randomness
     elapsed = time.perf_counter() - start
@@ -186,6 +202,7 @@ def execute_query():
     filename = data.get('filename')
     range_min = data.get('range_min', data.get('rangeMin'))
     range_max = data.get('range_max', data.get('rangeMax'))
+    fc = data.get('filter_column') or data.get('filterColumn') or field  # WHERE fc in [min, max]
 
     if not operation or not field or not filename:
         return jsonify({'error': 'Missing parameters'}), 400
@@ -204,24 +221,30 @@ def execute_query():
     response = {}
 
     if filtered:
-        if 'ope' not in col:
-            return jsonify({'error': f'Range filters need the column encrypted as OPE+Paillier'}), 400
-        scale, offset, ope, top = col['scale'], col['offset'], col['ope'], col['ope_max']
+        fcol = ds['columns'].get(fc)
+        if fcol is None or 'ope' not in fcol:
+            return jsonify({'error': f'Range filters need {fc} encrypted as OPE+Paillier'}), 400
+        if fc == field:
+            packed, tags = col['packed'], fcol['ope_tags']
+        elif field in fcol['by']:
+            packed, tags = fcol['by'][field]['packed'], fcol['by'][field]['tags']
+        else:
+            return jsonify({'error': f'No rows have both {field} and {fc}'}), 400
+        scale, offset, ope, top = fcol['scale'], fcol['offset'], fcol['ope'], fcol['ope_max']
         shift = lambda v: int(round(float(v) * scale)) - offset
         lo_s = shift(range_min) if range_min not in (None, '') else 0
         hi_s = shift(range_max) if range_max not in (None, '') else top
         if lo_s > top or hi_s < 0 or lo_s > hi_s:
             idx = None
         else:
-            tags = col['ope_tags']
             idx = (bisect_left(tags, ope.encrypt(max(lo_s, 0))), bisect_right(tags, ope.encrypt(min(hi_s, top))))
         i, j = idx or (0, 0)
-        count, s = j - i, col['packed']['slots']
-        cts = col['packed']['ciphertexts'][i // s:(j - 1) // s + 1] if count else []
-        total_scaled = db.packer.sum_range(col['packed'], i, j) if operation != 'COUNT' else 0
-        response.update(filter_applied=True, range={'min': range_min, 'max': range_max},
-                        records_before_filter=col['packed']['count'],
-                        filter_selectivity=count / max(col['packed']['count'], 1),
+        count, s = j - i, packed['slots']
+        cts = packed['ciphertexts'][i // s:(j - 1) // s + 1] if count else []
+        total_scaled = db.packer.sum_range(packed, i, j) if operation != 'COUNT' else 0
+        response.update(filter_applied=True, filter_column=fc, range={'min': range_min, 'max': range_max},
+                        records_before_filter=packed['count'],
+                        filter_selectivity=count / max(packed['count'], 1),
                         security_note='OPE tags reveal the order of values to whoever holds them; '
                                       'the key holder also sees the slots of the <=2 ciphertexts cut by the range edges')
     else:

@@ -176,6 +176,14 @@ def main():
             assert r["records_processed"] == len(sel) and abs(r["result"] - sel.sum()) < len(sel) * 0.5e-4, r
             out.update(range_query={"column": rng_col, "min": lo, "max": hi, "rows_selected": len(sel),
                                     "ms": ms(stats(lambda: cl.post("/api/query", json=rbody), max(5, reps // 3)))})
+        if schema_name == "packed+ope_age":  # SUM(charges) WHERE 30 <= age <= 45
+            xbody = {**body, "filter_column": "age", "rangeMin": 30, "rangeMax": 45}
+            xsel = df["charges"][(df["age"] >= 30) & (df["age"] <= 45)]
+            r = cl.post("/api/query", json=xbody).get_json()
+            assert r["records_processed"] == len(xsel) and abs(r["result"] - xsel.sum()) < len(xsel) * 0.5e-4, r
+            out.update(cross_range_query={"sum": "charges", "where": "age", "min": 30, "max": 45,
+                                          "rows_selected": len(xsel),
+                                          "ms": ms(stats(lambda: cl.post("/api/query", json=xbody), max(5, reps // 3)))})
         section(f"api_insurance_{schema_name}", out)
 
     # Client-held keys (/api/v2): the client encrypts, tags and decrypts; the server sees only
@@ -196,7 +204,16 @@ def main():
     sel = df["charges"][(df["charges"] >= 5000) & (df["charges"] <= 20000.5)]
     rq = oc.query("charges", 5000, 20000.5)
     assert rq["count"] == len(sel) and abs(rq["sum"] - sel.sum()) < len(sel) * 0.5e-4
+    t = time.perf_counter()
+    oc.upload_by("charges", df["charges"], by="age", by_values=df["age"], decimals=4)
+    t_by = time.perf_counter() - t
+    xsel = df["charges"][(df["age"] >= 30) & (df["age"] <= 45)]
+    xq = oc.query("charges", 30, 45, by="age")
+    assert xq["count"] == len(xsel) and abs(xq["sum"] - xsel.sum()) < len(xsel) * 0.5e-4
     section("split_insurance_charges_ope", {
+        "cross_range_query": {"sum": "charges", "where": "age", "min": 30, "max": 45, "rows_selected": len(xsel),
+                              "upload_by_s": round(t_by, 3),
+                              "ms": ms(stats(lambda: oc.query("charges", 30, 45, by="age"), max(5, reps // 3)))},
         "rows": len(df), "encrypt_upload_s_excl_keygen": round(t_up, 3),
         "sum_query_ms": ms(stats(lambda: oc.query("charges"), max(5, reps // 3))),
         "range_query": {"min": 5000, "max": 20000.5, "rows_selected": len(sel),
@@ -268,6 +285,12 @@ def update_readme(results_path=None):
         rows.append(("Client-held keys (`/api/v2`), same column: encrypt + upload / SUM / range SUM",
                      f"{sp['encrypt_upload_s_excl_keygen']:.2f} s / {sp['sum_query_ms']['median']:.1f} ms / "
                      f"{sp['range_query']['ms']['median']:.1f} ms"))
+    xa = (r.get("api_insurance_packed+ope_age") or {}).get("cross_range_query")
+    xs = (sp or {}).get("cross_range_query")
+    if xa and xs:
+        rows.append((f"SUM(charges) WHERE 30 ≤ age ≤ 45 ({xa['rows_selected']} rows): server-side / client-held keys",
+                     f"{xa['ms']['median']:.1f} ms / {xs['ms']['median']:.1f} ms "
+                     f"(client `upload_by` {xs['upload_by_s']:.2f} s)"))
     if "baseline_seal_bfv_4096_values" in r:
         rows.append(("Reference: SEAL BFV (TenSEAL), 4,096 values", f"{r['baseline_seal_bfv_4096_values']['us_per_value']} µs/value"))
     if "baseline_phe_encrypt_one_value_ms" in r:

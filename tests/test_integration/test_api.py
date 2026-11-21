@@ -56,6 +56,20 @@ def test_ope_range_filter(client, lo, hi):
 def test_range_filter_requires_ope(client):
     c, _ = client
     assert "error" in q(c, type="SUM", column="amount", rangeMin=1)
+    assert "error" in q(c, type="SUM", column="age", filter_column="amount", rangeMin=1)
+
+
+@pytest.mark.parametrize("field,by,lo,hi", [("amount", "age", 30, 40), ("visits", "age", None, 25),
+                                            ("amount", "score", -10.5, 120.25), ("age", "score", 0, None),
+                                            ("score", "age", 18, 18), ("amount", "age", 200, 300)])
+def test_sum_where_other_column_in_range(client, field, by, lo, hi):
+    c, df = client
+    rows = df[[field, by]].dropna()  # SQL: NULLs in either column drop out
+    b = rows[by]
+    sel = rows[field][(b >= (lo if lo is not None else -1e9)) & (b <= (hi if hi is not None else 1e9))]
+    for op, want in [("SUM", sel.sum()), ("AVG", sel.mean() if len(sel) else 0), ("COUNT", len(sel))]:
+        r = q(c, type=op, column=field, filter_column=by, rangeMin=lo, rangeMax=hi)
+        assert r["result"] == pytest.approx(want, abs=1e-6) and r["records_processed"] == len(sel), r
 
 
 def test_ciphertexts_are_real(client):
