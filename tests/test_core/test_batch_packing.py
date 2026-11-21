@@ -304,7 +304,8 @@ class TestPackingHeadroom:
     """Slot sums must never overflow into neighbouring slots."""
 
     @pytest.fixture(scope="class")
-    def aggregator(self):
+    @classmethod
+    def aggregator(cls):
         pub, priv = generate_keypair(2048)
         return BatchedAggregator(pub, priv)
 

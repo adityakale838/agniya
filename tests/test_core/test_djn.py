@@ -50,3 +50,21 @@ def test_pool_methods(keys, method):
 def test_pool_rejects_unknown_method(keys):
     with pytest.raises(ValueError):
         RandomnessPool(keys[0], method="cache")
+
+
+def test_generated_keys_are_djn_admissible(keys):
+    from agniya.core.paillier import is_djn_admissible
+    pub, priv = keys
+    assert is_djn_admissible(priv)
+    assert priv.p % 4 == 3 and priv.q % 4 == 3
+    assert gmpy2.gcd(priv.p - 1, priv.q - 1) == 2
+
+
+def test_non_admissible_keys_detected():
+    from agniya.core.number_theory import generate_prime
+    from agniya.core.paillier import is_djn_admissible, keypair_from_primes
+    while True:  # ordinary random primes are almost never safe primes
+        p, q = generate_prime(1024), generate_prime(1024)
+        if not (gmpy2.is_prime((p - 1) // 2) or gmpy2.is_prime((q - 1) // 2)):
+            break
+    assert not is_djn_admissible(keypair_from_primes(p, q)[1])

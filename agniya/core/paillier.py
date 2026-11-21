@@ -12,7 +12,7 @@ from typing import Tuple
 import json
 from pathlib import Path
 
-from agniya.core.number_theory import generate_prime, gcd, lcm, mod_inverse
+from agniya.core.number_theory import generate_safe_prime, is_safe_prime, gcd, lcm, mod_inverse
 
 try:
     import gmpy2
@@ -58,13 +58,20 @@ def generate_keypair(bit_length: int = 2048) -> Tuple[PaillierPublicKey, Paillie
     """Generate a key pair whose modulus n has exactly `bit_length` bits."""
     half = bit_length // 2
     while True:
-        p = generate_prime(half)
-        q = generate_prime(half)
+        p = generate_safe_prime(half)  # admissible modulus: DJN randomness then rests on DCR alone
+        q = generate_safe_prime(half)
         n = p * q
         # top two bits of p, q are set, so n has exactly 2*half bits
         if p != q and n.bit_length() == bit_length and gcd(n, (p - 1) * (q - 1)) == 1:
             break
     return keypair_from_primes(p, q)
+
+
+def is_djn_admissible(private_key: "PaillierPrivateKey") -> bool:
+    """True when n = pq is an admissible modulus in the sense of DJN 2010 section 4.1 (here: p, q distinct
+    safe primes, both 3 mod 4), so short-exponent DJN randomness is as secure as uniform r^n under DCR."""
+    p, q = private_key.p, private_key.q
+    return p != q and is_safe_prime(p) and is_safe_prime(q)
 
 
 def keypair_from_primes(p: int, q: int) -> Tuple[PaillierPublicKey, PaillierPrivateKey]:

@@ -5,7 +5,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, Lock, ArrowLeft, FileText, Zap, Database, Search, Calculator, Filter, TrendingUp, AlertCircle, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -42,7 +41,7 @@ interface UploadedData {
   records: number;
   fields: number;
   schema: Field[];
-  sample_data?: any[];
+  sample_data?: Record<string, unknown>[];
 }
 
 interface EncryptionResult {
@@ -268,17 +267,18 @@ export default function Dashboard() {
         return;
       }
       const response = await apiService.uploadFile(fileToUpload);
-      setUploadData(response as any);
       // Convert schema format to Field format
-      const convertedSchema = response.schema.map(s => ({
+      const convertedSchema: Field[] = response.schema.map(s => ({
         name: s.name,
-        type: s.type as any,
-        encryption: s.encryption as any
+        type: s.type,
+        encryption: s.encryption as Field['encryption']
       }));
-      setSchema(convertedSchema as any);
+      setUploadData({ filename: response.filename, records: response.records, fields: response.fields,
+                      schema: convertedSchema, sample_data: response.sample_data });
+      setSchema(convertedSchema);
       setActiveTab('configure');
-    } catch (err: any) {
-      setError(err.message || 'Upload failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setIsUploading(false);
     }
@@ -303,8 +303,8 @@ export default function Dashboard() {
       if (numericField) {
         setSelectedField(numericField.name);
       }
-    } catch (err: any) {
-      setError(err.message || 'Encryption failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Encryption failed');
     } finally {
       setIsEncrypting(false);
     }
@@ -335,9 +335,9 @@ export default function Dashboard() {
         minVal,
         maxVal
       );
-      setQueries([response as any, ...queries]);
-    } catch (err: any) {
-      setError(err.message || 'Query failed');
+      setQueries([response as QueryResult, ...queries]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Query failed');
     } finally {
       setIsQuerying(false);
     }
@@ -578,7 +578,7 @@ export default function Dashboard() {
                             <tbody>
                               {uploadData.sample_data.slice(0, 3).map((row, i) => (
                                 <tr key={i} className="border-b">
-                                  {Object.values(row).map((val: any, j) => (
+                                  {Object.values(row).map((val, j) => (
                                     <td key={j} className="py-2 px-3 font-mono text-xs">{String(val)}</td>
                                   ))}
                                 </tr>

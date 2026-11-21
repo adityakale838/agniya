@@ -11,10 +11,13 @@ Because the base is fixed, hs^alpha is computed with a precomputed comb table
 (alpha split into w-bit digits, one table row per digit): about |n|/(2w) modular
 multiplications instead of a full exponentiation.
 
-SECURITY NOTE: semantic security of this variant rests on DJN's additional assumption
-that hs^alpha with a short alpha is indistinguishable from a random n-th residue.
-It is the standard "DJN optimization" used in practice, but it is an extra assumption
-on top of DCR; state it wherever results that use it are published.
+SECURITY NOTE (checked against Damgard, Jurik, Nielsen 2010, section 4.1, "An Alternative
+Encryption Function"): for an admissible modulus (p = q = 3 mod 4, gcd(p-1, q-1) = 2, a random
+square generates the squares) and h = -x^2 mod n, h^a with a uniform in [0, 2^ceil(k/2)) is
+computationally indistinguishable from uniform in Z_n*[+1] assuming factoring is hard, which DCR
+implies ([13, Thm 3.2] in that paper). So the scheme stays IND-CPA under DCR alone. generate_keypair
+makes admissible keys (safe primes); paillier.is_djn_admissible checks a key. Keys that are not
+admissible (e.g. made by the browser client) should use method="standard".
 """
 
 import secrets

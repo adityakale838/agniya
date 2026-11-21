@@ -41,7 +41,7 @@ Both runs: same laptop (i5-1145G7, 16 GB, Windows 11, Python 3.12.10, gmpy2 2.3.
 
 **What changed:** `agniya/core/djn.py` computes rⁿ as `hsᵅ`, where `hs = hⁿ`, `h = −x² mod n` and `α` is |n|/2 = 1,024 bits, using a window-8 comb table (17 MB, built in 0.19 s). `RandomnessPool` uses it by default, with a persistent worker pool. The exponent length is deliberately the conservative |n|/2. The scratchpad probe showed a 448-bit `α` would be ~2.3× faster again, but don't shorten it without a written security argument.
 
-**Security assumption:** with the default `AGNIYA_RN_METHOD=djn`, IND-CPA rests on DCR **plus** the DJN short-exponent assumption. `AGNIYA_RN_METHOD=standard` restores DCR-only randomness at the Phase 0 speed. Any publication must state which one was used. **Before relying on DJN, confirm the exponent length and the construction of `h` against Damgård–Jurik–Nielsen (2010) directly.**
+**Security assumption (corrected in §0f):** this paragraph originally said DJN needs an assumption beyond DCR. Checked against the paper (DJN 2010 §4.1), it does not, provided the modulus is admissible. Keys are now generated that way. `AGNIYA_RN_METHOD=standard` still forces textbook randomness.
 
 ### How to quote numbers (applies to README, slides, papers, the patent draft)
 
@@ -169,6 +169,40 @@ Also checked by hand in the dashboard: encrypt, download the key file (1,336 byt
 
 **Not done:**
 - The dashboard's existing lint errors (10 `no-explicit-any`) are unchanged.
+
+## 0f. Status update: DJN checked against the paper, admissible keys, 3072-bit cost, housekeeping
+
+**DJN, checked against the paper.** Source: DJN 2010, §4.1 "An Alternative Encryption Function", read from the copy at people.csail.mit.edu (Rivest's voting papers).
+- **Base:** `h = −x² mod n` for a random `x`; the public key is `(n, h)`. Matches `djn.py`.
+- **Exponent:** `a` uniform in `[0, 2^⌈k/2⌉)`, where `k` is the bit length of `n`. Matches `djn.py`: 1,024 bits for 2048-bit keys.
+- **Security:** the paper states that `(n, h, hᵃ)` with a short `a` is computationally indistinguishable from a full-length exponent "assuming the intractability of factoring, which is implied by the DCRA" (citing its [13, Thm 3.2]). **No assumption beyond DCR**, which corrects §0b.
+- **Condition:** this holds only for an **admissible** modulus: `p ≡ q ≡ 3 (mod 4)`, `gcd(p−1, q−1) = 2`, and a random square generating the subgroup of squares.
+
+**What changed.**
+- `generate_keypair` now uses safe primes `p = 2p′+1`, `p ≡ 3 (mod 4)`, found by a windowed NumPy sieve plus Miller–Rabin. That satisfies all three conditions.
+- `paillier.is_djn_admissible(priv)` checks a key.
+- `AgniyaClient` falls back to textbook `rⁿ` when its key is not admissible (for example, a key restored from a browser key file).
+- **Cost:** 2048-bit key generation goes from ~0.1 s to ~2–6 s (median ~1.25 s per safe prime). The test suite now takes ~3.3 min instead of ~35 s, because every test key pays this.
+
+**3072-bit keys (~128-bit security), measured once on this laptop (2048 → 3072):**
+
+| | 2048-bit | 3072-bit | Ratio |
+|---|---|---|---|
+| Key generation (safe primes) | 2.3 s | 29.6 s | 12.9× |
+| `rⁿ`, standard / DJN (1 core) | 12.5 / 0.66 ms | 35.7 / 2.05 ms | 2.9× / 3.1× |
+| Decrypt (CRT) | 2.9 ms | 10.1 ms | 3.4× |
+| Encrypt 100k packed values | 1.41 s (58 per ciphertext) | 2.68 s (87 per ciphertext) | **1.9×** |
+| SUM over 100k values | 14.3 ms | 23.5 ms | 1.6× |
+| Storage | 8.83 bytes/value | 8.83 bytes/value | 1.0× |
+
+More values fit in each 3072-bit ciphertext, which offsets most of the slower exponentiation. Moving to 128-bit security costs about 2× in throughput, not the 3–4× the per-operation numbers suggest.
+
+**Housekeeping in the same batch.**
+- `/api/v2/delete`: deletes a dataset, but only for a caller who sends the dataset's `n`.
+- `AGNIYA_STORE_MAX_MB`: a store size limit (default 1024 MB). Uploads beyond it get HTTP 507.
+- The dashboard and `webapp/lib` are lint-clean; the 10 `no-explicit-any` errors are gone.
+- The pytest fixture deprecation warning is fixed.
+- PR #5's GitGuardian check skipped the scan because the PR is too large. A local scan of every added line found no keys or tokens. The only key-file change is deleting the committed `cache/paillier_cache_2048bit.pkl`.
 
 ## 1. Verdict in one paragraph
 

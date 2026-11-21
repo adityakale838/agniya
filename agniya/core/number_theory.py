@@ -141,6 +141,43 @@ def generate_prime(bit_length: int) -> int:
             return candidate
 
 
+_SIEVE_PRIMES = [p for p in range(3, 1 << 16, 2) if all(p % d for d in range(3, int(p ** 0.5) + 1, 2))]
+_SIEVE_INV4 = [pow(4, -1, p) for p in _SIEVE_PRIMES]
+_SIEVE_INV2 = [pow(2, -1, p) for p in _SIEVE_PRIMES]
+
+
+def generate_safe_prime(bit_length: int, window: int = 1 << 15) -> int:
+    """
+    Safe prime p = 2q + 1 (q prime) with p = 3 mod 4 and its top two bits set.
+    Admissible Paillier moduli for DJN randomness (DJN 2010, section 4.1) need p = q = 3 mod 4,
+    gcd(p-1, q-1) = 2 and a random square generating the squares; two distinct safe primes give all three.
+    Windowed sieve over p = start + 4i (both p and q sieved by primes < 2^16), then Miller-Rabin.
+    """
+    import numpy as np
+    top2 = 3 << (bit_length - 2)
+    while True:
+        start = secrets.randbits(bit_length) | top2 | 3
+        q0 = start >> 1
+        ok = np.ones(window, dtype=bool)
+        for sp, i4, i2 in zip(_SIEVE_PRIMES, _SIEVE_INV4, _SIEVE_INV2):
+            ok[(-start * i4) % sp::sp] = False  # sp | p
+            ok[(-q0 * i2) % sp::sp] = False     # sp | q
+        for i in np.flatnonzero(ok):
+            p = start + 4 * int(i)
+            if p.bit_length() != bit_length:
+                break
+            q = p >> 1
+            if _gmp_is_prime:
+                if _gmp_is_prime(q, 1) and _gmp_is_prime(p, 1) and _gmp_is_prime(q, 40) and _gmp_is_prime(p, 40):
+                    return p
+            elif is_prime(q) and is_prime(p):
+                return p
+
+
+def is_safe_prime(p: int) -> bool:
+    return p > 7 and p % 4 == 3 and bool(_gmp_is_prime(p, 40) if _gmp_is_prime else is_prime(p))         and bool(_gmp_is_prime(p >> 1, 40) if _gmp_is_prime else is_prime(p >> 1))
+
+
 def lcm(a: int, b: int) -> int:
     """
     Calculate Least Common Multiple of two integers.

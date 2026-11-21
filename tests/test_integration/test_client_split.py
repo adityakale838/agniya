@@ -139,3 +139,34 @@ def test_tags_must_be_64_bit(setup):
     assert srv.app.test_client().post("/api/v2/columns", json=body).status_code == 400
     body["ope_tags"] = [-1, 3]
     assert srv.app.test_client().post("/api/v2/columns", json=body).status_code == 400
+
+
+def test_delete_dataset(setup):
+    c, df = setup
+    other = AgniyaClient(transport, dataset="to-delete")
+    other.upload("x", [1, 2, 3])
+    bad = srv.app.test_client().post("/api/v2/delete", json={"dataset": "to-delete", "n": format(c.pub.n, "x")})
+    assert bad.status_code == 403
+    assert other.delete()["columns_deleted"] == 1
+    assert "to-delete" not in srv.owner_datasets
+    srv.load_store()  # gone from disk too
+    assert "to-delete" not in srv.owner_datasets and "split" in srv.owner_datasets
+    assert srv.app.test_client().post("/api/v2/delete", json={"dataset": "to-delete", "n": "1"}).status_code == 404
+
+
+def test_store_size_limit(setup, monkeypatch):
+    monkeypatch.setattr(srv, "STORE_MAX_BYTES", 1)
+    c = AgniyaClient(transport, dataset="too-big")
+    with pytest.raises(RuntimeError, match="507"):
+        c.upload("x", [1, 2, 3])
+    assert "too-big" not in srv.owner_datasets
+
+
+def test_client_with_non_admissible_key_uses_standard_randomness(setup):
+    from agniya.core.number_theory import generate_prime
+    from agniya.core.paillier import keypair_from_primes
+    keys = keypair_from_primes(generate_prime(1024), generate_prime(1024))  # like a browser-made key
+    c = AgniyaClient(transport, dataset="non-admissible", _keys=keys)
+    assert c._djn_ok is False
+    c.upload("x", [1.5, -2.25, 10], decimals=2)
+    assert c.query("x")["sum"] == pytest.approx(9.25)

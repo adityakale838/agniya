@@ -12,6 +12,7 @@ export interface UploadResponse {
     encryption: string;
   }>;
   size_kb: number;
+  sample_data?: Record<string, unknown>[];
 }
 
 export interface EncryptResponse {
@@ -172,7 +173,7 @@ class APIService {
     rangeMin?: number,
     rangeMax?: number
   ): Promise<QueryResponse> {
-    const body: any = { 
+    const body: Record<string, unknown> = { 
       type: operation,
       column: field, 
       filename 

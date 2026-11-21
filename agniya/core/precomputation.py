@@ -9,7 +9,7 @@ Each r^n is used for exactly ONE ciphertext, so ciphertexts stay randomized.
 
 Methods:
 - "djn" (default): fixed-base short-exponent r^n (agniya/core/djn.py), ~15x faster per
-  value; relies on the DJN short-exponent assumption (see djn.py SECURITY NOTE).
+  value; as secure as "standard" under DCR on admissible moduli (see djn.py SECURITY NOTE).
 - "standard": textbook r^n with uniform r in Z_n*; relies on DCR only.
 """
 

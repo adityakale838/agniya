@@ -31,7 +31,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pyope.ope import ValueRange
 
 from agniya.core.batch_packing import BatchedAggregator, decrypt_range
-from agniya.core.paillier import generate_keypair, keypair_from_primes
+from agniya.core.paillier import generate_keypair, is_djn_admissible, keypair_from_primes
 from agniya.core.precomputation import RandomnessPool
 from agniya.hybrid.fast_ope import FastOPE
 
@@ -63,6 +63,7 @@ class AgniyaClient:
         self.dataset = dataset
         self.pub, self.priv = _keys or generate_keypair(key_size)
         self.columns: Dict[str, dict] = {}  # client-only: scale, offsets, slot bits, OPE key
+        self._djn_ok = is_djn_admissible(self.priv)
 
     def save(self, path: str, password: str):
         """Write every secret this client holds (Paillier primes, OPE keys, column layouts) to
@@ -123,7 +124,8 @@ class AgniyaClient:
                           out_range=ValueRange(0, 2 ** 64 - 1))
             body['ope_tags'] = ope.encrypt_list([v - off for v in ints])
             meta.update(ope=ope, ope_offset=off, ope_top=top)
-        pool = RandomnessPool(self.pub)
+        # DJN randomness only on admissible moduli (our keys); e.g. browser-made keys get textbook r^n
+        pool = RandomnessPool(self.pub, method=None if self._djn_ok else 'standard')
         packed = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch).encrypt_column(ints)
         pool.close()  # ponytail: new pool per column; keep one open if many big columns are uploaded
         meta.update(slot_bits=packed['slot_bits'], slots=packed['slots'], offset=packed['offset'], count=packed['count'])
@@ -131,6 +133,12 @@ class AgniyaClient:
                     slots=packed['slots'], count=packed['count'])
         r = self.post('/api/v2/columns', body)
         self.columns[column] = meta
+        return r
+
+    def delete(self) -> dict:
+        """Delete this dataset from the server (all columns). The key stays usable for new uploads."""
+        r = self.post('/api/v2/delete', {'dataset': self.dataset, 'n': format(self.pub.n, 'x')})
+        self.columns.clear()
         return r
 
     def query(self, column: str, lo: Optional[float] = None, hi: Optional[float] = None) -> dict:

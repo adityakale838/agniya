@@ -258,6 +258,7 @@ owner_datasets = {}
 STORE_PATH = os.environ.get('AGNIYA_STORE', os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                          'agniya_store.sqlite3'))
 TAG_BYTES = 8  # OPE tags live in [0, 2^64)
+STORE_MAX_BYTES = int(float(os.environ.get('AGNIYA_STORE_MAX_MB', '1024')) * 2**20)  # ciphertexts + tags
 
 
 def _store():
@@ -320,14 +321,41 @@ def v2_store_column():
     if ds is not None and ds['pub'].n != n:
         return jsonify({'error': f'Dataset {name} uses a different public key'}), 409
     pub = ds['pub'] if ds else _public_key(n)
+    cts_blob = _pack(cts, (pub.n_squared.bit_length() + 7) // 8)
+    tags_blob = _pack(tags, TAG_BYTES) if tags is not None else None
     with closing(_store()) as con, con:  # committed to disk before we answer
+        used = con.execute('SELECT COALESCE(SUM(LENGTH(cts) + COALESCE(LENGTH(tags), 0)), 0) FROM columns '
+                           'WHERE NOT (dataset = ? AND name = ?)', (name, column)).fetchone()[0]
+        if used + len(cts_blob) + len(tags_blob or b'') > STORE_MAX_BYTES:
+            return jsonify({'error': f'Store limit of {STORE_MAX_BYTES // 2**20} MB reached '
+                                     '(AGNIYA_STORE_MAX_MB); delete a dataset first'}), 507
         con.execute('INSERT OR REPLACE INTO columns VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    (name, column, format(n, 'x'), slots, count,
-                     _pack(cts, (pub.n_squared.bit_length() + 7) // 8),
-                     _pack(tags, TAG_BYTES) if tags is not None else None))
-    owner_datasets.setdefault(name, {'pub': pub, 'columns': {}})['columns'][column] =         {'cts': cts, 'slots': slots, 'count': count, 'tags': tags}
+                    (name, column, format(n, 'x'), slots, count, cts_blob, tags_blob))
+    ds = owner_datasets.setdefault(name, {'pub': pub, 'columns': {}})
+    ds['columns'][column] = {'cts': cts, 'slots': slots, 'count': count, 'tags': tags}
     return jsonify({'success': True, 'dataset': name, 'column': column, 'ciphertexts': len(cts),
                     'count': count, 'range_filterable': tags is not None})
+
+
+@app.route('/api/v2/delete', methods=['POST'])
+def v2_delete_dataset():
+    """Delete a dataset (all its columns) from memory and the store. The caller must send the
+    dataset's modulus n, the same ownership check as uploads (the API has no authentication)."""
+    d = request.json or {}
+    name = d.get('dataset')
+    ds = owner_datasets.get(name)
+    if ds is None:
+        return jsonify({'error': 'Unknown dataset'}), 404
+    try:
+        n = int(str(d.get('n')), 16)
+    except ValueError:
+        return jsonify({'error': 'n must be hex'}), 400
+    if n != ds['pub'].n:
+        return jsonify({'error': 'n does not match this dataset'}), 403
+    with closing(_store()) as con, con:
+        con.execute('DELETE FROM columns WHERE dataset = ?', (name,))
+    del owner_datasets[name]
+    return jsonify({'success': True, 'dataset': name, 'columns_deleted': len(ds['columns'])})
 
 
 @app.route('/api/v2/aggregate', methods=['POST'])
