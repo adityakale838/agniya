@@ -22,7 +22,7 @@ from agniya.core.djn import FixedBaseRN
 
 DEFAULT_METHOD = os.environ.get("AGNIYA_RN_METHOD", "djn")
 # below these counts, starting/feeding worker processes costs more than it saves
-PARALLEL_THRESHOLD = {"standard": 64, "djn": 2048}
+PARALLEL_THRESHOLD = {"standard": 64, "djn": 4096}  # djn: worker start-up + 17 MB table ~1 s
 
 _worker_gen = None  # per-process r^n generator (set by _init_worker)
 
