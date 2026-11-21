@@ -54,7 +54,7 @@ Both runs: same laptop (i5-1145G7, 16 GB, Windows 11, Python 3.12.10, gmpy2 2.3.
 ### Next optimizations (measured candidates, in order of value)
 
 1. ~~**OPE per-row columns**~~: done, see §0c.
-2. **Owner/server split:** move the private key to the client. This is a security property, not speed, but every number should eventually be measured in that topology.
+2. ~~**Owner/server split**~~: done for the Python client, see §0d. Original note: move the private key to the client. This is a security property, not speed, but every number should eventually be measured in that topology.
 3. **GROUP BY via slot packing:** one decryption for many groups.
 4. **3072-bit keys (128-bit security):** measure end-to-end cost; expect ~2.5× per value.
 5. **Native backends**, only if profiling shows the comb multiplications dominate: Intel's Paillier library (AVX-512 IFMA is available on this CPU) or a small C/Rust extension.
@@ -80,6 +80,37 @@ Results: `tools/bench_results.json` @ `bee2832`, clean tree, same laptop. The "b
 **Next in this area:**
 - Parallelize FastOPE across processes for high-cardinality columns. This is worth it only above roughly 10k distinct values, because of the ~1 s Windows process start-up.
 - Replace pyope's sampler only behind an identical-output test.
+
+## 0d. Status update: client-held keys (commit `830ef2e`, same branch)
+
+`agniya/client.py` (`AgniyaClient`) is the data owner. It generates the Paillier key pair and one OPE key per range-filterable column, then encrypts, packs and tags locally. It uploads to `POST /api/v2/columns` and decrypts the answers of `POST /api/v2/aggregate`.
+
+**What the server stores and sees:**
+- the public modulus `n`;
+- packed ciphertexts (hex);
+- values per ciphertext;
+- row count;
+- for range-filterable columns, one OPE tag per row in sorted order.
+
+It does **not** see the slot width, the packing offset, the fixed-point scale, the OPE offset or range, or any plaintext. A test checks that no request body contains `p`, `q`, `λ` or `μ`, in decimal or hex.
+
+**Query:** the server bisects the tags, multiplies the ciphertexts wholly inside the range (`range_plan`, public key only), and returns that product plus the at most two edge ciphertexts. The client decrypts them (`decrypt_range`). An empty range never reaches the server.
+
+Measured @ `830ef2e`, in-process HTTP (Flask test client: JSON included, network latency not), `insurance_real.csv` charges, 1,338 rows, OPE on:
+
+| | Server holds key (`/api/encrypt`) | Client holds key (`/api/v2`) |
+|---|---|---|
+| Encrypt (+ upload) | 1.40 s incl. key generation | 1.37 s excl. key generation (~78 ms) |
+| SUM | 3.9 ms | 4.0 ms |
+| Range SUM, 5,000–20,000.5 (706 rows) | 13.1 ms | 13.1 ms |
+
+The key split costs about 5% on upload (hex/JSON encoding) and nothing measurable on queries.
+
+**Not done yet:**
+1. **Dashboard:** the Next.js dashboard still uses the server-holds-key endpoints. Browser-side Paillier (JS BigInt) needs its own measurement before it is promised.
+2. **Key storage:** keys live in client memory only. A saved, password-protected key file is needed before real use.
+3. **Integrity:** the server is honest-but-curious. Nothing proves it multiplied the right ciphertexts.
+4. **Scope:** range filters apply to the column being aggregated. `SUM(a) WHERE b IN [x, y]` needs per-row ciphertexts for `a`, or packing `a` in `b`'s sort order.
 
 ---
 
