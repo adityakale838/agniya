@@ -1,8 +1,8 @@
 {
   "meta": {
-    "git_commit": "94f9998",
+    "git_commit": "820d41e",
     "git_dirty": false,
-    "timestamp": "2026-11-22 03:00:04",
+    "timestamp": "2026-11-22 05:07:36",
     "python": "3.12.10",
     "platform": "Windows-11-10.0.26300-SP0",
     "cpu": "11th Gen Intel(R) Core(TM) i5-1145G7 @ 2.60GHz",
@@ -13,194 +13,194 @@
     "reps": 25
   },
   "keygen_ms": {
-    "median": 2018.2309,
-    "p10": 508.6384,
-    "p90": 4283.569,
+    "median": 1339.7626,
+    "p10": 275.7124,
+    "p90": 2222.8315,
     "reps": 8
   },
   "decrypt_crt_ms": {
-    "median": 3.0296,
-    "p10": 2.8616,
-    "p90": 3.1471,
+    "median": 3.0596,
+    "p10": 2.9421,
+    "p90": 3.757,
     "reps": 25
   },
   "rn_standard": {
     "offline_ms_per_rn_1core": {
-      "median": 10.751,
-      "p10": 10.6817,
-      "p90": 10.8832,
+      "median": 11.1789,
+      "p10": 10.5374,
+      "p90": 11.7422,
       "reps": 25
     },
     "online_us_per_encryption": {
-      "median": 22.0,
-      "p10": 21.7,
-      "p90": 22.9,
+      "median": 20.5,
+      "p10": 20.3,
+      "p90": 21.0,
       "reps": 25
     }
   },
   "rn_djn": {
     "offline_ms_per_rn_1core": {
-      "median": 0.6988,
-      "p10": 0.6817,
-      "p90": 0.7481,
+      "median": 0.7497,
+      "p10": 0.741,
+      "p90": 0.7939,
       "reps": 25
     },
     "online_us_per_encryption": {
-      "median": 21.9,
-      "p10": 21.7,
-      "p90": 22.3,
+      "median": 23.2,
+      "p10": 22.9,
+      "p90": 23.5,
       "reps": 25
     }
   },
   "homomorphic_add": {
     "ciphertexts": 2048,
     "ms": {
-      "median": 11.8349,
-      "p10": 11.6715,
-      "p90": 12.0161,
+      "median": 12.1264,
+      "p10": 11.4587,
+      "p90": 14.2091,
       "reps": 8
     },
-    "adds_per_sec": 173047
+    "adds_per_sec": 168888
   },
   "column_standard_1000": {
     "rows": 1000,
     "values_per_ciphertext": 73,
     "ciphertexts": 14,
-    "encrypt_s_all_cores": 0.153,
-    "encrypt_us_per_value": 152.91,
+    "encrypt_s_all_cores": 0.155,
+    "encrypt_us_per_value": 154.53,
     "sum_ms": {
-      "median": 3.165,
-      "p10": 3.1439,
-      "p90": 3.2812,
+      "median": 3.0684,
+      "p10": 2.9013,
+      "p90": 3.4377,
       "reps": 8
     },
-    "sum_values_per_sec": 315961,
+    "sum_values_per_sec": 325897,
     "storage_bytes_per_value": 7.17
   },
   "column_standard_10000": {
     "rows": 10000,
     "values_per_ciphertext": 63,
     "ciphertexts": 159,
-    "encrypt_s_all_cores": 1.169,
-    "encrypt_us_per_value": 116.9,
+    "encrypt_s_all_cores": 1.225,
+    "encrypt_us_per_value": 122.54,
     "sum_ms": {
-      "median": 4.148,
-      "p10": 4.1023,
-      "p90": 4.5949,
+      "median": 4.1897,
+      "p10": 4.112,
+      "p90": 4.8268,
       "reps": 8
     },
-    "sum_values_per_sec": 2410829,
+    "sum_values_per_sec": 2386806,
     "storage_bytes_per_value": 8.14
   },
   "column_standard_100000": {
     "rows": 100000,
     "values_per_ciphertext": 58,
     "ciphertexts": 1725,
-    "encrypt_s_all_cores": 5.748,
-    "encrypt_us_per_value": 57.48,
+    "encrypt_s_all_cores": 6.177,
+    "encrypt_us_per_value": 61.77,
     "sum_ms": {
-      "median": 13.6563,
-      "p10": 13.0308,
-      "p90": 13.8187,
+      "median": 14.5112,
+      "p10": 13.1678,
+      "p90": 15.7057,
       "reps": 8
     },
-    "sum_values_per_sec": 7322628,
+    "sum_values_per_sec": 6891205,
     "storage_bytes_per_value": 8.83
   },
   "column_standard_1000000": {
     "rows": 1000000,
     "values_per_ciphertext": 52,
     "ciphertexts": 19231,
-    "encrypt_s_all_cores": 64.535,
-    "encrypt_us_per_value": 64.53,
+    "encrypt_s_all_cores": 66.358,
+    "encrypt_us_per_value": 66.36,
     "sum_ms": {
-      "median": 142.0628,
-      "p10": 136.2459,
-      "p90": 148.6211,
+      "median": 129.4098,
+      "p10": 123.9652,
+      "p90": 132.5612,
       "reps": 8
     },
-    "sum_values_per_sec": 7039140,
+    "sum_values_per_sec": 7727387,
     "storage_bytes_per_value": 9.85
   },
   "column_djn_1000": {
     "rows": 1000,
     "values_per_ciphertext": 73,
     "ciphertexts": 14,
-    "encrypt_s_all_cores": 0.015,
-    "encrypt_us_per_value": 15.46,
+    "encrypt_s_all_cores": 0.014,
+    "encrypt_us_per_value": 14.16,
     "sum_ms": {
-      "median": 3.8474,
-      "p10": 3.8082,
-      "p90": 3.9227,
+      "median": 3.6648,
+      "p10": 3.415,
+      "p90": 5.5733,
       "reps": 8
     },
-    "sum_values_per_sec": 259919,
+    "sum_values_per_sec": 272862,
     "storage_bytes_per_value": 7.17
   },
   "column_djn_10000": {
     "rows": 10000,
     "values_per_ciphertext": 63,
     "ciphertexts": 159,
-    "encrypt_s_all_cores": 0.134,
-    "encrypt_us_per_value": 13.39,
+    "encrypt_s_all_cores": 0.132,
+    "encrypt_us_per_value": 13.21,
     "sum_ms": {
-      "median": 4.7578,
-      "p10": 4.6798,
-      "p90": 4.9006,
+      "median": 4.5676,
+      "p10": 4.4215,
+      "p90": 4.6629,
       "reps": 8
     },
-    "sum_values_per_sec": 2101812,
+    "sum_values_per_sec": 2189334,
     "storage_bytes_per_value": 8.14
   },
   "column_djn_100000": {
     "rows": 100000,
     "values_per_ciphertext": 58,
     "ciphertexts": 1725,
-    "encrypt_s_all_cores": 1.519,
-    "encrypt_us_per_value": 15.19,
+    "encrypt_s_all_cores": 1.528,
+    "encrypt_us_per_value": 15.28,
     "sum_ms": {
-      "median": 15.6486,
-      "p10": 15.4888,
-      "p90": 15.8105,
+      "median": 14.8637,
+      "p10": 12.7429,
+      "p90": 16.396,
       "reps": 8
     },
-    "sum_values_per_sec": 6390348,
+    "sum_values_per_sec": 6727800,
     "storage_bytes_per_value": 8.83
   },
   "column_djn_1000000": {
     "rows": 1000000,
     "values_per_ciphertext": 52,
     "ciphertexts": 19231,
-    "encrypt_s_all_cores": 6.788,
-    "encrypt_us_per_value": 6.79,
+    "encrypt_s_all_cores": 6.395,
+    "encrypt_us_per_value": 6.39,
     "sum_ms": {
-      "median": 137.6843,
-      "p10": 130.117,
-      "p90": 138.6294,
+      "median": 128.8614,
+      "p10": 121.4655,
+      "p90": 131.2617,
       "reps": 8
     },
-    "sum_values_per_sec": 7262992,
+    "sum_values_per_sec": 7760273,
     "storage_bytes_per_value": 9.85
   },
   "api_insurance_packed": {
     "rows": 1338,
-    "encrypt_s": 0.238,
+    "encrypt_s": 0.223,
     "ciphertexts": 24,
     "sum_query_ms": {
-      "median": 4.1558,
-      "p10": 4.0878,
-      "p90": 4.5889,
+      "median": 3.8728,
+      "p10": 3.7477,
+      "p90": 6.1286,
       "reps": 8
     }
   },
   "api_insurance_packed+ope_age": {
     "rows": 1338,
-    "encrypt_s": 0.257,
-    "ciphertexts": 31,
+    "encrypt_s": 0.272,
+    "ciphertexts": 55,
     "sum_query_ms": {
-      "median": 4.1136,
-      "p10": 3.9631,
-      "p90": 5.2285,
+      "median": 3.9497,
+      "p10": 3.8354,
+      "p90": 4.3981,
       "reps": 8
     },
     "range_query": {
@@ -209,21 +209,34 @@
       "max": 45,
       "rows_selected": 421,
       "ms": {
-        "median": 12.1948,
-        "p10": 12.0323,
-        "p90": 12.3841,
+        "median": 11.2974,
+        "p10": 11.2166,
+        "p90": 11.4729,
+        "reps": 8
+      }
+    },
+    "cross_range_query": {
+      "sum": "charges",
+      "where": "age",
+      "min": 30,
+      "max": 45,
+      "rows_selected": 421,
+      "ms": {
+        "median": 11.1528,
+        "p10": 9.8363,
+        "p90": 12.0252,
         "reps": 8
       }
     }
   },
   "api_insurance_ope_charges": {
     "rows": 1338,
-    "encrypt_s": 1.432,
+    "encrypt_s": 1.376,
     "ciphertexts": 24,
     "sum_query_ms": {
-      "median": 4.1243,
-      "p10": 4.0623,
-      "p90": 4.1765,
+      "median": 3.8601,
+      "p10": 3.8198,
+      "p90": 3.9525,
       "reps": 8
     },
     "range_query": {
@@ -232,20 +245,34 @@
       "max": 20000.5,
       "rows_selected": 706,
       "ms": {
-        "median": 14.1962,
-        "p10": 14.042,
-        "p90": 14.469,
+        "median": 19.2679,
+        "p10": 18.9664,
+        "p90": 19.406,
         "reps": 8
       }
     }
   },
   "split_insurance_charges_ope": {
+    "cross_range_query": {
+      "sum": "charges",
+      "where": "age",
+      "min": 30,
+      "max": 45,
+      "rows_selected": 421,
+      "upload_by_s": 0.228,
+      "ms": {
+        "median": 11.3355,
+        "p10": 11.2791,
+        "p90": 11.5296,
+        "reps": 8
+      }
+    },
     "rows": 1338,
-    "encrypt_upload_s_excl_keygen": 1.435,
+    "encrypt_upload_s_excl_keygen": 1.351,
     "sum_query_ms": {
-      "median": 4.1335,
-      "p10": 4.0799,
-      "p90": 4.2018,
+      "median": 3.8777,
+      "p10": 3.8183,
+      "p90": 4.1146,
       "reps": 8
     },
     "range_query": {
@@ -253,32 +280,32 @@
       "max": 20000.5,
       "rows_selected": 706,
       "ms": {
-        "median": 14.0856,
-        "p10": 13.9293,
-        "p90": 14.1625,
+        "median": 13.4874,
+        "p10": 11.6026,
+        "p90": 13.8968,
         "reps": 8
       }
     }
   },
   "baseline_plain_python_sum_100k_ms": {
-    "median": 0.702,
-    "p10": 0.6919,
-    "p90": 0.7273,
+    "median": 0.6512,
+    "p10": 0.6378,
+    "p90": 0.6727,
     "reps": 25
   },
   "baseline_phe_encrypt_one_value_ms": {
-    "median": 12.3888,
-    "p10": 12.1969,
-    "p90": 12.7328,
+    "median": 11.7326,
+    "p10": 11.3081,
+    "p90": 12.3947,
     "reps": 8
   },
   "baseline_seal_bfv_4096_values": {
     "encrypt_ms": {
-      "median": 4.7653,
-      "p10": 4.6357,
-      "p90": 4.8739,
+      "median": 4.244,
+      "p10": 4.1635,
+      "p90": 5.6661,
       "reps": 8
     },
-    "us_per_value": 1.163
+    "us_per_value": 1.036
   }
 }
