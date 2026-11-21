@@ -37,7 +37,7 @@ from werkzeug.utils import secure_filename
 from pyope.ope import ValueRange
 
 from agniya.core.ultimate_system import UltimateOptimizedDatabase
-from agniya.core.paillier import MIN_KEY_BITS, PaillierPublicKey
+from agniya.core.paillier import MIN_KEY_BITS, PaillierPublicKey, generate_keypair
 from agniya.core.batch_packing import range_plan
 from agniya.hybrid.fast_ope import FastOPE
 
@@ -46,6 +46,10 @@ PAILLIER_TYPES = {'Paillier-2048', 'OPE+Paillier'}
 
 app = Flask(__name__)
 CORS(app, origins=os.environ.get('AGNIYA_CORS_ORIGINS', 'http://localhost:3000').split(','))
+
+# Server-side demo mode: one key for every dataset, made once at startup (safe primes, ~1-6 s)
+# so /api/encrypt does not pay key generation. This server holds the private key either way.
+SERVER_KEYS = generate_keypair(2048)
 
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -136,7 +140,7 @@ def encrypt_dataset():
         return jsonify({'error': f'Paillier fields must be numeric: {bad}'}), 400
 
     start = time.perf_counter()
-    db = UltimateOptimizedDatabase(key_size=2048)
+    db = UltimateOptimizedDatabase(keys=SERVER_KEYS)
     columns, total_cts = {}, 0
     for f in fields:
         name = f['name']

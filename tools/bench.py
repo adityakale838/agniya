@@ -257,11 +257,11 @@ def update_readme(results_path=None):
     ]
     api = r.get("api_insurance_packed")
     if api:
-        rows.append((f"API, insurance_real.csv ({api['rows']:,} rows): key generation + encrypt / SUM query",
+        rows.append((f"API, insurance_real.csv ({api['rows']:,} rows): encrypt / SUM query",
                      f"{api['encrypt_s']:.2f} s / {api['sum_query_ms']['median']:.1f} ms"))
     ope = r.get("api_insurance_ope_charges")
     if ope:
-        rows.append((f"API, insurance_real.csv charges as OPE+Paillier: key generation + encrypt / range SUM",
+        rows.append((f"API, insurance_real.csv charges as OPE+Paillier: encrypt / range SUM",
                      f"{ope['encrypt_s']:.2f} s / {ope['range_query']['ms']['median']:.1f} ms"))
     sp = r.get("split_insurance_charges_ope")
     if sp:

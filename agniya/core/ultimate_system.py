@@ -23,11 +23,11 @@ from agniya.core.batch_packing import BatchedAggregator
 class UltimateOptimizedDatabase:
     """Encrypt, aggregate homomorphically, decrypt."""
 
-    def __init__(self, key_size: int = 2048, pool_size: int = 0, verbose: bool = False):
+    def __init__(self, key_size: int = 2048, pool_size: int = 0, verbose: bool = False, keys=None):
         if key_size < MIN_KEY_BITS:
             raise ValueError(f"Key size must be >= {MIN_KEY_BITS} bits")
         self.verbose = verbose
-        self.pub, self.priv = generate_keypair(key_size)
+        self.pub, self.priv = keys or generate_keypair(key_size)  # keys: reuse an existing (pub, priv)
         self.pool = RandomnessPool(self.pub, size=pool_size)
         self.packer = BatchedAggregator(self.pub, self.priv, encrypt_batch=self.pool.encrypt_batch)
         if verbose:
