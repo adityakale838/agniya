@@ -18,6 +18,7 @@ def client():
         "age": (rng % 60 + 18).astype(int),                 # OPE-filterable ints
         "visits": [None if i % 17 == 0 else i % 9 for i in range(200)],  # NaNs
         "name": [f"p{i}" for i in range(200)],
+        "score": ((rng * 7919) % 1000 * 0.37 - 50).round(2),  # OPE floats incl. negatives, unsorted
     })
     c = srv.app.test_client()
     buf = io.BytesIO(df.to_csv(index=False).encode())
@@ -25,7 +26,8 @@ def client():
     schema = [{"name": "amount", "encryption": "Paillier-2048"},
               {"name": "age", "encryption": "OPE+Paillier"},
               {"name": "visits", "encryption": "Paillier-2048"},
-              {"name": "name", "encryption": "AES-256"}]
+              {"name": "name", "encryption": "AES-256"},
+              {"name": "score", "encryption": "OPE+Paillier"}]
     r = c.post("/api/encrypt", json={"filename": "t.csv", "schema": schema})
     assert r.status_code == 200, r.get_json()
     return c, df
@@ -35,7 +37,7 @@ def q(c, **kw):
     return c.post("/api/query", json={"filename": "t.csv", **kw}).get_json()
 
 
-@pytest.mark.parametrize("col", ["amount", "age", "visits"])
+@pytest.mark.parametrize("col", ["amount", "age", "visits", "score"])
 def test_sum_avg_count_match_pandas(client, col):
     c, df = client
     assert q(c, type="SUM", column=col)["result"] == pytest.approx(df[col].sum(), abs=1e-6)
@@ -61,3 +63,13 @@ def test_ciphertexts_are_real(client):
     proof = q(c, type="SUM", column="amount")["encryption_proof"]
     assert proof["modulus_n_bit_length"] == 2048
     assert all(b > 4000 for b in proof["ciphertext_bit_lengths"])
+
+
+@pytest.mark.parametrize("lo,hi", [(-50, 0), (-10.5, 120.25), (None, -49.9), (300, None), (12.34, 12.34), (400, 500)])
+def test_ope_range_filter_floats(client, lo, hi):
+    c, df = client
+    x = df["score"]
+    sel = x[(x >= (lo if lo is not None else -1e9)) & (x <= (hi if hi is not None else 1e9))]
+    for op, want in [("SUM", sel.sum()), ("COUNT", len(sel))]:
+        r = q(c, type=op, column="score", rangeMin=lo, rangeMax=hi)
+        assert r["result"] == pytest.approx(want, abs=1e-6) and r["records_processed"] == len(sel)

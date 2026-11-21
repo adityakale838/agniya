@@ -284,6 +284,31 @@ class BatchedAggregator:
         slot_total = sum((packed_sum >> (k * bits)) & mask for k in range(column['slots']))
         return slot_total + column['offset'] * column['count']
 
+    def sum_range(self, column: Dict, i: int, j: int) -> int:
+        """Sum of values i..j-1 (in column order).
+
+        Ciphertexts wholly inside the range are multiplied and decrypted once; the (at most
+        two) ciphertexts cut by the range edges are decrypted on their own, so the KEY HOLDER
+        sees those slots individually. The aggregating party never decrypts anything."""
+        s, bits, count = column['slots'], column['slot_bits'], column['count']
+        i, j = max(i, 0), min(j, count)
+        if i >= j:
+            return 0
+        mask = (1 << bits) - 1
+        full, total = [], 0
+        cts = column['ciphertexts']
+        for c in range(i // s, (j - 1) // s + 1):
+            lo, hi = max(i, c * s) - c * s, min(j, (c + 1) * s, count) - c * s
+            if lo == 0 and hi == min(s, count - c * s):
+                full.append(cts[c])
+            else:
+                m = decrypt_crt(self.public_key, self.private_key, cts[c])
+                total += sum((m >> (k * bits)) & mask for k in range(lo, hi))
+        if full:
+            m = decrypt_crt(self.public_key, self.private_key, sum_ciphertexts(self.public_key, full))
+            total += sum((m >> (k * bits)) & mask for k in range(s))
+        return total + column['offset'] * (j - i)
+
     def sum_values(self, values: List[int]) -> int:
         if not values:
             return 0

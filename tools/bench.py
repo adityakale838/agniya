@@ -153,9 +153,12 @@ def main():
     with open(csv, "rb") as f:
         cl.post("/api/upload", data={"file": (io.BytesIO(f.read()), "insurance_real.csv")},
                 content_type="multipart/form-data")
-    for schema_name, schema in [("packed", [{"name": "charges", "encryption": "Paillier-2048"}]),
-                                ("packed+ope_rows", [{"name": "charges", "encryption": "Paillier-2048"},
-                                                     {"name": "age", "encryption": "OPE+Paillier"}])]:
+    # OPE columns: "age" has 47 distinct values, "charges" 1,337 (fixed point, 4 decimals).
+    for schema_name, schema, rng_col, lo, hi in [
+            ("packed", [{"name": "charges", "encryption": "Paillier-2048"}], None, None, None),
+            ("packed+ope_age", [{"name": "charges", "encryption": "Paillier-2048"},
+                                {"name": "age", "encryption": "OPE+Paillier"}], "age", 30, 45),
+            ("ope_charges", [{"name": "charges", "encryption": "OPE+Paillier"}], "charges", 5000, 20000.5)]:
         t = time.perf_counter()
         enc = cl.post("/api/encrypt", json={"filename": "insurance_real.csv", "schema": schema}).get_json()
         t_enc = time.perf_counter() - t
@@ -163,8 +166,15 @@ def main():
         res = cl.post("/api/query", json=body).get_json()["result"]
         assert abs(res - df["charges"].sum()) < len(df) * 0.5e-4, res
         qs = stats(lambda: cl.post("/api/query", json=body), max(5, reps // 3))
-        section(f"api_insurance_{schema_name}", {"rows": len(df), "encrypt_s": round(t_enc, 3),
-                                                 "ciphertexts": enc["ciphertexts"], "sum_query_ms": ms(qs)})
+        out = {"rows": len(df), "encrypt_s": round(t_enc, 3), "ciphertexts": enc["ciphertexts"], "sum_query_ms": ms(qs)}
+        if rng_col:
+            rbody = {**body, "column": rng_col, "rangeMin": lo, "rangeMax": hi}
+            sel = df[rng_col][(df[rng_col] >= lo) & (df[rng_col] <= hi)]
+            r = cl.post("/api/query", json=rbody).get_json()
+            assert r["records_processed"] == len(sel) and abs(r["result"] - sel.sum()) < len(sel) * 0.5e-4, r
+            out.update(range_query={"column": rng_col, "min": lo, "max": hi, "rows_selected": len(sel),
+                                    "ms": ms(stats(lambda: cl.post("/api/query", json=rbody), max(5, reps // 3)))})
+        section(f"api_insurance_{schema_name}", out)
 
     # Baselines in the same harness.
     vals = [random.randint(1, 10**6) for _ in range(100_000)]
@@ -223,6 +233,10 @@ def update_readme(results_path=None):
     if api:
         rows.append((f"API, insurance_real.csv ({api['rows']:,} rows): encrypt / SUM query",
                      f"{api['encrypt_s']:.2f} s / {api['sum_query_ms']['median']:.1f} ms"))
+    ope = r.get("api_insurance_ope_charges")
+    if ope:
+        rows.append((f"API, insurance_real.csv charges as OPE+Paillier: encrypt / range SUM",
+                     f"{ope['encrypt_s']:.2f} s / {ope['range_query']['ms']['median']:.1f} ms"))
     if "baseline_seal_bfv_4096_values" in r:
         rows.append(("Reference: SEAL BFV (TenSEAL), 4,096 values", f"{r['baseline_seal_bfv_4096_values']['us_per_value']} µs/value"))
     if "baseline_phe_encrypt_one_value_ms" in r:

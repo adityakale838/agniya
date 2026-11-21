@@ -4,8 +4,8 @@ AGNIYA API server (Flask). Launched by start.ps1.
 What it does, precisely:
 - /api/upload   : stores a CSV, suggests per-column encryption
 - /api/encrypt  : encrypts every Paillier column with fresh randomness (packed: many
-                  values per ciphertext) and, for 'OPE+Paillier' columns, also one
-                  Paillier ciphertext per row + an OPE tag for range filters
+                  values per ciphertext). 'OPE+Paillier' columns are packed in sorted
+                  order and get one OPE tag per row, so a range is a run of slots
 - /api/query    : SUM / AVG / COUNT computed by multiplying ciphertexts, then ONE decryption
 
 Trust model (demo): this process generates and holds the private key in memory only.
@@ -17,6 +17,7 @@ import os
 import sys
 import time
 import secrets
+from bisect import bisect_left, bisect_right
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -24,10 +25,10 @@ import pandas as pd
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
-from pyope.ope import OPE, ValueRange
+from pyope.ope import ValueRange
 
 from agniya.core.ultimate_system import UltimateOptimizedDatabase
-from agniya.core.paillier import sum_ciphertexts, decrypt_crt
+from agniya.hybrid.fast_ope import FastOPE
 
 FIXED_POINT_DECIMALS = 4
 PAILLIER_TYPES = {'Paillier-2048', 'OPE+Paillier'}
@@ -129,19 +130,19 @@ def encrypt_dataset():
     for f in fields:
         name = f['name']
         values, scale = _to_fixed_point(df[name])
+        ope_col = f['encryption'] == 'OPE+Paillier' and bool(values)
+        if ope_col:
+            values.sort()  # sorted packing: a value range is a contiguous run of slots
         column = db.encrypt_column(values)
         state = {'packed': column, 'scale': scale, 'nulls': int(df[name].isna().sum())}
         total_cts += len(column['ciphertexts'])
 
-        if f['encryption'] == 'OPE+Paillier' and values:
-            offset = min(values)
-            shifted = [v - offset for v in values]
-            ope = OPE(secrets.token_bytes(32), in_range=ValueRange(0, max(max(shifted), 1)),
-                      out_range=ValueRange(0, 2 ** 64 - 1))
-            state.update(offset=offset, ope=ope, ope_max=max(max(shifted), 1),
-                         ope_tags=[ope.encrypt(v) for v in shifted],
-                         row_cts=db.encrypt(shifted))
-            total_cts += len(values)
+        if ope_col:
+            offset, top = values[0], max(values[-1] - values[0], 1)
+            ope = FastOPE(secrets.token_bytes(32), in_range=ValueRange(0, top),
+                          out_range=ValueRange(0, 2 ** 64 - 1))
+            state.update(offset=offset, ope=ope, ope_max=top,
+                         ope_tags=ope.encrypt_list([v - offset for v in values]))  # sorted, like values
         columns[name] = state
 
     db.pool.close()  # release worker processes; queries need no new randomness
@@ -195,17 +196,19 @@ def execute_query():
         lo_s = shift(range_min) if range_min not in (None, '') else 0
         hi_s = shift(range_max) if range_max not in (None, '') else top
         if lo_s > top or hi_s < 0 or lo_s > hi_s:
-            idx = []
+            idx = None
         else:
-            lo, hi = ope.encrypt(max(lo_s, 0)), ope.encrypt(min(hi_s, top))
-            idx = [i for i, t in enumerate(col['ope_tags']) if lo <= t <= hi]
-        count = len(idx)
-        cts = [col['row_cts'][i] for i in idx]
-        total_scaled = (decrypt_crt(db.pub, db.priv, sum_ciphertexts(db.pub, cts)) + offset * count) if cts else 0
+            tags = col['ope_tags']
+            idx = (bisect_left(tags, ope.encrypt(max(lo_s, 0))), bisect_right(tags, ope.encrypt(min(hi_s, top))))
+        i, j = idx or (0, 0)
+        count, s = j - i, col['packed']['slots']
+        cts = col['packed']['ciphertexts'][i // s:(j - 1) // s + 1] if count else []
+        total_scaled = db.packer.sum_range(col['packed'], i, j) if operation != 'COUNT' else 0
         response.update(filter_applied=True, range={'min': range_min, 'max': range_max},
                         records_before_filter=col['packed']['count'],
                         filter_selectivity=count / max(col['packed']['count'], 1),
-                        security_note='OPE tags reveal the order of values to whoever holds them')
+                        security_note='OPE tags reveal the order of values to whoever holds them; '
+                                      'the key holder also sees the slots of the <=2 ciphertexts cut by the range edges')
     else:
         cts = col['packed']['ciphertexts']
         count = col['packed']['count']
@@ -223,7 +226,8 @@ def execute_query():
         'encryption_proof': {
             'ciphertext_bit_lengths': [c.bit_length() for c in cts[:3]],
             'modulus_n_bit_length': db.public_key.n.bit_length(),
-            'verification': f'{len(cts)} ciphertexts multiplied mod n^2, then one CRT decryption',
+            'verification': f'{len(cts)} packed ciphertexts: whole ones multiplied mod n^2 and decrypted once'
+                            + ('; range-edge ones decrypted separately' if filtered else ''),
             'computation_type': 'Paillier homomorphic addition',
         },
     })

@@ -49,7 +49,7 @@ small per-value ciphertexts and simplicity. The plan for closing the gap is in
 - **Randomness pool**: the expensive `rⁿ mod n²` is plaintext-independent, so it is precomputed offline across all cores; each value is used once (`agniya/core/precomputation.py`).
 - **Fast rⁿ (DJN)**: by default rⁿ is computed as `hsᵅ` for a fixed public base `hs = hⁿ` and a random |n|/2-bit `α`, using a precomputed comb table (`agniya/core/djn.py`). This is the Damgård–Jurik–Nielsen optimization; its security relies on an extra short-exponent assumption on top of DCR. Set `AGNIYA_RN_METHOD=standard` for textbook randomness (DCR only).
 - **Packing**: many integers per plaintext in fixed slots, sized with enough headroom that slot sums cannot overflow; negatives via a public offset (`agniya/core/batch_packing.py`).
-- **OPE + Paillier** for range filters: each row gets an order-preserving tag plus its own Paillier ciphertext (`api/server_optimized.py`, `agniya/hybrid/ope_paillier.py`).
+- **OPE + Paillier** for range filters: the column is packed in sorted order and each row gets an order-preserving tag, so a range is a contiguous run of slots: whole ciphertexts are multiplied, the two edge ciphertexts are decrypted separately (`api/server_optimized.py`, `BatchedAggregator.sum_range`). Tags come from `agniya/hybrid/fast_ope.py`: pyope's scheme with bit-identical tags, computed once per distinct value over one shared tree walk.
 - **AES-256-GCM** for non-numeric columns (`agniya/hybrid/aes_cipher.py`).
 
 ## Security model and limitations (read this)
@@ -57,7 +57,7 @@ small per-value ciphertexts and simplicity. The plan for closing the gap is in
 - The API server generates and holds the private key (in memory only). In this demo it is the **data owner**, not an untrusted cloud server. A deployment against an untrusted server must keep the private key on the client and send the server only the public key and ciphertexts; `sum_encrypted` and `BatchedAggregator.sum_column`'s first step need only the public key.
 - Paillier is IND-CPA secure under DCR with `AGNIYA_RN_METHOD=standard`; the default DJN randomness additionally assumes short exponents are indistinguishable (Damgård, Jurik, Nielsen 2010). Neither is **post-quantum**.
 - Packed ciphertexts reveal the number of rows. The fixed-point scale and the column offset are public.
-- **OPE tags leak the order of values** and more (Boldyreva et al. 2011; Naveed et al., CCS 2015). Use `OPE+Paillier` only for columns where that is acceptable.
+- **OPE tags leak the order of values** and more (Boldyreva et al. 2011; Naveed et al., CCS 2015). Use `OPE+Paillier` only for columns where that is acceptable. Sorted packing reveals nothing beyond that order. For a range SUM the key holder decrypts the (at most two) ciphertexts cut by the range edges on their own, so it sees those slots' values individually.
 - No authentication or rate limiting on the API; it binds to `127.0.0.1` by default.
 
 ## Setup

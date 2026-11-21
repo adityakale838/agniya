@@ -331,3 +331,14 @@ class TestPackingHeadroom:
     def test_rejects_floats(self, aggregator):
         with pytest.raises(ValueError):
             aggregator.sum_values([1.5, 2.0])
+
+    def test_sum_range_exact(self, aggregator):
+        import random
+        rng = random.Random(11)
+        values = sorted(rng.randint(-5_000, 10**9) for _ in range(500))
+        col = aggregator.encrypt_column(values)
+        s = col['slots']
+        cuts = [0, 1, s - 1, s, s + 1, 2 * s, 250, 499, 500, 600]
+        for i in cuts:
+            for j in cuts:
+                assert aggregator.sum_range(col, i, j) == sum(values[max(i, 0):j]), (i, j)
