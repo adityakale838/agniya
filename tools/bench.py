@@ -239,7 +239,7 @@ def update_readme(results_path=None):
     rn = r[f"rn_{best}"]
     std = r["rn_standard"]
     rows = [
-        ("Key generation (2048-bit)", f"{r['keygen_ms']['median']:.0f} ms"),
+        ("Key generation (2048-bit)", f"{r['keygen_ms']['median']:.0f} ms (p10 {r['keygen_ms']['p10']:.0f} ms, p90 {r['keygen_ms']['p90']:.0f} ms; random prime search)"),
         ("Decrypt (CRT)", f"{r['decrypt_crt_ms']['median']:.2f} ms"),
         ("rⁿ generation, standard (1 core)", f"{std['offline_ms_per_rn_1core']['median']:.2f} ms"),
     ]
