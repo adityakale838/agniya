@@ -53,11 +53,33 @@ Both runs: same laptop (i5-1145G7, 16 GB, Windows 11, Python 3.12.10, gmpy2 2.3.
 
 ### Next optimizations (measured candidates, in order of value)
 
-1. **OPE per-row columns:** after DJN, most of the 2.13 s is probably `pyope` encryption; measure it, then batch it or replace it.
+1. ~~**OPE per-row columns**~~: done, see §0c.
 2. **Owner/server split:** move the private key to the client. This is a security property, not speed, but every number should eventually be measured in that topology.
 3. **GROUP BY via slot packing:** one decryption for many groups.
 4. **3072-bit keys (128-bit security):** measure end-to-end cost; expect ~2.5× per value.
 5. **Native backends**, only if profiling shows the comb multiplications dominate: Intel's Paillier library (AVX-512 IFMA is available on this CPU) or a small C/Rust extension.
+
+## 0c. Status update: OPE columns (commit `bee2832`, same branch)
+
+Results: `tools/bench_results.json` @ `bee2832`, clean tree, same laptop. The "before" column is the Phase 1 run @ `04a2969`. Paths this change did not touch came out ~7% slower in this run (e.g. 1M-row encrypt 6.75 s vs 6.28 s), which is laptop variance (rule 5 above).
+
+| `insurance_real.csv`, 1,338 rows, via the API | Phase 1 | Now |
+|---|---|---|
+| Encrypt `charges` (packed) + `age` as OPE+Paillier | 2.13 s, 1,369 ciphertexts | **0.335 s, 31 ciphertexts** |
+| Encrypt `charges` as OPE+Paillier (1,337 distinct values, 4 decimals) | not measured (profiled: ~3.3 s OPE + 0.9 s per-row Paillier) | **1.54 s, 24 ciphertexts** |
+| Range SUM `age` 30–45 (421 rows) / `charges` 5,000–20,000.5 (706 rows), exact | not measured | **12.4 ms / 14.6 ms** |
+
+**What changed:**
+- **Faster OPE tags:** `agniya/hybrid/fast_ope.py` subclasses pyope and produces **bit-identical tags** (tested against pyope with the same key). It generates the AES-CTR coin tape with C-level iteration and encrypts a batch in one walk of the OPE tree, so each node's hypergeometric sample is computed once and each distinct value is tagged once. Profiled on 1,338 rows: `age` went from 0.67 s to 0.004 s, `charges` from 3.09 s to 0.99 s. The rest is pyope's pure-Python hypergeometric sampler.
+- **Sorted packing:** OPE+Paillier columns are packed in **sorted order**, and the per-row Paillier ciphertexts are gone. A range is a contiguous run of slots. `BatchedAggregator.sum_range` multiplies the ciphertexts wholly inside the range, decrypts that product once, and decrypts the at most two edge ciphertexts separately.
+
+**Security delta:**
+- **Server:** sorted order reveals nothing to the server beyond what the OPE tags already reveal (the order).
+- **Key holder:** the key holder now sees the individual values in the two edge ciphertexts, up to 2 × slots ≈ 100–150 values. In the current topology the key holder is the data owner. With delegated decryption it would be a leak; fix that by masking edge slots, or by keeping per-row ciphertexts for edge chunks only.
+
+**Next in this area:**
+- Parallelize FastOPE across processes for high-cardinality columns. This is worth it only above roughly 10k distinct values, because of the ~1 s Windows process start-up.
+- Replace pyope's sampler only behind an identical-output test.
 
 ---
 
