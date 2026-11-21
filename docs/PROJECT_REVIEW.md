@@ -107,12 +107,45 @@ Measured @ `830ef2e`, in-process HTTP (Flask test client: JSON included, network
 The key split costs about 5% on upload (hex/JSON encoding) and nothing measurable on queries.
 
 **Not done yet:**
-1. **Dashboard:** the Next.js dashboard still uses the server-holds-key endpoints. Browser-side Paillier (JS BigInt) needs its own measurement before it is promised.
+1. ~~**Dashboard**~~: done, see §0e.
 2. ~~**Key storage**~~: done. `AgniyaClient.save` / `load` write one file holding the primes, OPE keys and column layouts, encrypted with AES-256-GCM under scrypt (N=2¹⁷, r=8, p=1). The header is authenticated. Save or load takes ~0.4 s on this laptop, and the file is under 1 KB. Tests cover a wrong password, a modified header, nonce or ciphertext, and no primes in clear. The `/api/v2` server also persists its columns in SQLite (`AGNIYA_STORE`), committing each upload before it replies, and reloads them at start-up. Ciphertexts are stored as fixed 512-byte big-endian values and tags as 8 bytes, so the store is the same size as the ciphertexts. Tested by a reload in the test suite and by a two-process restart (upload and save the key in one process; load the key and query in a fresh one). Not done: deleting datasets, and a size limit on the store.
 3. **Integrity:** the server is honest-but-curious. Nothing proves it multiplied the right ciphertexts.
 4. **Scope:** range filters apply to the column being aggregated. `SUM(a) WHERE b IN [x, y]` needs per-row ciphertexts for `a`, or packing `a` in `b`'s sort order.
 
 ---
+
+## 0e. Status update: encryption in the browser (same branch)
+
+The dashboard's default mode, "Encrypt in this browser", parses the CSV in the page, generates the Paillier key, encrypts, packs and tags there, and talks only to `/api/v2`. The browser's network log shows only `/api/v2/columns` and `/api/v2/aggregate`: no `/api/upload`, no plaintext. "Server-side demo" keeps the old flow.
+
+**Implementation:** `webapp/lib/agniya-browser.ts` (about 400 lines, no dependencies). It contains:
+- BigInt Paillier with Miller–Rabin key generation and CRT decryption;
+- encryption that computes `rⁿ` by CRT over `p²` and `q²`, which the owner can do because it holds `p` and `q`;
+- the same slot layout as Python;
+- a line-by-line port of pyope's OPE, with the coin tape from WebCrypto HMAC-SHA256 and AES-CTR, plus the batched tree walk from `FastOPE`.
+
+**Cross-checked against Python** (`tests/test_integration/test_browser_crypto.py`, which runs the TypeScript under Node):
+- Python decrypts browser ciphertexts, and the browser decrypts Python ciphertexts;
+- the slot layouts are identical;
+- the OPE tags are **bit-identical to pyope** on 5 domains up to 2⁴⁰ (about 750 values);
+- a TypeScript client against the real Flask server on `insurance_real.csv` matches pandas.
+
+Bit-identical OPE tags were not guaranteed: JS and CPython could round `log` differently. They agreed on every value tested.
+
+**Measured.** These are single runs, so treat them as indicative, not benchmark numbers:
+
+| | Node 24 (V8) | In-app browser (Chromium) |
+|---|---|---|
+| 2048-bit key generation | 0.42 s | — |
+| Encryption per ciphertext (`rⁿ` by CRT) | 23 ms (36 ms without CRT) | — |
+| Encrypt `insurance_real.csv`: `age` and `charges` as OPE, `bmi` and `children` packed (1,338 rows, 52 ciphertexts, including key generation and upload) | — | 1.37 s |
+| Range SUM / AVG with decryption | — | ~120 ms |
+
+**Not done:**
+- The crypto runs on the main thread, so the page freezes during key generation and encryption. Move it to a Web Worker before handling large files.
+- There's no browser key file. WebCrypto has no scrypt, so it needs PBKDF2 or a small scrypt implementation, and a format the Python client can read.
+- Values are rounded with `Math.round` (half up) where Python uses round-half-even. The two differ only for values exactly halfway between two 4-decimal fixed-point steps.
+- The dashboard's existing lint errors (10 `no-explicit-any`) are unchanged.
 
 ## 1. Verdict in one paragraph
 

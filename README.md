@@ -69,7 +69,7 @@ small per-value ciphertexts and simplicity. The plan for closing the gap is in
 
 ## Security model and limitations (read this)
 
-- **Two modes.** The dashboard endpoints (`/api/upload`, `/api/encrypt`, `/api/query`) receive the plaintext CSV and the server generates and holds the private key in memory: there the server **is the data owner**. The `/api/v2` endpoints with `agniya.client.AgniyaClient` keep the private key, the OPE keys and all plaintext on the client; the server stores and sees only the public modulus `n`, packed ciphertexts, values per ciphertext, row counts and sorted OPE tags, and answers with ciphertexts (`range_plan` needs only the public key).
+- **Two modes.** The server-side endpoints (`/api/upload`, `/api/encrypt`, `/api/query`; the dashboard's "Server-side demo" switch) receive the plaintext CSV, and the server generates and holds the private key in memory: there the server **is the data owner**. The `/api/v2` endpoints keep the private key, the OPE keys and all plaintext on the client: either `agniya.client.AgniyaClient` (Python) or the dashboard's default **"Encrypt in this browser"** mode (`webapp/lib/agniya-browser.ts`: Paillier, packing and a port of pyope in TypeScript, cross-checked against Python by `tests/test_integration/test_browser_crypto.py`). In browser mode the key lives only in the open tab: closing it makes the uploaded data undecryptable (no browser key file yet). the server stores and sees only the public modulus `n`, packed ciphertexts, values per ciphertext, row counts and sorted OPE tags, and answers with ciphertexts (`range_plan` needs only the public key).
 - The `/api/v2` server is assumed **honest-but-curious**: nothing verifies that it computed the product correctly.
 - `AgniyaClient.save` writes the Paillier primes, OPE keys and column layouts to one file, encrypted with AES-256-GCM under a scrypt key (N=2¹⁷, r=8, p=1, 128 MiB) derived from a password. The file header is authenticated. A wrong password or any modification fails to load. **Losing the file or the password makes the data undecryptable.** The password is the weakest link: use a long one. The `/api/v2` server stores its columns (ciphertexts, slots, counts, OPE tags, `n`) in SQLite at `AGNIYA_STORE` (default `api/agniya_store.sqlite3`, git-ignored) and reloads them at start-up. The dashboard endpoints stay in memory on purpose, because they hold the private key.
 - Paillier is IND-CPA secure under DCR with `AGNIYA_RN_METHOD=standard`; the default DJN randomness additionally assumes short exponents are indistinguishable (Damgård, Jurik, Nielsen 2010). Neither is **post-quantum**.
@@ -79,7 +79,7 @@ small per-value ciphertexts and simplicity. The plan for closing the gap is in
 
 ## Setup
 
-Requires Python 3.12 (wheels for gmpy2/numba) and Node.js 18+.
+Requires Python 3.12 (wheels for gmpy2/numba) and Node.js 18+ (22.18+ to run the TypeScript cross-check tests).
 
 ```powershell
 py -3.12 -m venv envb
@@ -117,6 +117,7 @@ API server options (environment variables): `AGNIYA_STORE` (SQLite file for `/ap
 
 ```
 agniya/client.py   AgniyaClient: data-owner side of /api/v2 (keys, encryption, decryption)
+webapp/lib/agniya-browser.ts  the same data-owner side in the browser (dashboard default mode)
 agniya/core/       paillier.py, precomputation.py (rⁿ pool), batch_packing.py, ultimate_system.py (Database)
 agniya/hybrid/     AES-GCM, key wrapping, schema, OPE+Paillier, hybrid row storage
 agniya/storage/    generic data structures (Bloom/Cuckoo filters, LSM tree, wavelet tree, erasure coding)

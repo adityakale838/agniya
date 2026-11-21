@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Upload, Lock, ArrowLeft, FileText, Zap, Database, Search, Calculator, Filter, TrendingUp, AlertCircle, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import Link from 'next/link';
-import { apiService } from '@/lib/api';
+import { apiService, API_BASE_URL } from '@/lib/api';
+import { BrowserClient, httpPost, parseCsv } from '@/lib/agniya-browser';
+
+const PAILLIER: string[] = ['Paillier-2048', 'OPE+Paillier'];
 
 interface Field {
   name: string;
@@ -104,6 +107,81 @@ export default function Dashboard() {
   
   const [error, setError] = useState<string | null>(null);
 
+  // Browser mode: the CSV is parsed and encrypted here; keys never leave this tab (/api/v2).
+  const [browserMode, setBrowserMode] = useState(true);
+  const csvRef = useRef<{ header: string[]; rows: string[][] } | null>(null);
+  const clientRef = useRef<BrowserClient | null>(null);
+
+  const switchMode = (browser: boolean) => {
+    setBrowserMode(browser);
+    setFile(null); setUploadData(null); setEncryptionResult(null); setSchema([]); setQueries([]);
+    setSelectedField(''); setRangeMin(''); setRangeMax('');
+    csvRef.current = null; clientRef.current = null;
+    setActiveTab('upload');
+  };
+
+  const columnValues = (name: string): number[] => {
+    const { header, rows } = csvRef.current!;
+    const i = header.indexOf(name);
+    return rows.map(r => (r[i] ?? '').trim()).filter(v => v !== '').map(Number);
+  };
+
+  const parseLocally = async (f: File): Promise<UploadedData> => {
+    const csv = parseCsv(await f.text());
+    csvRef.current = csv;
+    const schema: Field[] = csv.header.map(name => {
+      const vals = columnValues(name);
+      const numeric = vals.length > 0 && vals.every(Number.isFinite);
+      const integer = numeric && vals.every(Number.isInteger);
+      const id = ['id', 'user_id', 'customer_id'].includes(name.toLowerCase());
+      return { name, type: integer ? 'int' : numeric ? 'float' : 'str',
+               encryption: id ? 'Plaintext' : numeric ? 'Paillier-2048' : 'AES-256' };
+    });
+    const sample_data = csv.rows.slice(0, 3).map(r => Object.fromEntries(csv.header.map((h, i) => [h, r[i] ?? ''])));
+    return { filename: f.name, records: csv.rows.length, fields: csv.header.length, schema, sample_data };
+  };
+
+  const encryptLocally = async (): Promise<EncryptionResult> => {
+    await new Promise(r => setTimeout(r, 50));  // let the spinner paint: key generation blocks ~0.5-2 s
+    const t0 = performance.now();
+    const fields = schema.filter(f => PAILLIER.includes(f.encryption));
+    if (!fields.length) throw new Error('Choose Paillier-2048 or OPE+Paillier for at least one numeric field.');
+    const client = new BrowserClient(httpPost(API_BASE_URL), `${uploadData!.filename}-${crypto.randomUUID().slice(0, 8)}`);
+    let ciphertexts = 0;
+    for (const f of fields) {
+      const vals = columnValues(f.name);
+      if (!vals.every(Number.isFinite)) throw new Error(`${f.name} is not numeric`);
+      const decimals = vals.every(Number.isInteger) ? 0 : 4;
+      ciphertexts += (await client.upload(f.name, vals, decimals, f.encryption === 'OPE+Paillier')).ciphertexts;
+    }
+    clientRef.current = client;
+    const secs = (performance.now() - t0) / 1000;
+    const records = csvRef.current!.rows.length;
+    return { success: true, records_encrypted: records, time_seconds: secs, throughput: records / secs, ciphertexts };
+  };
+
+  const queryLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
+    const client = clientRef.current!;
+    const t0 = performance.now();
+    const a = await client.query(selectedField, minVal, maxVal);
+    const time_ms = performance.now() - t0;
+    const total = client.columns.get(selectedField)!.count;
+    const filtered = minVal !== undefined || maxVal !== undefined;
+    return {
+      operation: selectedOperation, field: selectedField, column: selectedField,
+      result: { SUM: a.sum, AVG: a.avg, COUNT: a.count }[selectedOperation],
+      time_ms, records_processed: a.count, ciphertexts_aggregated: a.ciphertextsUsed,
+      filter_applied: filtered, range: { min: minVal ?? null, max: maxVal ?? null },
+      records_before_filter: total, filter_selectivity: total ? a.count / total : 0,
+      security_note: 'The server compared OPE tags (it learns their order) and multiplied ciphertexts; the edge ciphertexts were decrypted in this browser.',
+      encryption_proof: {
+        ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits.slice(0, 3), modulus_n_bit_length: 2048,
+        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`,
+        computation_type: 'Paillier homomorphic addition',
+      },
+    };
+  };
+
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
@@ -127,6 +205,13 @@ export default function Dashboard() {
     setError(null);
     
     try {
+      if (browserMode) {
+        const local = await parseLocally(fileToUpload);
+        setUploadData(local);
+        setSchema(local.schema);
+        setActiveTab('configure');
+        return;
+      }
       const response = await apiService.uploadFile(fileToUpload);
       setUploadData(response as any);
       // Convert schema format to Field format
@@ -151,7 +236,7 @@ export default function Dashboard() {
     setError(null);
     
     try {
-      const response = await apiService.encryptDataset(
+      const response = browserMode ? await encryptLocally() : await apiService.encryptDataset(
         uploadData.filename,
         schema.map(f => ({ name: f.name, encryption: f.encryption }))
       );
@@ -159,10 +244,7 @@ export default function Dashboard() {
       setActiveTab('query');
       
       // Set first numeric field for queries
-      const numericField = schema.find(f => {
-        const type = f.type.toLowerCase();
-        return type.includes('int') || type.includes('float');
-      });
+      const numericField = schema.find(f => PAILLIER.includes(f.encryption));
       if (numericField) {
         setSelectedField(numericField.name);
       }
@@ -181,8 +263,8 @@ export default function Dashboard() {
     
     try {
       // Parse range values (convert to numbers or undefined)
-      const minVal = rangeMin.trim() !== '' ? parseInt(rangeMin) : undefined;
-      const maxVal = rangeMax.trim() !== '' ? parseInt(rangeMax) : undefined;
+      const minVal = rangeMin.trim() !== '' ? parseFloat(rangeMin) : undefined;
+      const maxVal = rangeMax.trim() !== '' ? parseFloat(rangeMax) : undefined;
       
       // Validate range if both are provided
       if (minVal !== undefined && maxVal !== undefined && minVal > maxVal) {
@@ -191,7 +273,7 @@ export default function Dashboard() {
         return;
       }
       
-      const response = await apiService.executeQuery(
+      const response = browserMode ? await queryLocally(minVal, maxVal) : await apiService.executeQuery(
         selectedOperation,
         selectedField,
         uploadData.filename,
@@ -310,6 +392,26 @@ export default function Dashboard() {
 
             {/* UPLOAD TAB */}
             <TabsContent value="upload" className="space-y-6">
+              <Card className="p-4 glass-morphism">
+                <div className="flex flex-col md:flex-row md:items-center gap-3">
+                  <div className="flex gap-2">
+                    <Button size="sm" variant={browserMode ? 'default' : 'outline'} onClick={() => switchMode(true)}>
+                      <Shield className="w-4 h-4 mr-2" />
+                      Encrypt in this browser
+                    </Button>
+                    <Button size="sm" variant={browserMode ? 'outline' : 'default'} onClick={() => switchMode(false)}>
+                      <Database className="w-4 h-4 mr-2" />
+                      Server-side demo
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {browserMode
+                      ? 'The CSV is read and encrypted here. The server receives only ciphertexts and OPE tags; the private key stays in this tab and is lost when you close it.'
+                      : 'The CSV is uploaded and the server generates and holds the private key: the server is the data owner.'}
+                  </p>
+                </div>
+              </Card>
+
               <Card
                 className={`p-12 border-2 border-dashed transition-all duration-300 glass-morphism ${
                   isDragging
@@ -502,7 +604,7 @@ export default function Dashboard() {
                   {isEncrypting ? (
                     <>
                       <Zap className="w-5 h-5 mr-2 animate-pulse" />
-                      Encrypting with Paillier-2048...
+                      {browserMode ? 'Generating key and encrypting in this browser...' : 'Encrypting with Paillier-2048...'}
                     </>
                   ) : (
                     <>
@@ -614,10 +716,7 @@ export default function Dashboard() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent className="w-full">
-                          {schema.filter(f => {
-                            const type = f.type.toLowerCase();
-                            return type.includes('int') || type.includes('float') || type.includes('int64') || type.includes('float64');
-                          }).map(field => (
+                          {schema.filter(f => PAILLIER.includes(f.encryption)).map(field => (
                             <DropdownMenuItem key={field.name} onClick={() => setSelectedField(field.name)}>
                               {field.name} ({field.encryption})
                             </DropdownMenuItem>
