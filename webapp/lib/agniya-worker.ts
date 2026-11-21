@@ -15,11 +15,17 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; args: Record<s
     if (op === 'init') {
       client = new BrowserClient(httpPost(args.baseUrl as string), args.dataset as string);
       result = { modulusBits: client.pub.n.toString(2).length };
+    } else if (op === 'load') {
+      client = await BrowserClient.loadKeyFile(args.text as string, args.password as string, httpPost(args.baseUrl as string));
+      result = { dataset: client.dataset, columns: [...client.columns].map(([name, m]) =>
+        ({ name, count: m.count, scale: m.scale, rangeFilter: !!m.ope })) };
     } else if (!client) {
       throw new Error('Worker not initialised');
     } else if (op === 'upload') {
       result = await client.upload(args.column as string, args.values as number[], args.decimals as number,
                                    args.rangeFilter as boolean);
+    } else if (op === 'save') {
+      result = { text: await client.saveKeyFile(args.password as string), dataset: client.dataset };
     } else if (op === 'query') {
       const column = args.column as string;
       const answer = await client.query(column, args.lo as number | undefined, args.hi as number | undefined);

@@ -98,3 +98,71 @@ def test_fixed_point_rounding_matches_python(tmp_path):
     for scale in (1, 10**4):
         a = run_ts({"fixed": {"values": values, "scale": scale}}, tmp_path)
         assert [int(v) for v in a["fixed"]] == [int(round(float(v) * scale)) for v in values]
+
+
+@pytest.mark.parametrize("password,salt,n,r,p,dklen", [
+    ("password", b"NaCl", 1024, 8, 16, 64),               # RFC 7914 test vector
+    ("pleaseletmein", b"SodiumChloride", 16384, 8, 1, 64),  # RFC 7914 test vector
+    ("correct horse \u00e9", b"0123456789abcdef", 2**17, 8, 1, 32),  # the key-file parameters, non-ASCII password
+])
+def test_scrypt_matches_hashlib(tmp_path, password, salt, n, r, p, dklen):
+    import hashlib
+    a = run_ts({"scrypt": {"password": password, "salt_hex": salt.hex(), "n": n, "r": r, "p": p, "dklen": dklen}}, tmp_path)
+    want = hashlib.scrypt(password.encode(), salt=salt, n=n, r=r, p=p, maxmem=256 * 1024 * 1024, dklen=dklen)
+    assert a["scrypt"] == want.hex()
+
+
+@pytest.fixture(scope="module")
+def live_server():
+    from werkzeug.serving import make_server
+    httpd = make_server("127.0.0.1", 0, srv.app)
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_port}"
+    httpd.shutdown()
+
+
+def _exact(df, col, lo, hi, scale):
+    x = df[col]
+    sel = x[(x >= (lo if lo is not None else -1e18)) & (x <= (hi if hi is not None else 1e18))]
+    return len(sel), sum(int(round(float(v) * scale)) for v in sel) / scale
+
+
+def test_key_file_browser_to_python(tmp_path, live_server):
+    from agniya.client import AgniyaClient
+    df = pd.read_csv(os.path.join(ROOT, "data", "insurance_real.csv"))
+    a = run_ts({"client": {"url": live_server, "dataset": "kf-b2p", "save_password": "pw \u00e9", "queries": [], "columns": [
+        {"name": "charges", "values": df["charges"].tolist(), "decimals": 4, "range": True},
+        {"name": "age", "values": df["age"].tolist(), "decimals": 0, "range": False}]}}, tmp_path)
+    path = tmp_path / "browser.agniya-key"
+    path.write_text(a["keyfile"])
+    with pytest.raises(ValueError, match="Wrong password"):
+        AgniyaClient.load(str(path), "nope", live_server)
+    c = AgniyaClient.load(str(path), "pw \u00e9", live_server)
+    assert c.dataset == "kf-b2p" and c.priv.p == int(a["p"])
+    for col, lo, hi, scale in [("charges", 5000, 20000.5, 10**4), ("charges", None, None, 10**4), ("age", None, None, 1)]:
+        r = c.query(col, lo, hi)
+        count, total = _exact(df, col, lo, hi, scale)
+        assert r["count"] == count and r["sum"] == pytest.approx(total, abs=1e-9)
+
+
+def test_key_file_python_to_browser(tmp_path, live_server):
+    from agniya.client import AgniyaClient
+    df = pd.read_csv(os.path.join(ROOT, "data", "insurance_real.csv"))
+    c = AgniyaClient(live_server, dataset="kf-p2b")
+    c.upload("charges", df["charges"], decimals=4, range_filter=True)
+    c.upload("bmi", df["bmi"], decimals=4)
+    path = tmp_path / "python.agniya-key"
+    c.save(str(path), "pw")
+    queries = [["charges", 5000, 20000.5], ["charges", None, 1200], ["bmi", None, None]]
+    a = run_ts({"load": {"keyfile": path.read_text(), "password": "pw", "url": live_server, "queries": queries}}, tmp_path)
+    assert "error" not in a, a.get("error")
+    assert a["dataset"] == "kf-p2b" and {x["name"]: x["count"] for x in a["columns"]} == {"charges": 1338, "bmi": 1338}
+    for (col, lo, hi), ans in zip(queries, a["answers"]):
+        count, total = _exact(df, col, lo, hi, 10**4)
+        assert ans["count"] == count and ans["sum"] == pytest.approx(total, abs=1e-9)
+    bad = run_ts({"load": {"keyfile": path.read_text(), "password": "wrong", "url": live_server, "queries": []}}, tmp_path)
+    assert bad["error"] == "Wrong password or modified key file"
+    d = json.loads(path.read_text())
+    d["kdf"]["r"] = 4  # header is authenticated
+    tampered = run_ts({"load": {"keyfile": json.dumps(d), "password": "pw", "url": live_server, "queries": []}}, tmp_path)
+    assert tampered["error"] == "Wrong password or modified key file"

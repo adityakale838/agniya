@@ -71,7 +71,7 @@ class AgniyaClient:
             raise ValueError('A password is required')
         cols = {}
         for name, m in self.columns.items():
-            c = {k: m[k] for k in ('scale', 'slot_bits', 'slots', 'offset')}
+            c = {k: m[k] for k in ('scale', 'slot_bits', 'slots', 'offset', 'count') if k in m}
             if 'ope' in m:
                 c.update(ope_key=base64.b64encode(m['ope'].key).decode(), ope_offset=m['ope_offset'], ope_top=m['ope_top'])
             cols[name] = c
@@ -126,7 +126,7 @@ class AgniyaClient:
         pool = RandomnessPool(self.pub)
         packed = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch).encrypt_column(ints)
         pool.close()  # ponytail: new pool per column; keep one open if many big columns are uploaded
-        meta.update(slot_bits=packed['slot_bits'], slots=packed['slots'], offset=packed['offset'])
+        meta.update(slot_bits=packed['slot_bits'], slots=packed['slots'], offset=packed['offset'], count=packed['count'])
         body.update(ciphertexts=[format(c, 'x') for c in packed['ciphertexts']],
                     slots=packed['slots'], count=packed['count'])
         r = self.post('/api/v2/columns', body)

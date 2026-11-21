@@ -302,6 +302,87 @@ export class OPE {
   }
 }
 
+// ---------------------------------------------------------------- scrypt (RFC 7914)
+const rotl = (a: number, b: number) => (a << b) | (a >>> (32 - b));
+
+function salsa208(B: Uint32Array, x: Uint32Array) {
+  x.set(B);
+  for (let i = 0; i < 8; i += 2) {
+    x[4] ^= rotl(x[0] + x[12], 7); x[8] ^= rotl(x[4] + x[0], 9); x[12] ^= rotl(x[8] + x[4], 13); x[0] ^= rotl(x[12] + x[8], 18);
+    x[9] ^= rotl(x[5] + x[1], 7); x[13] ^= rotl(x[9] + x[5], 9); x[1] ^= rotl(x[13] + x[9], 13); x[5] ^= rotl(x[1] + x[13], 18);
+    x[14] ^= rotl(x[10] + x[6], 7); x[2] ^= rotl(x[14] + x[10], 9); x[6] ^= rotl(x[2] + x[14], 13); x[10] ^= rotl(x[6] + x[2], 18);
+    x[3] ^= rotl(x[15] + x[11], 7); x[7] ^= rotl(x[3] + x[15], 9); x[11] ^= rotl(x[7] + x[3], 13); x[15] ^= rotl(x[11] + x[7], 18);
+    x[1] ^= rotl(x[0] + x[3], 7); x[2] ^= rotl(x[1] + x[0], 9); x[3] ^= rotl(x[2] + x[1], 13); x[0] ^= rotl(x[3] + x[2], 18);
+    x[6] ^= rotl(x[5] + x[4], 7); x[7] ^= rotl(x[6] + x[5], 9); x[4] ^= rotl(x[7] + x[6], 13); x[5] ^= rotl(x[4] + x[7], 18);
+    x[11] ^= rotl(x[10] + x[9], 7); x[8] ^= rotl(x[11] + x[10], 9); x[9] ^= rotl(x[8] + x[11], 13); x[10] ^= rotl(x[9] + x[8], 18);
+    x[12] ^= rotl(x[15] + x[14], 7); x[13] ^= rotl(x[12] + x[15], 9); x[14] ^= rotl(x[13] + x[12], 13); x[15] ^= rotl(x[14] + x[13], 18);
+  }
+  for (let i = 0; i < 16; i++) B[i] = B[i] + x[i];  // Uint32Array wraps mod 2^32
+}
+
+function blockMix(B: Uint32Array, Y: Uint32Array, X: Uint32Array, tmp: Uint32Array, r: number) {
+  X.set(B.subarray((2 * r - 1) * 16, 2 * r * 16));
+  for (let i = 0; i < 2 * r; i++) {
+    for (let k = 0; k < 16; k++) X[k] ^= B[i * 16 + k];
+    salsa208(X, tmp);
+    Y.set(X, ((i & 1) ? r + (i >> 1) : i >> 1) * 16);  // even blocks first, then odd
+  }
+  B.set(Y);
+}
+
+async function pbkdf2(password: Uint8Array, salt: Uint8Array, bytes: number): Promise<Uint8Array> {
+  const k = await webcrypto.subtle.importKey('raw', password as BufferSource, 'PBKDF2', false, ['deriveBits']);
+  return new Uint8Array(await webcrypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt: salt as BufferSource, iterations: 1 }, k, bytes * 8));
+}
+
+/** scrypt(password, salt, N, r, p) -> dkLen bytes, as Python's hashlib.scrypt. Memory: 128 * r * N bytes. */
+export async function scrypt(password: string, salt: Uint8Array, N: number, r: number, p: number,
+                             dkLen = 32): Promise<Uint8Array> {
+  const pw = new TextEncoder().encode(password);
+  const B = await pbkdf2(pw, salt, p * 128 * r);
+  const words = 32 * r, X = new Uint32Array(words), Y = new Uint32Array(words);
+  const T = new Uint32Array(16), tmp = new Uint32Array(16), V = new Uint32Array(words * N);
+  const view = new DataView(B.buffer, B.byteOffset, B.byteLength);
+  for (let b = 0; b < p; b++) {
+    const base = b * 128 * r;
+    for (let k = 0; k < words; k++) X[k] = view.getUint32(base + 4 * k, true);
+    for (let i = 0; i < N; i++) { V.set(X, i * words); blockMix(X, Y, T, tmp, r); }
+    for (let i = 0; i < N; i++) {
+      const j = X[(2 * r - 1) * 16] & (N - 1);
+      for (let k = 0; k < words; k++) X[k] ^= V[j * words + k];
+      blockMix(X, Y, T, tmp, r);
+    }
+    for (let k = 0; k < words; k++) view.setUint32(base + 4 * k, X[k], true);
+  }
+  return pbkdf2(pw, B, dkLen);
+}
+
+// ---------------------------------------------------------------- key file (same format as agniya/client.py)
+export const KEY_FILE_FORMAT = 'agniya-client-key/1';
+const KEY_SCRYPT = { n: 2 ** 17, r: 8, p: 1 };  // 128 MiB, ~1 s: slows password guessing
+
+const b64 = (u: Uint8Array) => { let s = ''; for (const c of u) s += String.fromCharCode(c); return btoa(s); };
+const unb64 = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+
+/** Python json.dumps(v, sort_keys=True) for the (ASCII) header: the AES-GCM associated data must match byte for byte. */
+function pyDumpsSorted(v: unknown): string {
+  if (typeof v === 'string') return JSON.stringify(v);
+  if (typeof v === 'number') return String(v);
+  const o = v as Record<string, unknown>;
+  return '{' + Object.keys(o).sort().map(k => `${JSON.stringify(k)}: ${pyDumpsSorted(o[k])}`).join(', ') + '}';
+}
+
+function safeNum(x: bigint): number {
+  if (x > BigInt(Number.MAX_SAFE_INTEGER) || x < -BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Value too large for the key file');
+  return Number(x);
+}
+
+async function gcmKey(password: string, salt: Uint8Array, kdf: { n: number; r: number; p: number }) {
+  const raw = await scrypt(password, salt, kdf.n, kdf.r, kdf.p);
+  return webcrypto.subtle.importKey('raw', raw as BufferSource, 'AES-GCM', false, ['encrypt', 'decrypt']);
+}
+
 // ---------------------------------------------------------------- client for /api/v2
 type Post = (path: string, body: unknown) => Promise<Record<string, unknown>>;
 interface AggregateResponse {
@@ -413,6 +494,57 @@ export class BrowserClient {
       ciphertextBits: [product, ...edges.map(e => e[0])].filter((x): x is bigint => x !== null).map(bitLength),
       serverMs: r.time_ms,
     };
+  }
+
+  /** Every secret this client holds (primes, OPE keys, column layouts), encrypted with AES-256-GCM under
+   *  scrypt(password). Same format as AgniyaClient.save, so either side can load the other's file. */
+  async saveKeyFile(password: string): Promise<string> {
+    if (!password) throw new Error('A password is required');
+    const columns: Record<string, Record<string, unknown>> = {};
+    for (const [name, m] of this.columns) {
+      const c: Record<string, unknown> = { scale: m.scale, slot_bits: m.slotBits, slots: m.slots,
+                                           offset: safeNum(m.offset), count: m.count };
+      if (m.ope) Object.assign(c, { ope_key: b64(m.ope.key), ope_offset: safeNum(m.opeOffset!), ope_top: safeNum(m.opeTop!) });
+      columns[name] = c;
+    }
+    const secret = JSON.stringify({ dataset: this.dataset, p: hex(this.priv.p), q: hex(this.priv.q), columns });
+    const salt = webcrypto.getRandomValues(new Uint8Array(16)), nonce = webcrypto.getRandomValues(new Uint8Array(12));
+    const header = { format: KEY_FILE_FORMAT, kdf: { name: 'scrypt', ...KEY_SCRYPT, salt: b64(salt) } };
+    const ct = await webcrypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: nonce, additionalData: new TextEncoder().encode(pyDumpsSorted(header)) },
+      await gcmKey(password, salt, KEY_SCRYPT), new TextEncoder().encode(secret));
+    return JSON.stringify({ ...header, nonce: b64(nonce), ciphertext: b64(new Uint8Array(ct)) });
+  }
+
+  /** Restore a client from a key file written by saveKeyFile or AgniyaClient.save. */
+  static async loadKeyFile(text: string, password: string, post: Post): Promise<BrowserClient> {
+    const d = JSON.parse(text);
+    if (d.format !== KEY_FILE_FORMAT || d.kdf?.name !== 'scrypt') throw new Error('Not an AGNIYA client key file');
+    const { n, r, p } = d.kdf;
+    if (!(Number.isInteger(n) && n > 1 && (n & (n - 1)) === 0 && n <= 2 ** 20 && r >= 1 && r <= 16 && p >= 1 && p <= 4)) {
+      throw new Error('Unsupported scrypt parameters in key file');  // also caps memory use
+    }
+    let plain: ArrayBuffer;
+    try {
+      plain = await webcrypto.subtle.decrypt(
+        { name: 'AES-GCM', iv: unb64(d.nonce), additionalData: new TextEncoder().encode(pyDumpsSorted({ format: d.format, kdf: d.kdf })) },
+        await gcmKey(password, unb64(d.kdf.salt), d.kdf), unb64(d.ciphertext));
+    } catch {
+      throw new Error('Wrong password or modified key file');
+    }
+    const s = JSON.parse(new TextDecoder().decode(plain));
+    const client = new BrowserClient(post, s.dataset, keypairFromPrimes(unhex(s.p), unhex(s.q)));
+    for (const [name, c] of Object.entries(s.columns as Record<string, Record<string, number | string>>)) {
+      const meta: ColumnMeta = { scale: c.scale as number, slotBits: c.slot_bits as number, slots: c.slots as number,
+                                 offset: BigInt(c.offset), count: (c.count as number) ?? 0 };
+      if (c.ope_key !== undefined) {
+        meta.ope = new OPE(unb64(c.ope_key as string), BigInt(c.ope_top));
+        meta.opeOffset = BigInt(c.ope_offset);
+        meta.opeTop = BigInt(c.ope_top);
+      }
+      client.columns.set(name, meta);
+    }
+    return client;
   }
 }
 

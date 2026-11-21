@@ -37,5 +37,14 @@ export class CryptoWorker {
 
   query(column: string, lo?: number, hi?: number) { return this.call<WorkerAnswer>('query', { column, lo, hi }); }
 
+  /** Encrypted key file text (scrypt + AES-256-GCM, same format as the Python client). */
+  save(password: string) { return this.call<{ text: string; dataset: string }>('save', { password }); }
+
+  /** Restore keys from a key file; this worker then answers queries on that dataset. */
+  load(baseUrl: string, text: string, password: string) {
+    return this.call<{ dataset: string; columns: Array<{ name: string; count: number; scale: number; rangeFilter: boolean }> }>(
+      'load', { baseUrl, text, password });
+  }
+
   terminate() { this.worker.terminate(); }
 }

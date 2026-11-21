@@ -155,8 +155,19 @@ Bit-identical OPE tags were not guaranteed: JS and CPython could round `log` dif
 
 The dashboard's `SUM(charges)` is now 17,755,824.988, identical to Python.
 
+**Browser key file:** the dashboard can download the worker's keys as a password-protected file and restore them later. The file format is **the same as `AgniyaClient.save`**: the Paillier primes, OPE keys and column layouts, encrypted with AES-256-GCM under scrypt (N=2¹⁷, r=8, p=1), with the header authenticated as associated data.
+- **scrypt:** WebCrypto has no scrypt, so `agniya-browser.ts` implements it per RFC 7914 (PBKDF2 from WebCrypto plus a Salsa20/8 core). It takes ~0.75 s in Node and runs inside the worker. Python's native scrypt takes ~0.4 s.
+- **Header:** the authenticated header is serialized byte-for-byte as Python's `json.dumps(..., sort_keys=True)` writes it.
+- **Limits:** loading caps the scrypt parameters (N ≤ 2²⁰, r ≤ 16, p ≤ 4) so a crafted file can't demand unbounded memory.
+
+Tested by `tests/test_integration/test_browser_crypto.py`:
+- the browser's scrypt equals `hashlib.scrypt` on both RFC 7914 vectors and on the key-file parameters with a non-ASCII password;
+- a browser-saved file loads in Python, and a Python-saved file loads in the browser, both giving exact answers against the live server;
+- a wrong password and a modified header both fail.
+
+Also checked by hand in the dashboard: encrypt, download the key file (1,336 bytes, top-level keys `format`, `kdf`, `nonce`, `ciphertext`), reload the page (the key is gone), restore. The wrong password was rejected; the right one gave `SUM(age)` = 52,459 and `SUM(charges)` = 17,755,824.988, the same as before the reload.
+
 **Not done:**
-- There's no browser key file. WebCrypto has no scrypt, so it needs PBKDF2 or a small scrypt implementation, and a format the Python client can read.
 - The dashboard's existing lint errors (10 `no-explicit-any`) are unchanged.
 
 ## 1. Verdict in one paragraph

@@ -36,5 +36,23 @@ if (job.client) {  // end to end against a running server
   out.answers = [];
   for (const [col, lo, hi] of job.client.queries) out.answers.push(await c.query(col, lo ?? undefined, hi ?? undefined));
   out.p = c.priv.p.toString();
+  if (job.client.save_password) out.keyfile = await c.saveKeyFile(job.client.save_password);
+}
+if (job.scrypt) {
+  const s = job.scrypt, t = performance.now();
+  const dk = await A.scrypt(s.password, Uint8Array.from(Buffer.from(s.salt_hex, 'hex')), s.n, s.r, s.p, s.dklen);
+  out.scrypt_ms = performance.now() - t;
+  out.scrypt = Buffer.from(dk).toString('hex');
+}
+if (job.load) {  // restore from a key file (either side's), then query
+  try {
+    const c = await A.BrowserClient.loadKeyFile(job.load.keyfile, job.load.password, A.httpPost(job.load.url));
+    out.dataset = c.dataset;
+    out.columns = [...c.columns].map(([name, m]) => ({ name, count: m.count, range: !!m.ope }));
+    out.answers = [];
+    for (const [col, lo, hi] of job.load.queries) out.answers.push(await c.query(col, lo ?? undefined, hi ?? undefined));
+  } catch (e) {
+    out.error = e.message;
+  }
 }
 console.log(JSON.stringify(out));

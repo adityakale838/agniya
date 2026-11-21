@@ -116,6 +116,56 @@ export default function Dashboard() {
   const dropWorker = () => { workerRef.current?.terminate(); workerRef.current = null; };  // drops the key
   useEffect(() => () => workerRef.current?.terminate(), []);  // leaving the page drops the key too
 
+  // Key file: the worker encrypts its keys under scrypt(password) + AES-GCM (same format as agniya/client.py).
+  const [keyPassword, setKeyPassword] = useState('');
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+
+  const downloadKeyFile = async () => {
+    if (!workerRef.current) return;
+    setKeyBusy(true); setError(null);
+    try {
+      const { text, dataset } = await workerRef.current.save(keyPassword);
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${dataset}.agniya-key`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setKeyPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
+  const restoreFromKeyFile = async () => {
+    if (!restoreFile) return;
+    setKeyBusy(true); setError(null);
+    const worker = new CryptoWorker();
+    try {
+      const info = await worker.load(API_BASE_URL, await restoreFile.text(), keyPassword);
+      dropWorker();
+      workerRef.current = worker;
+      const restored: Field[] = info.columns.map(c => ({
+        name: c.name, type: c.scale === 1 ? 'int' : 'float', encryption: c.rangeFilter ? 'OPE+Paillier' : 'Paillier-2048' }));
+      const records = Math.max(0, ...info.columns.map(c => c.count));
+      setUploadData({ filename: info.dataset, records, fields: restored.length, schema: restored });
+      setSchema(restored);
+      setEncryptionResult({ success: true, records_encrypted: records, message: 'Restored from key file' });
+      setQueries([]);
+      setSelectedField(restored[0]?.name ?? '');
+      setKeyPassword(''); setRestoreFile(null);
+      setActiveTab('query');
+    } catch (err) {
+      worker.terminate();
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
   const switchMode = (browser: boolean) => {
     setBrowserMode(browser);
     setFile(null); setUploadData(null); setEncryptionResult(null); setSchema([]); setQueries([]);
@@ -411,11 +461,35 @@ export default function Dashboard() {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     {browserMode
-                      ? 'The CSV is read and encrypted here. The server receives only ciphertexts and OPE tags; the private key stays in this tab and is lost when you close it.'
+                      ? 'The CSV is read and encrypted here. The server receives only ciphertexts and OPE tags; the private key stays in this tab unless you download a password-protected key file.'
                       : 'The CSV is uploaded and the server generates and holds the private key: the server is the data owner.'}
                   </p>
                 </div>
               </Card>
+
+              {browserMode && (
+                <Card className="p-4 glass-morphism">
+                  <div className="flex flex-col md:flex-row md:items-end gap-3">
+                    <div className="flex-1">
+                      <Label htmlFor="restore-file">Restore from key file</Label>
+                      <Input id="restore-file" type="file" accept=".agniya-key,application/json"
+                             onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)} />
+                    </div>
+                    <div className="flex-1">
+                      <Label htmlFor="restore-password">Key file password</Label>
+                      <Input id="restore-password" type="password" value={keyPassword}
+                             onChange={(e) => setKeyPassword(e.target.value)} />
+                    </div>
+                    <Button onClick={restoreFromKeyFile} disabled={!restoreFile || !keyPassword || keyBusy}>
+                      <Lock className="w-4 h-4 mr-2" />
+                      {keyBusy ? 'Unlocking...' : 'Restore'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Reopen data you encrypted earlier: the key file is decrypted in this browser; the ciphertexts are already on the server.
+                  </p>
+                </Card>
+              )}
 
               <Card
                 className={`p-12 border-2 border-dashed transition-all duration-300 glass-morphism ${
@@ -662,6 +736,21 @@ export default function Dashboard() {
                         <div className="text-sm text-muted-foreground">Ciphertexts stored</div>
                       </div>
                     </div>
+
+                    {browserMode && (
+                      <div className="mt-6 p-4 rounded-lg bg-white/50 dark:bg-black/20">
+                        <Label htmlFor="key-password">
+                          Save the key: without it the data cannot be decrypted after this tab closes
+                        </Label>
+                        <div className="flex gap-2 mt-2">
+                          <Input id="key-password" type="password" placeholder="Password for the key file"
+                                 value={keyPassword} onChange={(e) => setKeyPassword(e.target.value)} />
+                          <Button onClick={downloadKeyFile} disabled={!keyPassword || keyBusy} variant="outline">
+                            {keyBusy ? 'Encrypting key...' : 'Download key file'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
 
                     <Button
                       onClick={() => setActiveTab('query')}
