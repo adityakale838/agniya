@@ -119,3 +119,23 @@ def test_key_file_rejects_wrong_password_and_tampering(setup, tmp_path):
             AgniyaClient.load(path, "pw", transport)
     with pytest.raises(ValueError):
         c.save(path, "")
+
+
+def test_store_survives_restart(setup):
+    c, df = setup
+    before = {col: c.query(col) for col in ("amount", "age")} | {"range": c.query("score", -10.5, 120.25)}
+    srv.owner_datasets.clear()
+    srv.load_store()  # what a server restart does
+    stored = srv.owner_datasets["split"]["columns"]["score"]
+    assert stored["tags"] == sorted(stored["tags"]) and len(stored["tags"]) == len(df)
+    after = {col: c.query(col) for col in ("amount", "age")} | {"range": c.query("score", -10.5, 120.25)}
+    assert after == before
+
+
+def test_tags_must_be_64_bit(setup):
+    c, _ = setup
+    body = {"dataset": "v64", "column": "x", "n": format(c.pub.n, "x"), "ciphertexts": ["2"],
+            "slots": 2, "count": 2, "ope_tags": [1, 2 ** 64]}
+    assert srv.app.test_client().post("/api/v2/columns", json=body).status_code == 400
+    body["ope_tags"] = [-1, 3]
+    assert srv.app.test_client().post("/api/v2/columns", json=body).status_code == 400

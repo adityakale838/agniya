@@ -15,6 +15,8 @@ Two trust models:
   private key and the OPE keys. This process only ever sees the public modulus n, packed
   ciphertexts, values per ciphertext, row counts and sorted OPE tags, and returns ciphertexts.
   It is honest-but-curious: nothing here protects the integrity of results.
+  Its columns persist in SQLite at AGNIYA_STORE (default api/agniya_store.sqlite3) and are
+  reloaded at start-up. The demo datasets are NOT persisted: they include the private key.
 Decimal columns are stored as fixed-point integers with FIXED_POINT_DECIMALS digits.
 """
 
@@ -22,6 +24,8 @@ import os
 import sys
 import time
 import secrets
+import sqlite3
+from contextlib import closing
 from bisect import bisect_left, bisect_right
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -251,6 +255,39 @@ def list_databases():
 # ---- client-held keys: public key + ciphertexts in, ciphertexts out ------------------------
 # dataset -> {'pub': PaillierPublicKey, 'columns': {name: {'cts', 'slots', 'count', 'tags'}}}
 owner_datasets = {}
+STORE_PATH = os.environ.get('AGNIYA_STORE', os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                         'agniya_store.sqlite3'))
+TAG_BYTES = 8  # OPE tags live in [0, 2^64)
+
+
+def _store():
+    con = sqlite3.connect(STORE_PATH)
+    con.execute('CREATE TABLE IF NOT EXISTS columns (dataset TEXT, name TEXT, n TEXT, slots INTEGER, '
+                'count INTEGER, cts BLOB, tags BLOB, PRIMARY KEY (dataset, name))')
+    return con
+
+
+def _pack(xs, width):
+    return b''.join(x.to_bytes(width, 'big') for x in xs)
+
+
+def _unpack(blob, width):
+    return [int.from_bytes(blob[i:i + width], 'big') for i in range(0, len(blob), width)]
+
+
+def _public_key(n):
+    return PaillierPublicKey(n, n + 1, n * n, n.bit_length())
+
+
+def load_store():
+    """Rebuild owner_datasets from the SQLite store (runs at import, i.e. at server start)."""
+    owner_datasets.clear()
+    with closing(_store()) as con:
+        for dataset, name, n, slots, count, cts, tags in con.execute('SELECT * FROM columns'):
+            pub = _public_key(int(n, 16))
+            ds = owner_datasets.setdefault(dataset, {'pub': pub, 'columns': {}})
+            ds['columns'][name] = {'cts': _unpack(cts, (pub.n_squared.bit_length() + 7) // 8), 'slots': slots,
+                                   'count': count, 'tags': _unpack(tags, TAG_BYTES) if tags is not None else None}
 
 
 def _hex_ints(xs, bound, what):
@@ -275,14 +312,20 @@ def v2_store_column():
         tags = d.get('ope_tags')
         if tags is not None:
             tags = [int(t) for t in tags]
-            if len(tags) != count or any(a > b for a, b in zip(tags, tags[1:])):
-                raise ValueError('ope_tags must be sorted, one per value')
+            if len(tags) != count or any(a > b for a, b in zip(tags, tags[1:]))                     or (tags and not 0 <= tags[0] <= tags[-1] < 2 ** (8 * TAG_BYTES)):
+                raise ValueError('ope_tags must be sorted 64-bit values, one per value')
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({'error': f'Bad column upload: {e}'}), 400
-    ds = owner_datasets.setdefault(name, {'pub': PaillierPublicKey(n, n + 1, n * n, n.bit_length()), 'columns': {}})
-    if ds['pub'].n != n:
+    ds = owner_datasets.get(name)
+    if ds is not None and ds['pub'].n != n:
         return jsonify({'error': f'Dataset {name} uses a different public key'}), 409
-    ds['columns'][column] = {'cts': cts, 'slots': slots, 'count': count, 'tags': tags}
+    pub = ds['pub'] if ds else _public_key(n)
+    with closing(_store()) as con, con:  # committed to disk before we answer
+        con.execute('INSERT OR REPLACE INTO columns VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    (name, column, format(n, 'x'), slots, count,
+                     _pack(cts, (pub.n_squared.bit_length() + 7) // 8),
+                     _pack(tags, TAG_BYTES) if tags is not None else None))
+    owner_datasets.setdefault(name, {'pub': pub, 'columns': {}})['columns'][column] =         {'cts': cts, 'slots': slots, 'count': count, 'tags': tags}
     return jsonify({'success': True, 'dataset': name, 'column': column, 'ciphertexts': len(cts),
                     'count': count, 'range_filterable': tags is not None})
 
@@ -317,6 +360,8 @@ def v2_aggregate():
         'time_ms': round((time.perf_counter() - start) * 1000, 2),
     })
 
+
+load_store()
 
 if __name__ == '__main__':
     host = os.environ.get('AGNIYA_HOST', '127.0.0.1')

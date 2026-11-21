@@ -94,3 +94,6 @@ cache/
 api/uploads/
 uploads/
 output/
+
+# API v2 ciphertext store
+*.sqlite3

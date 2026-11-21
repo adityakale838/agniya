@@ -146,7 +146,9 @@ def main():
     # API round trip on a real dataset.
     sys.path.insert(0, os.path.join(ROOT, "api"))
     import pandas as pd
-    import server_optimized as srv
+    import tempfile
+    os.environ["AGNIYA_STORE"] = os.path.join(tempfile.mkdtemp(prefix="agniya-bench-"), "store.sqlite3")
+    import server_optimized as srv  # /api/v2 uploads below include the SQLite write
     cl = srv.app.test_client()
     csv = os.path.join(ROOT, "data", "insurance_real.csv")
     df = pd.read_csv(csv)
@@ -178,7 +180,7 @@ def main():
 
     # Client-held keys (/api/v2): the client encrypts, tags and decrypts; the server sees only
     # n, ciphertexts and OPE tags. In-process HTTP (Flask test client): JSON encoding included,
-    # network latency not. Key generation is excluded here (see keygen_ms).
+    # network latency not; the server's SQLite commit is. Key generation is excluded (see keygen_ms).
     from agniya.client import AgniyaClient
 
     def tc(path, body):

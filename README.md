@@ -71,7 +71,7 @@ small per-value ciphertexts and simplicity. The plan for closing the gap is in
 
 - **Two modes.** The dashboard endpoints (`/api/upload`, `/api/encrypt`, `/api/query`) receive the plaintext CSV and the server generates and holds the private key in memory: there the server **is the data owner**. The `/api/v2` endpoints with `agniya.client.AgniyaClient` keep the private key, the OPE keys and all plaintext on the client; the server stores and sees only the public modulus `n`, packed ciphertexts, values per ciphertext, row counts and sorted OPE tags, and answers with ciphertexts (`range_plan` needs only the public key).
 - The `/api/v2` server is assumed **honest-but-curious**: nothing verifies that it computed the product correctly.
-- `AgniyaClient.save` writes the Paillier primes, OPE keys and column layouts to one file, encrypted with AES-256-GCM under a scrypt key (N=2¹⁷, r=8, p=1, 128 MiB) derived from a password. The file header is authenticated. A wrong password or any modification fails to load. **Losing the file or the password makes the data undecryptable.** The password is the weakest link: use a long one. The server's own store is still in memory only.
+- `AgniyaClient.save` writes the Paillier primes, OPE keys and column layouts to one file, encrypted with AES-256-GCM under a scrypt key (N=2¹⁷, r=8, p=1, 128 MiB) derived from a password. The file header is authenticated. A wrong password or any modification fails to load. **Losing the file or the password makes the data undecryptable.** The password is the weakest link: use a long one. The `/api/v2` server stores its columns (ciphertexts, slots, counts, OPE tags, `n`) in SQLite at `AGNIYA_STORE` (default `api/agniya_store.sqlite3`, git-ignored) and reloads them at start-up. The dashboard endpoints stay in memory on purpose, because they hold the private key.
 - Paillier is IND-CPA secure under DCR with `AGNIYA_RN_METHOD=standard`; the default DJN randomness additionally assumes short exponents are indistinguishable (Damgård, Jurik, Nielsen 2010). Neither is **post-quantum**.
 - Packed ciphertexts reveal the number of rows. The fixed-point scale and the column offset are public.
 - **OPE tags leak the order of values** and more (Boldyreva et al. 2011; Naveed et al., CCS 2015). Use `OPE+Paillier` only for columns where that is acceptable. Sorted packing reveals nothing beyond that order. For a range SUM the key holder decrypts the (at most two) ciphertexts cut by the range edges on their own, so it sees those slots' values individually.
@@ -97,7 +97,7 @@ python -m pytest tests                       # unit tests
 python -X utf8 tools\bench.py                # benchmarks (writes tools/bench_results.json)
 ```
 
-API server options (environment variables): `AGNIYA_HOST` (default `127.0.0.1`),
+API server options (environment variables): `AGNIYA_STORE` (SQLite file for `/api/v2` columns), `AGNIYA_HOST` (default `127.0.0.1`),
 `AGNIYA_DEBUG=1` (Werkzeug debugger; never on a network), `AGNIYA_CORS_ORIGINS`
 (default `http://localhost:3000`).
 
