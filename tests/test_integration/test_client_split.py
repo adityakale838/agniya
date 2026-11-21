@@ -90,3 +90,32 @@ def test_other_key_for_same_dataset_rejected(setup):
     other = AgniyaClient(transport, dataset="split")
     with pytest.raises(RuntimeError, match="409"):
         other.upload("y", [1, 2, 3])
+
+
+def test_key_file_round_trip(setup, tmp_path):
+    c, df = setup
+    path = str(tmp_path / "split.agniya-key")
+    c.save(path, "correct horse")
+    raw = open(path).read()
+    for secret in (c.priv.p, c.priv.q):
+        assert str(secret) not in raw and format(secret, "x") not in raw
+    c2 = AgniyaClient.load(path, "correct horse", transport)
+    assert c2.pub.n == c.pub.n and c2.priv.p == c.priv.p and c2.dataset == "split"
+    assert c2.query("score", -10.5, 120.25) == c.query("score", -10.5, 120.25)
+    assert c2.query("amount")["sum"] == pytest.approx(df["amount"].sum(), abs=1e-6)
+
+
+def test_key_file_rejects_wrong_password_and_tampering(setup, tmp_path):
+    c, _ = setup
+    path = str(tmp_path / "k")
+    c.save(path, "pw")
+    with pytest.raises(ValueError, match="Wrong password"):
+        AgniyaClient.load(path, "nope", transport)
+    d = json.load(open(path))
+    for field, value in [("kdf", {**d["kdf"], "r": 4}), ("nonce", "A" * 16),
+                         ("ciphertext", d["ciphertext"][:-8] + "AAAAAAA=")]:
+        json.dump({**d, field: value}, open(path, "w"))
+        with pytest.raises(ValueError):
+            AgniyaClient.load(path, "pw", transport)
+    with pytest.raises(ValueError):
+        c.save(path, "")

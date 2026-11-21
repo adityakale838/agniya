@@ -64,7 +64,15 @@ def generate_keypair(bit_length: int = 2048) -> Tuple[PaillierPublicKey, Paillie
         # top two bits of p, q are set, so n has exactly 2*half bits
         if p != q and n.bit_length() == bit_length and gcd(n, (p - 1) * (q - 1)) == 1:
             break
+    return keypair_from_primes(p, q)
 
+
+def keypair_from_primes(p: int, q: int) -> Tuple[PaillierPublicKey, PaillierPrivateKey]:
+    """Rebuild the full key pair from the two primes (e.g. when loading a saved key)."""
+    n = p * q
+    if p == q or gcd(n, (p - 1) * (q - 1)) != 1:
+        raise ValueError("p, q do not form a valid Paillier modulus")
+    bit_length = n.bit_length()
     n_squared = n * n
     g = n + 1
     lambda_n = lcm(p - 1, q - 1)

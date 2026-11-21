@@ -108,7 +108,7 @@ The key split costs about 5% on upload (hex/JSON encoding) and nothing measurabl
 
 **Not done yet:**
 1. **Dashboard:** the Next.js dashboard still uses the server-holds-key endpoints. Browser-side Paillier (JS BigInt) needs its own measurement before it is promised.
-2. **Key storage:** keys live in client memory only. A saved, password-protected key file is needed before real use.
+2. ~~**Key storage**~~: done. `AgniyaClient.save` / `load` write one file holding the primes, OPE keys and column layouts, encrypted with AES-256-GCM under scrypt (N=2¹⁷, r=8, p=1). The header is authenticated. Save or load takes ~0.4 s on this laptop, and the file is under 1 KB. Tests cover a wrong password, a modified header, nonce or ciphertext, and no primes in clear. Still open: the server's own store is in memory, so a server restart loses the ciphertexts.
 3. **Integrity:** the server is honest-but-curious. Nothing proves it multiplied the right ciphertexts.
 4. **Scope:** range filters apply to the column being aggregated. `SUM(a) WHERE b IN [x, y]` needs per-row ciphertexts for `a`, or packing `a` in `b`'s sort order.
 
