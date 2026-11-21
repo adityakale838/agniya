@@ -25,6 +25,40 @@ Sections 1–8 describe `main` @ `340c4cd`. On the branch:
 
 Current numbers are in `README.md` and `tools/bench_results.json`. Phase 1 (§9) starts from them.
 
+## 0b. Status update: Phase 1 on branch `phase1-fast-encryption`
+
+Both runs: same laptop (i5-1145G7, 16 GB, Windows 11, Python 3.12.10, gmpy2 2.3.2), clean git tree, 25 repetitions, medians, every result checked exact. Baseline: `tools/bench_baseline_phase0.json` @ `be09265`. Phase 1: `tools/bench_results.json` @ `04a2969`.
+
+| Metric | Phase 0 | Phase 1 | Change |
+|---|---|---|---|
+| rⁿ generation, 1 core | 10.69 ms | **0.672 ms** | 15.9× |
+| Encrypt 1,000,000 packed values (all cores) | 66.0 s (standard rⁿ, same run) | **6.28 s = 6.3 µs/value** | 10.5× |
+| Encrypt 100,000 packed values | 5.76 s | **1.40 s** | 4.1× (single core: below the parallel threshold) |
+| SUM over 1,000,000 encrypted values | — | **127 ms = 7.9M values/s** | |
+| API, insurance with OPE per-row column: encrypt | 5.65 s | **2.13 s** | 2.7× |
+| Storage | 8.8–9.9 bytes/value packed | same | |
+| Gap to SEAL BFV (1.15 µs/value, same harness) | ~56× | **~5.5×** | |
+
+**What changed:** `agniya/core/djn.py` computes rⁿ as `hsᵅ`, where `hs = hⁿ`, `h = −x² mod n` and `α` is |n|/2 = 1,024 bits, using a window-8 comb table (17 MB, built in 0.19 s). `RandomnessPool` uses it by default, with a persistent worker pool. The exponent length is deliberately the conservative |n|/2. The scratchpad probe showed a 448-bit `α` would be ~2.3× faster again, but don't shorten it without a written security argument.
+
+**Security assumption:** with the default `AGNIYA_RN_METHOD=djn`, IND-CPA rests on DCR **plus** the DJN short-exponent assumption. `AGNIYA_RN_METHOD=standard` restores DCR-only randomness at the Phase 0 speed. Any publication must state which one was used. **Before relying on DJN, confirm the exponent length and the construction of `h` against Damgård–Jurik–Nielsen (2010) directly.**
+
+### How to quote numbers (applies to README, slides, papers, the patent draft)
+
+1. Only numbers from `tools/bench.py` output, with the machine line from the JSON `meta` and the git commit.
+2. Per-value cost (µs/value) or throughput (values/s), never a bare "N× faster". A ratio is fine only when both sides come from the same run of the same harness (as in the table above).
+3. Say whether a cost is **online** (20–23 µs per ciphertext with a precomputed rⁿ) or **end to end** (6.3 µs/value at 1M rows, packing included). Don't present online cost as encryption cost.
+4. Say which rⁿ method (DJN or standard) and which key size (2048-bit, ~112-bit security).
+5. Laptop numbers vary ±10–20% between sessions (thermal state, background load). Official numbers should come from one fixed, rentable machine; laptop numbers are for development.
+
+### Next optimizations (measured candidates, in order of value)
+
+1. **OPE per-row columns:** after DJN, most of the 2.13 s is probably `pyope` encryption; measure it, then batch it or replace it.
+2. **Owner/server split:** move the private key to the client. This is a security property, not speed, but every number should eventually be measured in that topology.
+3. **GROUP BY via slot packing:** one decryption for many groups.
+4. **3072-bit keys (128-bit security):** measure end-to-end cost; expect ~2.5× per value.
+5. **Native backends**, only if profiling shows the comb multiplications dominate: Intel's Paillier library (AVX-512 IFMA is available on this CPU) or a small C/Rust extension.
+
 ---
 
 ## 1. Verdict in one paragraph
