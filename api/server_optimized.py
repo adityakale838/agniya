@@ -144,8 +144,9 @@ def encrypt_dataset():
             total_cts += len(values)
         columns[name] = state
 
+    db.pool.close()  # release worker processes; queries need no new randomness
     elapsed = time.perf_counter() - start
-    encrypted_datasets[filename] = {'db': db, 'columns': columns, 'record_count': len(df)}
+    encrypted_datasets[filename] ={'db': db, 'columns': columns, 'record_count': len(df)}
     return jsonify({
         'success': True,
         'records_encrypted': len(df),

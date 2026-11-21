@@ -16,22 +16,14 @@ db.sum_column(col)                    # 200010000, one ciphertext product + one 
 
 ## Measured performance
 
-Intel i5-1145G7 (4 cores), Windows 11, Python 3.12, gmpy2 2.3.2, 2048-bit keys.
-Every number comes from `python -X utf8 tools/bench.py` (raw output: `tools/bench_results.json`).
+2048-bit keys. The table below is **generated** by `python -X utf8 tools/bench.py` (do not edit by hand);
+every timed operation is checked for an exact result, and p10/p90 plus all dataset sizes are in
+`tools/bench_results.json`. Numbers depend on hardware: always quote them with the machine line under the table.
 
-| Operation | Result |
-|---|---|
-| Key generation | 0.15 s |
-| Encrypt one value | 15 ms |
-| Decrypt (CRT) | 3.9 ms |
-| Encrypt using a precomputed rⁿ (online part) | 32 µs; rⁿ costs 6.1 ms offline on all cores |
-| Homomorphic additions (gmpy2) | 88k ciphertexts/s |
-| Packed column, 20,000 values: encrypt | 2.35 s (8.5k values/s, 62 values/ciphertext) |
-| Packed column, 20,000 values: SUM | 10 ms (exact) |
-| API, `insurance_real.csv` (1,338 rows): encrypt `charges` / SUM query | 0.50 s / 4.2 ms, error 0.003 (4-decimal fixed point) |
-| Reference: Microsoft SEAL BFV via TenSEAL, 4,096 values | 7.4 ms (1.8 µs/value) |
+<!-- BENCH:START -->
+<!-- BENCH:END -->
 
-Lattice FHE (SEAL) encrypts bulk data much faster; Paillier's strengths are exact integer sums,
+Lattice FHE (SEAL) still encrypts bulk data faster per value; Paillier's strengths are exact integer sums,
 small per-value ciphertexts and simplicity. The plan for closing the gap is in
 [docs/PROJECT_REVIEW.md §9](docs/PROJECT_REVIEW.md).
 
@@ -39,6 +31,7 @@ small per-value ciphertexts and simplicity. The plan for closing the gap is in
 
 - **Paillier** with `g = n+1`, fresh randomness `r` for every ciphertext, CRT decryption (`agniya/core/paillier.py`).
 - **Randomness pool**: the expensive `rⁿ mod n²` is plaintext-independent, so it is precomputed offline across all cores; each value is used once (`agniya/core/precomputation.py`).
+- **Fast rⁿ (DJN)**: by default rⁿ is computed as `hsᵅ` for a fixed public base `hs = hⁿ` and a random |n|/2-bit `α`, using a precomputed comb table (`agniya/core/djn.py`). This is the Damgård–Jurik–Nielsen optimization; its security relies on an extra short-exponent assumption on top of DCR. Set `AGNIYA_RN_METHOD=standard` for textbook randomness (DCR only).
 - **Packing**: many integers per plaintext in fixed slots, sized with enough headroom that slot sums cannot overflow; negatives via a public offset (`agniya/core/batch_packing.py`).
 - **OPE + Paillier** for range filters: each row gets an order-preserving tag plus its own Paillier ciphertext (`api/server_optimized.py`, `agniya/hybrid/ope_paillier.py`).
 - **AES-256-GCM** for non-numeric columns (`agniya/hybrid/aes_cipher.py`).
@@ -46,7 +39,7 @@ small per-value ciphertexts and simplicity. The plan for closing the gap is in
 ## Security model and limitations (read this)
 
 - The API server generates and holds the private key (in memory only). In this demo it is the **data owner**, not an untrusted cloud server. A deployment against an untrusted server must keep the private key on the client and send the server only the public key and ciphertexts; `sum_encrypted` and `BatchedAggregator.sum_column`'s first step need only the public key.
-- Paillier is IND-CPA secure (DCR assumption) but **not post-quantum**.
+- Paillier is IND-CPA secure under DCR with `AGNIYA_RN_METHOD=standard`; the default DJN randomness additionally assumes short exponents are indistinguishable (Damgård, Jurik, Nielsen 2010). Neither is **post-quantum**.
 - Packed ciphertexts reveal the number of rows. The fixed-point scale and the column offset are public.
 - **OPE tags leak the order of values** and more (Boldyreva et al. 2011; Naveed et al., CCS 2015). Use `OPE+Paillier` only for columns where that is acceptable.
 - No authentication or rate limiting on the API; it binds to `127.0.0.1` by default.

@@ -93,7 +93,7 @@ def main():
 
     # r^n generation: the dominant cost of encryption. Offline (precomputable) vs online.
     for method in methods():
-        pool = RandomnessPool(pub, method=method, workers=1) if method != "standard" else RandomnessPool(pub, workers=1)
+        pool = RandomnessPool(pub, method=method, workers=1)
         off = stats(lambda: pool.refill(1), reps)
         pool.refill(reps + 10)
         cts = []
@@ -111,10 +111,10 @@ def main():
     for method in methods():
         for n_rows in sizes:
             vals = [random.randint(3_000_000, 15_000_000) for _ in range(n_rows)]  # salaries in cents
-            kw = {"method": method} if method != "standard" else {}
-            pool = RandomnessPool(pub, **kw)
+            pool = RandomnessPool(pub, method=method)
             agg = BatchedAggregator(pub, priv, encrypt_batch=pool.encrypt_batch)
             t = time.perf_counter(); col = agg.encrypt_column(vals); t_enc = time.perf_counter() - t
+            pool.close()
             assert agg.sum_column(col) == sum(vals)
             s = stats(lambda: agg.sum_column(col), max(5, reps // 3))
             section(f"column_{method}_{n_rows}", {
