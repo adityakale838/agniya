@@ -149,7 +149,8 @@ export default function Dashboard() {
       const info = await worker.load(API_BASE_URL, await restoreFile.text(), keyPassword);
       dropWorker();
       workerRef.current = worker;
-      const restored: Field[] = info.columns.filter(c => !c.name.includes('|')).map(c => ({  // "a|b" = copy of a in b order
+      // "a|b" = copy of a in b order, "a#g" = a packed by group g (Python client): not fields of their own
+      const restored: Field[] = info.columns.filter(c => !/[|#]/.test(c.name)).map(c => ({
         name: c.name, type: c.scale === 1 ? 'int' : 'float', encryption: c.rangeFilter ? 'OPE+Paillier' : 'Paillier-2048' }));
       const records = Math.max(0, ...info.columns.map(c => c.count));
       setUploadData({ filename: info.dataset, records, fields: restored.length, schema: restored });

@@ -12,6 +12,8 @@ ciphertexts and are decrypted here.
     c.query("charges", lo=5000, hi=20000)    # rows with 5000 <= charges <= 20000
     c.upload_by("charges", charges, by="age", by_values=ages, decimals=4)
     c.query("charges", lo=30, hi=45, by="age")  # SUM(charges) WHERE 30 <= age <= 45
+    c.upload_grouped("charges", charges, by="region", by_values=regions, decimals=4)
+    c.query_groups("charges", "region")     # {'northeast': {'sum', 'count', 'avg'}, ...}
 
     c.save("claims.agniya-key", password)    # scrypt + AES-256-GCM; losing it loses the data
     c = AgniyaClient.load("claims.agniya-key", password, "http://127.0.0.1:5000")
@@ -32,7 +34,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pyope.ope import ValueRange
 
-from agniya.core.batch_packing import BatchedAggregator, decrypt_range
+from agniya.core.batch_packing import BatchedAggregator, decrypt_groups, decrypt_range
 from agniya.core.paillier import generate_keypair, is_djn_admissible, keypair_from_primes
 from agniya.core.precomputation import RandomnessPool
 from agniya.hybrid.fast_ope import FastOPE
@@ -74,7 +76,7 @@ class AgniyaClient:
             raise ValueError('A password is required')
         cols = {}
         for name, m in self.columns.items():
-            c = {k: m[k] for k in ('scale', 'fscale', 'slot_bits', 'slots', 'offset', 'count') if k in m}
+            c = {k: m[k] for k in ('scale', 'fscale', 'slot_bits', 'slots', 'offset', 'count', 'lanes', 'labels') if k in m}
             if 'ope' in m:
                 c.update(ope_key=base64.b64encode(m['ope'].key).decode(), ope_offset=m['ope_offset'], ope_top=m['ope_top'])
             cols[name] = c
@@ -130,6 +132,41 @@ class AgniyaClient:
         rows = sorted((int(round(b * fs)), int(round(a * s))) for a, b in zip(values, by_values, strict=True)
                       if a is not None and b is not None and a == a and b == b)  # x == x is False for NaN
         return self._upload(f'{column}|{by}', [a for _, a in rows], s, [b for b, _ in rows], fs)
+
+    def upload_grouped(self, column: str, values: Iterable[float], by: str, by_values: Iterable,
+                       decimals: int = 0) -> dict:
+        """Store `column` packed by the labels in `by_values` (one per row, same order), so that
+        query_groups(column, by) returns every group's sum and count from one decryption. Rows where
+        either is missing are left out. The labels stay here; the server sees the number of slots
+        per ciphertext and the number of ciphertexts (about the biggest group's size / lanes)."""
+        s = 10 ** decimals
+        rows = [(int(round(a * s)), b) for a, b in zip(values, by_values, strict=True)
+                if a is not None and b is not None and a == a and b == b]  # x == x is False for NaN
+        if not rows:
+            raise ValueError(f'No rows have both {column} and {by}')
+        pool = RandomnessPool(self.pub, method=None if self._djn_ok else 'standard')
+        packed = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch).encrypt_groups(
+            [a for a, _ in rows], [b for _, b in rows])
+        pool.close()
+        name, cts = f'{column}#{by}', packed['ciphertexts']
+        r = self.post('/api/v2/columns', {  # every ciphertext is whole: the server multiplies them all
+            'dataset': self.dataset, 'column': name, 'n': format(self.pub.n, 'x'),
+            'ciphertexts': [format(c, 'x') for c in cts], 'slots': packed['slots'], 'count': packed['slots'] * len(cts)})
+        self.columns[name] = {'scale': s, **{k: packed[k] for k in ('slot_bits', 'slots', 'lanes', 'labels', 'offset')}}
+        return r
+
+    def query_groups(self, column: str, by: str) -> dict:
+        """{label: {'sum', 'count', 'avg'}} for SUM / COUNT / AVG(column) GROUP BY by (needs upload_grouped)."""
+        name = f'{column}#{by}'
+        if name not in self.columns:
+            raise ValueError(f'Call upload_grouped({column!r}, ..., by={by!r}) first')
+        m = self.columns[name]
+        r = self.post('/api/v2/aggregate', {'dataset': self.dataset, 'column': name})
+        out = {}
+        for label, (total, count) in decrypt_groups(self.pub, self.priv, int(r['product'], 16), m).items():
+            total = total / m['scale'] if m['scale'] != 1 else total
+            out[label] = {'sum': total, 'count': count, 'avg': total / count if count else 0}
+        return out
 
     def _upload(self, name: str, ints: list, scale: int, keys: Optional[list], fscale: int) -> dict:
         """Pack and encrypt `ints`; `keys` (sorted, one per value) become the OPE tags."""

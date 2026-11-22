@@ -19,6 +19,7 @@ def client():
         "visits": [None if i % 17 == 0 else i % 9 for i in range(200)],  # NaNs
         "name": [f"p{i}" for i in range(200)],
         "score": ((rng * 7919) % 1000 * 0.37 - 50).round(2),  # OPE floats incl. negatives, unsorted
+        "region": [None if i % 23 == 0 else "nsew"[i * i % 7 % 4] for i in range(200)],  # GROUP BY key, skewed
     })
     c = srv.app.test_client()
     buf = io.BytesIO(df.to_csv(index=False).encode())
@@ -70,6 +71,26 @@ def test_sum_where_other_column_in_range(client, field, by, lo, hi):
     for op, want in [("SUM", sel.sum()), ("AVG", sel.mean() if len(sel) else 0), ("COUNT", len(sel))]:
         r = q(c, type=op, column=field, filter_column=by, rangeMin=lo, rangeMax=hi)
         assert r["result"] == pytest.approx(want, abs=1e-6) and r["records_processed"] == len(sel), r
+
+
+@pytest.mark.parametrize("field,by", [("amount", "region"), ("visits", "region"), ("amount", "visits"),
+                                      ("score", "region"), ("age", "visits")])
+def test_group_by(client, field, by):
+    c, df = client
+    want = df[[field, by]].dropna().groupby(by)[field].agg(["sum", "mean", "count"])
+    for op, agg in [("SUM", "sum"), ("AVG", "mean"), ("COUNT", "count")]:
+        r = q(c, type=op, column=field, group_by=by)
+        got = {g["group"]: g["result"] for g in r["groups"]}
+        assert set(got) == set(want.index), r
+        for label, row in want.iterrows():
+            assert got[label] == pytest.approx(row[agg], abs=1e-6), (op, label)
+        assert r["records_processed"] == want["count"].sum()
+
+
+def test_group_by_rejects(client):
+    c, _ = client
+    assert "No GROUP BY copy" in q(c, type="SUM", column="amount", group_by="name")["error"]  # 200 distinct
+    assert "not supported" in q(c, type="SUM", column="amount", group_by="region", rangeMin=1)["error"]
 
 
 def test_ciphertexts_are_real(client):

@@ -25,6 +25,8 @@ c.query("charges")                    # {'sum', 'count', 'avg'}: server multipli
 c.query("charges", lo=5000, hi=20000)
 c.upload_by("charges", charges, by="age", by_values=ages, decimals=4)  # charges packed in age order
 c.query("charges", lo=30, hi=45, by="age")                       # SUM(charges) WHERE 30 <= age <= 45
+c.upload_grouped("charges", charges, by="region", by_values=regions, decimals=4)
+c.query_groups("charges", "region")   # {label: {'sum', 'count', 'avg'}} for every region, one decryption
 c.save("claims.agniya-key", password)                            # all client secrets, encrypted
 c = AgniyaClient.load("claims.agniya-key", password, "http://127.0.0.1:5000")
 ```
@@ -79,6 +81,7 @@ small per-value ciphertexts and simplicity. The plan for closing the gap is in
 - Packed ciphertexts reveal the number of rows. The fixed-point scale and the column offset are public.
 - **OPE tags leak the order of values** and more (Boldyreva et al. 2011; Naveed et al., CCS 2015). Use `OPE+Paillier` only for columns where that is acceptable. Sorted packing reveals nothing beyond that order. For a range SUM the key holder decrypts the (at most two) ciphertexts cut by the range edges on their own, so it sees those slots' values individually.
 - **`SUM(a) WHERE b in range`** works by storing a second packed copy of `a` in `b`'s sorted order, with `b`'s OPE tags (`AgniyaClient.upload_by`, `BrowserClient.uploadBy` in the browser; `/api/encrypt` and the dashboard's browser mode build one per pair of an OPE+Paillier column and another encrypted column, and the dashboard's "Filter by" picker queries them). The server learns `b`'s order, as for any OPE column, plus which ciphertext slots line up with it; each copy costs as much storage and encryption time as the column itself. Rows where `a` or `b` is missing are left out, as in SQL.
+- **`SUM / COUNT / AVG(a) GROUP BY g`** packs `a` by group: in every ciphertext each group owns a block of slots (several value lanes plus one count slot), so multiplying all ciphertexts sums each group in its own slots and **one decryption returns every group's sum and count**. The labels and group sizes stay with the key holder; the server sees the slot count and the number of ciphertexts (roughly the biggest group's size divided by the lanes). All groups must fit one plaintext: at 2048 bits, about 26 groups of 500 rows with 30-bit values (fixed-point charges) or 40 with 16-bit values (`upload_grouped` raises otherwise). In server-side mode `/api/encrypt` builds a copy per encrypted column and per column with 2–16 distinct values, which raises the ciphertext count (insurance_real.csv: 24 → 184). Rows missing `a` or `g` are left out, as in pandas `groupby`. GROUP BY with a range filter, and in the browser dashboard, are not built yet.
 - No authentication or rate limiting on the API; it binds to `127.0.0.1` by default.
 
 ## Setup
@@ -112,7 +115,7 @@ API server options (environment variables): `AGNIYA_STORE` (SQLite file for `/ap
 | `GET /api/health` | | features |
 | `POST /api/upload` | multipart `file` (CSV) | schema suggestion, record count |
 | `POST /api/encrypt` | `{filename, schema: [{name, encryption: "Paillier-2048" \| "OPE+Paillier" \| "AES-256" \| "Plaintext"}], sample_size?}` | records, seconds, ciphertext counts per field |
-| `POST /api/query` | `{filename, type: "SUM" \| "AVG" \| "COUNT", column, rangeMin?, rangeMax?, filter_column?}` (the range applies to `filter_column`, default `column`, which must be OPE+Paillier) | result, time_ms, ciphertexts aggregated |
+| `POST /api/query` | `{filename, type: "SUM" \| "AVG" \| "COUNT", column, rangeMin?, rangeMax?, filter_column?, group_by?}` (the range applies to `filter_column`, default `column`, which must be OPE+Paillier; `group_by` names a column with 2–16 distinct values and cannot be combined with a range yet) | result, time_ms, ciphertexts aggregated; with `group_by`, `groups: [{group, sum, count, avg, result}]` |
 | `GET /api/databases` | | encrypted datasets in memory |
 | `POST /api/v2/columns` | `{dataset, column, n, ciphertexts: [hex], slots, count, ope_tags?: [int, sorted]}` (sent by `AgniyaClient.upload`) | stored ciphertext count |
 | `POST /api/v2/aggregate` | `{dataset, column, lo_tag?, hi_tag?}` | `{count, product: hex, edges: [{ciphertext, first_slot, end_slot}]}`, decrypted by `AgniyaClient.query` |

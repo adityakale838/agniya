@@ -333,6 +333,25 @@ class TestPackingHeadroom:
         with pytest.raises(ValueError):
             aggregator.sum_values([1.5, 2.0])
 
+    @pytest.mark.parametrize("k,n,lo,hi", [(1, 50, 0, 10), (4, 1338, -5_000, 640_000_000), (6, 999, 0, 2**32 - 1),
+                                           (30, 300, -3, 3), (3, 0, 0, 1)])
+    def test_sum_groups_exact(self, aggregator, k, n, lo, hi):
+        import random
+        rng = random.Random(k * 1000 + n)
+        groups = [rng.choice(range(k)) if rng.random() < 0.5 else 0 for _ in range(n)]  # skewed: group 0 is big
+        values = [rng.randint(lo, hi) for _ in range(n)]
+        col = aggregator.encrypt_groups(values, [f"g{g}" for g in groups])
+        want = {}
+        for v, g in zip(values, groups):
+            s, c = want.get(f"g{g}", (0, 0))
+            want[f"g{g}"] = (s + v, c + 1)
+        assert aggregator.sum_groups(col) == want
+        assert col['slots'] * col['slot_bits'] < aggregator.public_key.n.bit_length()
+
+    def test_too_many_groups(self, aggregator):
+        with pytest.raises(ValueError, match="groups do not fit"):
+            aggregator.encrypt_groups([2**40] * 2000, list(range(2000)))
+
     def test_sum_range_exact(self, aggregator):
         import random
         rng = random.Random(11)

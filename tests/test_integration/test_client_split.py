@@ -28,6 +28,7 @@ def setup():
         "amount": (rng * 37.1234 - 900).round(4),
         "age": (rng % 60 + 18).astype(int),
         "score": ((rng * 7919) % 1000 * 0.37 - 50).round(2),
+        "region": [None if i % 29 == 0 else f"lbl-{'nsew'[i * i % 7 % 4]}" for i in range(300)],  # skewed
     })
     c = AgniyaClient(transport, dataset="split")
     c.upload("amount", df["amount"], decimals=4)
@@ -35,6 +36,9 @@ def setup():
     c.upload("score", df["score"], decimals=2, range_filter=True)
     c.upload_by("amount", df["amount"], by="age", by_values=df["age"], decimals=4)
     c.upload_by("age", df["age"], by="score", by_values=df["score"], by_decimals=2)
+    c.upload_grouped("amount", df["amount"], by="region", by_values=df["region"], decimals=4)
+    df["decade"] = df["age"] // 10 * 10
+    c.upload_grouped("score", df["score"], by="decade", by_values=df["decade"], decimals=2)  # int labels
     return c, df
 
 
@@ -76,9 +80,33 @@ def test_upload_by_skips_missing_rows(setup):
         c.query("amount", 1, 2, by="score")
 
 
+@pytest.mark.parametrize("col,by", [("amount", "region"), ("score", "decade")])
+def test_group_by_matches_pandas(setup, col, by):
+    c, df = setup
+    want = df[[col, by]].dropna().groupby(by)[col].agg(["sum", "count"])
+    got = c.query_groups(col, by)
+    assert set(got) == set(want.index)
+    for label, row in want.iterrows():
+        assert got[label]["count"] == row["count"] and got[label]["sum"] == pytest.approx(row["sum"], abs=1e-6)
+        assert got[label]["avg"] == pytest.approx(row["sum"] / row["count"], abs=1e-6)
+
+
+def test_group_by_skips_missing_rows(setup):
+    c, df = setup
+    c.upload_grouped("x", [1, None, 3, float("nan"), 5, 7], by="g", by_values=["a", "a", None, "b", "b", "a"])
+    assert c.query_groups("x", "g") == {"a": {"sum": 8, "count": 2, "avg": 4.0}, "b": {"sum": 5, "count": 1, "avg": 5.0}}
+    with pytest.raises(ValueError, match="upload_grouped"):
+        c.query_groups("amount", "score")
+    with pytest.raises(ValueError, match="No rows"):
+        c.upload_grouped("x", [None], by="g", by_values=["a"])
+    with pytest.raises(ValueError, match="60 groups do not fit"):  # one plaintext holds every group
+        c.upload_grouped("score", df["score"], by="age", by_values=df["age"], decimals=2)
+
+
 def test_server_never_sees_private_key_or_plaintext(setup):
     c, df = setup
     sent = "".join(SENT)
+    assert "lbl-" not in sent  # group labels stay with the client
     for secret in (c.priv.p, c.priv.q, c.priv.lambda_n, c.priv.mu):
         assert str(secret) not in sent and format(secret, "x") not in sent
     stored = srv.owner_datasets["split"]
@@ -125,6 +153,8 @@ def test_key_file_round_trip(setup, tmp_path):
     assert c2.query("score", -10.5, 120.25) == c.query("score", -10.5, 120.25)
     assert c2.query("age", -10.5, 120.25, by="score") == c.query("age", -10.5, 120.25, by="score")
     assert c2.query("amount")["sum"] == pytest.approx(df["amount"].sum(), abs=1e-6)
+    assert c2.query_groups("amount", "region") == c.query_groups("amount", "region")
+    assert c2.query_groups("score", "decade") == c.query_groups("score", "decade")  # int labels survive JSON
 
 
 def test_key_file_rejects_wrong_password_and_tampering(setup, tmp_path):

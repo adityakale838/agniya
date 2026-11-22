@@ -43,6 +43,7 @@ from agniya.hybrid.fast_ope import FastOPE
 
 FIXED_POINT_DECIMALS = 4
 PAILLIER_TYPES = {'Paillier-2048', 'OPE+Paillier'}
+GROUP_MAX_VALUES = 16  # GROUP BY copies are built for columns with at most this many distinct values
 
 app = Flask(__name__)
 CORS(app, origins=os.environ.get('AGNIYA_CORS_ORIGINS', 'http://localhost:3000').split(','))
@@ -176,6 +177,22 @@ def encrypt_dataset():
             bs['by'][a] = {'packed': packed, 'tags': [tag[y] for y, _ in pairs]}
             total_cts += len(packed['ciphertexts'])
 
+    # SUM(a) GROUP BY g: for every column g (encrypted or not) with few distinct values, a copy of each
+    # encrypted column a packed by group, so one decryption gives every group's sum and count.
+    group_cols = [g for g in df.columns if 2 <= df[g].nunique() <= GROUP_MAX_VALUES]
+    for a, cs in columns.items():
+        cs['groups'] = {}
+        for g in group_cols:
+            rows = df[[a, g]].dropna()  # rows missing a or g drop out (pandas groupby default)
+            if a == g or rows.empty:
+                continue
+            try:
+                packed = db.packer.encrypt_groups([int(round(float(x) * cs['scale'])) for x in rows[a]], list(rows[g]))
+            except ValueError:  # too many groups for these values in one plaintext: no copy, query says so
+                continue
+            cs['groups'][g] = packed
+            total_cts += len(packed['ciphertexts'])
+
     db.pool.close()  # release worker processes; queries need no new randomness
     elapsed = time.perf_counter() - start
     encrypted_datasets[filename] ={'db': db, 'columns': columns, 'record_count': len(df)}
@@ -189,7 +206,7 @@ def encrypt_dataset():
         'fields': {n: {'values': c['packed']['count'], 'null_rows': c['nulls'], 'scale': c['scale'],
                        'packed_ciphertexts': len(c['packed']['ciphertexts']),
                        'values_per_ciphertext': c['packed']['slots'],
-                       'range_filterable': 'ope' in c} for n, c in columns.items()},
+                       'range_filterable': 'ope' in c, 'group_by': sorted(c['groups'])} for n, c in columns.items()},
         'key_bits': db.public_key.n.bit_length(),
     })
 
@@ -218,9 +235,27 @@ def execute_query():
     db = ds['db']
     start = time.perf_counter()
     filtered = range_min not in (None, '') or range_max not in (None, '')
+    group_by = data.get('group_by') or data.get('groupBy')
     response = {}
 
-    if filtered:
+    if group_by:
+        if filtered:
+            return jsonify({'error': 'GROUP BY with a range filter is not supported yet'}), 400
+        packed = col['groups'].get(group_by)
+        if packed is None:
+            return jsonify({'error': f'No GROUP BY copy of {field} by {group_by} (needs 2-{GROUP_MAX_VALUES} '
+                                     'distinct values that fit one plaintext, and rows with both)'}), 400
+        sums = db.packer.sum_groups(packed)
+        sc = col['scale']
+        groups = [{'group': g, 'sum': s / sc, 'count': c, 'avg': s / sc / c if c else 0} for g, (s, c) in sums.items()]
+        for x in groups:
+            x['result'] = {'SUM': x['sum'], 'AVG': x['avg'], 'COUNT': x['count']}[operation]
+        cts, count = packed['ciphertexts'], sum(c for _, c in sums.values())
+        total_scaled = sum(s for s, _ in sums.values())
+        response.update(group_by=group_by, groups=groups,
+                        security_note='One product of all ciphertexts, one decryption: every group sum and count '
+                                      'comes out of its own slots. The ciphertexts alone reveal no labels or group sizes.')
+    elif filtered:
         fcol = ds['columns'].get(fc)
         if fcol is None or 'ope' not in fcol:
             return jsonify({'error': f'Range filters need {fc} encrypted as OPE+Paillier'}), 400
@@ -259,8 +294,8 @@ def execute_query():
     response.update({
         'success': True, 'operation': operation, 'field': field, 'column': field,
         'result': float(result), 'time_ms': round(elapsed_ms, 2), 'query_time_ms': round(elapsed_ms, 2),
-        'records_processed': count, 'ciphertexts_aggregated': len(cts) if operation != 'COUNT' else 0,
-        'encrypted_computation': operation != 'COUNT',
+        'records_processed': count, 'ciphertexts_aggregated': len(cts) if operation != 'COUNT' or group_by else 0,
+        'encrypted_computation': operation != 'COUNT' or bool(group_by),
         'encryption_proof': {
             'ciphertext_bit_lengths': [c.bit_length() for c in cts[:3]],
             'modulus_n_bit_length': db.public_key.n.bit_length(),

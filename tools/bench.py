@@ -176,6 +176,13 @@ def main():
             assert r["records_processed"] == len(sel) and abs(r["result"] - sel.sum()) < len(sel) * 0.5e-4, r
             out.update(range_query={"column": rng_col, "min": lo, "max": hi, "rows_selected": len(sel),
                                     "ms": ms(stats(lambda: cl.post("/api/query", json=rbody), max(5, reps // 3)))})
+        if schema_name == "packed":  # SUM(charges) GROUP BY region: one decryption for all groups
+            gbody = {**body, "group_by": "region"}
+            want = df.groupby("region")["charges"].sum()
+            got = {g["group"]: g["sum"] for g in cl.post("/api/query", json=gbody).get_json()["groups"]}
+            assert all(abs(got[k] - v) < len(df) * 0.5e-4 for k, v in want.items()) and len(got) == len(want), got
+            out.update(group_by_query={"sum": "charges", "group_by": "region", "groups": len(want),
+                                       "ms": ms(stats(lambda: cl.post("/api/query", json=gbody), max(5, reps // 3)))})
         if schema_name == "packed+ope_age":  # SUM(charges) WHERE 30 <= age <= 45
             xbody = {**body, "filter_column": "age", "rangeMin": 30, "rangeMax": 45}
             xsel = df["charges"][(df["age"] >= 30) & (df["age"] <= 45)]
@@ -210,7 +217,15 @@ def main():
     xsel = df["charges"][(df["age"] >= 30) & (df["age"] <= 45)]
     xq = oc.query("charges", 30, 45, by="age")
     assert xq["count"] == len(xsel) and abs(xq["sum"] - xsel.sum()) < len(xsel) * 0.5e-4
+    t = time.perf_counter()
+    oc.upload_grouped("charges", df["charges"], by="region", by_values=df["region"], decimals=4)
+    t_grp = time.perf_counter() - t
+    want = df.groupby("region")["charges"].sum()
+    gq = oc.query_groups("charges", "region")
+    assert all(abs(gq[k]["sum"] - v) < len(df) * 0.5e-4 for k, v in want.items()) and len(gq) == len(want), gq
     section("split_insurance_charges_ope", {
+        "group_by_query": {"sum": "charges", "group_by": "region", "groups": len(want), "upload_grouped_s": round(t_grp, 3),
+                           "ms": ms(stats(lambda: oc.query_groups("charges", "region"), max(5, reps // 3)))},
         "cross_range_query": {"sum": "charges", "where": "age", "min": 30, "max": 45, "rows_selected": len(xsel),
                               "upload_by_s": round(t_by, 3),
                               "ms": ms(stats(lambda: oc.query("charges", 30, 45, by="age"), max(5, reps // 3)))},
@@ -291,6 +306,12 @@ def update_readme(results_path=None):
         rows.append((f"SUM(charges) WHERE 30 ≤ age ≤ 45 ({xa['rows_selected']} rows): server-side / client-held keys",
                      f"{xa['ms']['median']:.1f} ms / {xs['ms']['median']:.1f} ms "
                      f"(client `upload_by` {xs['upload_by_s']:.2f} s)"))
+    ga = (api or {}).get("group_by_query")
+    gs = (sp or {}).get("group_by_query")
+    if ga and gs:
+        rows.append((f"SUM(charges) GROUP BY region ({ga['groups']} groups, one decryption): server-side / client-held keys",
+                     f"{ga['ms']['median']:.1f} ms / {gs['ms']['median']:.1f} ms "
+                     f"(client `upload_grouped` {gs['upload_grouped_s']:.2f} s)"))
     if "baseline_seal_bfv_4096_values" in r:
         rows.append(("Reference: SEAL BFV (TenSEAL), 4,096 values", f"{r['baseline_seal_bfv_4096_values']['us_per_value']} µs/value"))
     if "baseline_phe_encrypt_one_value_ms" in r:
