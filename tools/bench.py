@@ -191,6 +191,17 @@ def main():
             out.update(cross_range_query={"sum": "charges", "where": "age", "min": 30, "max": 45,
                                           "rows_selected": len(xsel),
                                           "ms": ms(stats(lambda: cl.post("/api/query", json=xbody), max(5, reps // 3)))})
+            # ... GROUP BY region: the first query builds a copy packed in age order, later ones reuse it
+            fbody = {**xbody, "group_by": "region"}
+            fwant = df[(df["age"] >= 30) & (df["age"] <= 45)].groupby("region")["charges"].sum()
+            t = time.perf_counter()
+            got = {g["group"]: g["sum"] for g in cl.post("/api/query", json=fbody).get_json()["groups"]}
+            t_first = time.perf_counter() - t
+            assert all(abs(got[k] - v) < len(xsel) * 0.5e-4 for k, v in fwant.items()) and len(got) == len(fwant), got
+            out.update(filtered_group_by_query={"sum": "charges", "where": "age", "min": 30, "max": 45,
+                                                "group_by": "region", "groups": len(fwant), "rows_selected": len(xsel),
+                                                "first_query_s": round(t_first, 3),
+                                                "ms": ms(stats(lambda: cl.post("/api/query", json=fbody), max(5, reps // 3)))})
         section(f"api_insurance_{schema_name}", out)
 
     # Client-held keys (/api/v2): the client encrypts, tags and decrypts; the server sees only
@@ -223,9 +234,20 @@ def main():
     want = df.groupby("region")["charges"].sum()
     gq = oc.query_groups("charges", "region")
     assert all(abs(gq[k]["sum"] - v) < len(df) * 0.5e-4 for k, v in want.items()) and len(gq) == len(want), gq
+    t = time.perf_counter()
+    oc.upload_grouped("charges", df["charges"], by="region", by_values=df["region"], decimals=4,
+                      where="age", where_values=df["age"])
+    t_fgrp = time.perf_counter() - t
+    fwant = df[(df["age"] >= 30) & (df["age"] <= 45)].groupby("region")["charges"].sum()
+    fq = oc.query_groups("charges", "region", 30, 45, where="age")
+    assert all(abs(fq[k]["sum"] - v) < len(df) * 0.5e-4 for k, v in fwant.items()) and len(fq) == len(fwant), fq
     section("split_insurance_charges_ope", {
         "group_by_query": {"sum": "charges", "group_by": "region", "groups": len(want), "upload_grouped_s": round(t_grp, 3),
                            "ms": ms(stats(lambda: oc.query_groups("charges", "region"), max(5, reps // 3)))},
+        "filtered_group_by_query": {"sum": "charges", "where": "age", "min": 30, "max": 45, "group_by": "region",
+                                    "groups": len(fwant), "upload_grouped_s": round(t_fgrp, 3),
+                                    "ms": ms(stats(lambda: oc.query_groups("charges", "region", 30, 45, where="age"),
+                                                   max(5, reps // 3)))},
         "cross_range_query": {"sum": "charges", "where": "age", "min": 30, "max": 45, "rows_selected": len(xsel),
                               "upload_by_s": round(t_by, 3),
                               "ms": ms(stats(lambda: oc.query("charges", 30, 45, by="age"), max(5, reps // 3)))},
@@ -312,6 +334,13 @@ def update_readme(results_path=None):
         rows.append((f"SUM(charges) GROUP BY region ({ga['groups']} groups, one decryption): server-side / client-held keys",
                      f"{ga['ms']['median']:.1f} ms / {gs['ms']['median']:.1f} ms "
                      f"(client `upload_grouped` {gs['upload_grouped_s']:.2f} s)"))
+    fa = (r.get("api_insurance_packed+ope_age") or {}).get("filtered_group_by_query")
+    fs = (sp or {}).get("filtered_group_by_query")
+    if fa and fs:
+        rows.append((f"SUM(charges) WHERE 30 ≤ age ≤ 45 GROUP BY region ({fa['rows_selected']} rows): "
+                     "server-side / client-held keys",
+                     f"{fa['ms']['median']:.1f} ms / {fs['ms']['median']:.1f} ms (building the copy: server's first "
+                     f"query {fa['first_query_s']:.2f} s, client `upload_grouped` {fs['upload_grouped_s']:.2f} s)"))
     if "baseline_seal_bfv_4096_values" in r:
         rows.append(("Reference: SEAL BFV (TenSEAL), 4,096 values", f"{r['baseline_seal_bfv_4096_values']['us_per_value']} µs/value"))
     if "baseline_phe_encrypt_one_value_ms" in r:
