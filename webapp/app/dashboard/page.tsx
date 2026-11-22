@@ -65,6 +65,7 @@ interface QueryResult {
   query_time_ms?: number;
   ciphertexts_aggregated?: number;
   filter_applied?: boolean;
+  filter_column?: string;
   range?: { min: number | null; max: number | null };
   records_before_filter?: number;
   filter_selectivity?: number;
@@ -104,7 +105,8 @@ export default function Dashboard() {
   const [selectedOperation, setSelectedOperation] = useState<'SUM' | 'AVG' | 'COUNT'>('SUM');
   const [rangeMin, setRangeMin] = useState('');
   const [rangeMax, setRangeMax] = useState('');
-  
+  const [filterBy, setFilterBy] = useState('');  // '' = filter on the queried field itself
+
   const [error, setError] = useState<string | null>(null);
 
   // Browser mode: the CSV is parsed here and encrypted in a Web Worker that holds the keys (/api/v2).
@@ -147,14 +149,14 @@ export default function Dashboard() {
       const info = await worker.load(API_BASE_URL, await restoreFile.text(), keyPassword);
       dropWorker();
       workerRef.current = worker;
-      const restored: Field[] = info.columns.map(c => ({
+      const restored: Field[] = info.columns.filter(c => !c.name.includes('|')).map(c => ({  // "a|b" = copy of a in b order
         name: c.name, type: c.scale === 1 ? 'int' : 'float', encryption: c.rangeFilter ? 'OPE+Paillier' : 'Paillier-2048' }));
       const records = Math.max(0, ...info.columns.map(c => c.count));
       setUploadData({ filename: info.dataset, records, fields: restored.length, schema: restored });
       setSchema(restored);
       setEncryptionResult({ success: true, records_encrypted: records, message: 'Restored from key file' });
       setQueries([]);
-      setSelectedField(restored[0]?.name ?? '');
+      setSelectedField(restored[0]?.name ?? ''); setFilterBy('');
       setKeyPassword(''); setRestoreFile(null);
       setActiveTab('query');
     } catch (err) {
@@ -168,7 +170,7 @@ export default function Dashboard() {
   const switchMode = (browser: boolean) => {
     setBrowserMode(browser);
     setFile(null); setUploadData(null); setEncryptionResult(null); setSchema([]); setQueries([]);
-    setSelectedField(''); setRangeMin(''); setRangeMax('');
+    setSelectedField(''); setRangeMin(''); setRangeMax(''); setFilterBy('');
     csvRef.current = null;
     dropWorker();
     setActiveTab('upload');
@@ -178,6 +180,13 @@ export default function Dashboard() {
     const { header, rows } = csvRef.current!;
     const i = header.indexOf(name);
     return rows.map(r => (r[i] ?? '').trim()).filter(v => v !== '').map(Number);
+  };
+
+  /** One entry per CSV row (null where empty), so two columns line up row by row. */
+  const rowValues = (name: string): Array<number | null> => {
+    const { header, rows } = csvRef.current!;
+    const i = header.indexOf(name);
+    return rows.map(r => ((r[i] ?? '').trim() === '' ? null : Number(r[i])));
   };
 
   const parseLocally = async (f: File): Promise<UploadedData> => {
@@ -204,11 +213,19 @@ export default function Dashboard() {
     workerRef.current = worker;
     await worker.init(API_BASE_URL, `${uploadData!.filename}-${crypto.randomUUID().slice(0, 8)}`);
     let ciphertexts = 0;
+    const decimals: Record<string, number> = {};
     for (const f of fields) {
       const vals = columnValues(f.name);
       if (!vals.every(Number.isFinite)) throw new Error(`${f.name} is not numeric`);
-      const decimals = vals.every(Number.isInteger) ? 0 : 4;
-      ciphertexts += (await worker.upload(f.name, vals, decimals, f.encryption === 'OPE+Paillier')).ciphertexts;
+      decimals[f.name] = vals.every(Number.isInteger) ? 0 : 4;
+      ciphertexts += (await worker.upload(f.name, vals, decimals[f.name], f.encryption === 'OPE+Paillier')).ciphertexts;
+    }
+    // SUM(a) WHERE b in range: a copy of every other field a in the order of each OPE field b (as the server does).
+    for (const b of fields.filter(f => f.encryption === 'OPE+Paillier')) {
+      for (const a of fields.filter(f => f.name !== b.name)) {
+        ciphertexts += (await worker.uploadBy(a.name, rowValues(a.name), b.name, rowValues(b.name),
+                                              decimals[a.name], decimals[b.name])).ciphertexts;
+      }
     }
     const secs = (performance.now() - t0) / 1000;
     const records = csvRef.current!.rows.length;
@@ -217,12 +234,13 @@ export default function Dashboard() {
 
   const queryLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
     const t0 = performance.now();
-    const a = await workerRef.current!.query(selectedField, minVal, maxVal);
+    const fc = filterBy || selectedField;
+    const a = await workerRef.current!.query(selectedField, minVal, maxVal, fc);
     const time_ms = performance.now() - t0;
     const total = a.total;
     const filtered = minVal !== undefined || maxVal !== undefined;
     return {
-      operation: selectedOperation, field: selectedField, column: selectedField,
+      operation: selectedOperation, field: selectedField, column: selectedField, filter_column: fc,
       result: { SUM: a.sum, AVG: a.avg, COUNT: a.count }[selectedOperation],
       time_ms, records_processed: a.count, ciphertexts_aggregated: a.ciphertextsUsed,
       filter_applied: filtered, range: { min: minVal ?? null, max: maxVal ?? null },
@@ -333,7 +351,8 @@ export default function Dashboard() {
         selectedField,
         uploadData.filename,
         minVal,
-        maxVal
+        maxVal,
+        filterBy || undefined
       );
       setQueries([response as QueryResult, ...queries]);
     } catch (err) {
@@ -819,9 +838,33 @@ export default function Dashboard() {
                       </DropdownMenu>
                     </div>
 
+                    {schema.some(f => f.encryption === 'OPE+Paillier') && (
+                      <div>
+                        <Label>Filter by (range on an OPE+Paillier field)</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between">
+                              {filterBy && filterBy !== selectedField ? filterBy : `${selectedField || 'the field'} itself`}
+                              <Filter className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-full">
+                            <DropdownMenuItem onClick={() => setFilterBy('')}>
+                              {selectedField || 'The field'} itself
+                            </DropdownMenuItem>
+                            {schema.filter(f => f.encryption === 'OPE+Paillier' && f.name !== selectedField).map(f => (
+                              <DropdownMenuItem key={f.name} onClick={() => setFilterBy(f.name)}>
+                                {f.name}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label>Min Value (optional)</Label>
+                        <Label>Min {filterBy || selectedField || 'value'} (optional)</Label>
                         <Input
                           type="number"
                           placeholder="25"
@@ -830,7 +873,7 @@ export default function Dashboard() {
                         />
                       </div>
                       <div>
-                        <Label>Max Value (optional)</Label>
+                        <Label>Max {filterBy || selectedField || 'value'} (optional)</Label>
                         <Input
                           type="number"
                           placeholder="50"
@@ -902,7 +945,7 @@ export default function Dashboard() {
                             {query.records_processed || 0} records processed (encrypted)
                             {query.filter_applied && (
                               <div className="text-blue-600 dark:text-blue-400 mt-1">
-                                🔍 Range filter: [{query.range?.min} - {query.range?.max}] 
+                                🔍 WHERE {query.filter_column || query.field || query.column} in [{query.range?.min} - {query.range?.max}]
                                 ({Math.round((query.filter_selectivity || 0) * 100)}% of data)
                               </div>
                             )}

@@ -2,7 +2,7 @@
  * Web Worker that owns the BrowserClient: key generation, encryption, OPE tagging, the
  * /api/v2 calls and decryption all run here, off the page's main thread. The private key
  * and OPE keys exist only in this worker; the page sees query answers.
- * Message protocol: { id, op: 'init' | 'upload' | 'query', args } -> { id, result } | { id, error }.
+ * Message protocol: { id, op: 'init' | 'load' | 'upload' | 'uploadBy' | 'save' | 'query', args } -> { id, result } | { id, error }.
  */
 import { BrowserClient, httpPost } from './agniya-browser';
 
@@ -24,12 +24,15 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; args: Record<s
     } else if (op === 'upload') {
       result = await client.upload(args.column as string, args.values as number[], args.decimals as number,
                                    args.rangeFilter as boolean);
+    } else if (op === 'uploadBy') {
+      result = await client.uploadBy(args.column as string, args.values as Array<number | null>, args.by as string,
+                                     args.byValues as Array<number | null>, args.decimals as number, args.byDecimals as number);
     } else if (op === 'save') {
       result = { text: await client.saveKeyFile(args.password as string), dataset: client.dataset };
     } else if (op === 'query') {
-      const column = args.column as string;
-      const answer = await client.query(column, args.lo as number | undefined, args.hi as number | undefined);
-      result = { ...answer, total: client.columns.get(column)!.count };
+      const column = args.column as string, by = args.by as string | undefined;
+      const answer = await client.query(column, args.lo as number | undefined, args.hi as number | undefined, by);
+      result = { ...answer, total: client.columns.get(by && by !== column ? `${column}|${by}` : column)!.count };
     } else {
       throw new Error(`Unknown op ${op}`);
     }

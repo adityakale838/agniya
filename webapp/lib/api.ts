@@ -171,13 +171,15 @@ class APIService {
     field: string,
     filename: string,
     rangeMin?: number,
-    rangeMax?: number
+    rangeMax?: number,
+    filterColumn?: string
   ): Promise<QueryResponse> {
-    const body: Record<string, unknown> = { 
+    const body: Record<string, unknown> = {
       type: operation,
-      column: field, 
-      filename 
+      column: field,
+      filename
     };
+    if (filterColumn) body.filter_column = filterColumn;
     
     // Add range parameters if provided
     if (rangeMin !== undefined && rangeMin !== null) {

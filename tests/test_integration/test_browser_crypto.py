@@ -130,9 +130,19 @@ def _exact(df, col, lo, hi, scale):
 def test_key_file_browser_to_python(tmp_path, live_server):
     from agniya.client import AgniyaClient
     df = pd.read_csv(os.path.join(ROOT, "data", "insurance_real.csv"))
-    a = run_ts({"client": {"url": live_server, "dataset": "kf-b2p", "save_password": "pw \u00e9", "queries": [], "columns": [
+    ages = df["age"].tolist()
+    ages[0] = None  # rows missing either value are skipped by uploadBy, as by upload_by
+    a = run_ts({"client": {"url": live_server, "dataset": "kf-b2p", "save_password": "pw \u00e9", "columns": [
         {"name": "charges", "values": df["charges"].tolist(), "decimals": 4, "range": True},
-        {"name": "age", "values": df["age"].tolist(), "decimals": 0, "range": False}]}}, tmp_path)
+        {"name": "age", "values": df["age"].tolist(), "decimals": 0, "range": False}],
+        "by": [{"column": "charges", "values": df["charges"].tolist(), "by": "age", "by_values": ages,
+                "decimals": 4, "by_decimals": 0}],
+        "queries": [["charges", 30, 45, "age"], ["charges", None, None, "age"]]}}, tmp_path)
+    rest = df.iloc[1:]
+    for (lo, hi), ans in zip([(30, 45), (-1e18, 1e18)], a["answers"]):
+        sel = rest["charges"][(rest["age"] >= lo) & (rest["age"] <= hi)]
+        assert ans["count"] == len(sel)
+        assert ans["sum"] == pytest.approx(sum(int(round(v * 10**4)) for v in sel) / 10**4, abs=1e-9)
     path = tmp_path / "browser.agniya-key"
     path.write_text(a["keyfile"])
     with pytest.raises(ValueError, match="Wrong password"):
@@ -143,6 +153,8 @@ def test_key_file_browser_to_python(tmp_path, live_server):
         r = c.query(col, lo, hi)
         count, total = _exact(df, col, lo, hi, scale)
         assert r["count"] == count and r["sum"] == pytest.approx(total, abs=1e-9)
+    r = c.query("charges", 30, 45, by="age")  # the browser's "charges|age" copy, read by Python
+    assert (r["count"], r["sum"]) == (a["answers"][0]["count"], pytest.approx(a["answers"][0]["sum"], abs=1e-9))
 
 
 def test_key_file_python_to_browser(tmp_path, live_server):

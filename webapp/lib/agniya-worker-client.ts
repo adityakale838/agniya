@@ -35,7 +35,15 @@ export class CryptoWorker {
     return this.call<{ ciphertexts: number }>('upload', { column, values, decimals, rangeFilter });
   }
 
-  query(column: string, lo?: number, hi?: number) { return this.call<WorkerAnswer>('query', { column, lo, hi }); }
+  /** Copy of `column` in `by` order for SUM(column) WHERE by in range; values[i], byValues[i] are one row. */
+  uploadBy(column: string, values: Array<number | null>, by: string, byValues: Array<number | null>,
+           decimals: number, byDecimals: number) {
+    return this.call<{ ciphertexts: number }>('uploadBy', { column, values, by, byValues, decimals, byDecimals });
+  }
+
+  query(column: string, lo?: number, hi?: number, by?: string) {
+    return this.call<WorkerAnswer>('query', { column, lo, hi, by });
+  }
 
   /** Encrypted key file text (scrypt + AES-256-GCM, same format as the Python client). */
   save(password: string) { return this.call<{ text: string; dataset: string }>('save', { password }); }

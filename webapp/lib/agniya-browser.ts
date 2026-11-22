@@ -419,6 +419,7 @@ export function fixedPoint(v: number, scale: number): bigint {
   return BigInt(d > 0.5 || (d === 0.5 && f % 2 !== 0) ? f + 1 : f);
 }
 
+const cmp = (a: bigint, b: bigint) => (a < b ? -1 : a > b ? 1 : 0);
 const hex = (x: bigint) => x.toString(16);
 const unhex = (s: string) => BigInt('0x' + s);
 
@@ -440,18 +441,39 @@ export class BrowserClient {
   async upload(column: string, values: number[], decimals: number, rangeFilter: boolean): Promise<{ ciphertexts: number }> {
     const scale = 10 ** decimals;
     const ints = values.map(v => fixedPoint(v, scale));
+    if (rangeFilter) ints.sort(cmp);  // sorted packing: a range is a run of slots
+    return this.put(column, ints, scale, rangeFilter ? ints : null, scale);
+  }
+
+  /** For SUM(column) WHERE by in range: a copy of `column` packed in `by` order, stored as "column|by"
+   *  (as AgniyaClient.upload_by). values[i] and byValues[i] are one row; rows missing either are skipped. */
+  async uploadBy(column: string, values: Array<number | null>, by: string, byValues: Array<number | null>,
+                 decimals: number, byDecimals: number): Promise<{ ciphertexts: number }> {
+    const scale = 10 ** decimals, fscale = 10 ** byDecimals;
+    const rows: Array<[bigint, bigint]> = [];
+    values.forEach((a, i) => {
+      const b = byValues[i];
+      if (a !== null && b !== null && Number.isFinite(a) && Number.isFinite(b)) rows.push([fixedPoint(b, fscale), fixedPoint(a, scale)]);
+    });
+    rows.sort((x, y) => cmp(x[0], y[0]) || cmp(x[1], y[1]));
+    return this.put(`${column}|${by}`, rows.map(r => r[1]), scale, rows.map(r => r[0]), fscale);
+  }
+
+  /** Pack `ints` (already in row order); `keys` (sorted, same length) become OPE tags when given. */
+  private async put(column: string, ints: bigint[], scale: number, keys: bigint[] | null,
+                    fscale: number): Promise<{ ciphertexts: number }> {
     const meta: ColumnMeta = { scale, slotBits: 0, slots: 0, offset: 0n, count: ints.length };
+    if (fscale !== scale) meta.fscale = fscale;
     const body: Record<string, unknown> = { dataset: this.dataset, column, n: hex(this.pub.n) };
-    if (rangeFilter && ints.length) {
-      ints.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));  // sorted packing: a range is a run of slots
-      const off = ints[0], top = ints[ints.length - 1] - off > 1n ? ints[ints.length - 1] - off : 1n;
+    if (keys && keys.length) {
+      const off = keys[0], top = keys[keys.length - 1] - off > 1n ? keys[keys.length - 1] - off : 1n;
       const key = new Uint8Array(32);
       webcrypto.getRandomValues(key);
       meta.ope = new OPE(key, top);
       meta.opeOffset = off;
       meta.opeTop = top;
-      const tags = await meta.ope.encryptMany(ints.map(v => v - off));
-      body.ope_tags = ints.map(v => tags.get(v - off)!.toString());
+      const tags = await meta.ope.encryptMany(keys.map(v => v - off));
+      body.ope_tags = keys.map(v => tags.get(v - off)!.toString());
     }
     const offset = ints.reduce((m, v) => (v < m ? v : m), 0n);
     const shifted = ints.map(v => v - offset);
@@ -469,10 +491,12 @@ export class BrowserClient {
     return r as { ciphertexts: number };
   }
 
-  /** SUM / COUNT / AVG, optionally only rows with lo <= value <= hi; decrypted here. */
-  async query(column: string, lo?: number, hi?: number): Promise<QueryAnswer> {
-    const m = this.columns.get(column);
-    if (!m) throw new Error(`${column} is not encrypted`);
+  /** SUM / COUNT / AVG, optionally only rows with lo <= value <= hi (of `by`, default `column`); decrypted here. */
+  async query(column: string, lo?: number, hi?: number, by?: string): Promise<QueryAnswer> {
+    const cross = by && by !== column;
+    const m = this.columns.get(cross ? `${column}|${by}` : column);
+    if (!m) throw new Error(cross ? `Filtering ${column} by ${by} needs ${by} encrypted as OPE+Paillier` : `${column} is not encrypted`);
+    if (cross) column = `${column}|${by}`;
     const body: Record<string, unknown> = { dataset: this.dataset, column };
     const empty: QueryAnswer = { sum: 0, count: 0, avg: 0, ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0 };
     if (lo !== undefined || hi !== undefined) {

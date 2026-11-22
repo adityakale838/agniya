@@ -33,8 +33,9 @@ if (job.fixed) out.fixed = job.fixed.values.map(v => A.fixedPoint(v, job.fixed.s
 if (job.client) {  // end to end against a running server
   const c = new A.BrowserClient(A.httpPost(job.client.url), job.client.dataset);
   for (const col of job.client.columns) await c.upload(col.name, col.values, col.decimals, col.range);
+  for (const x of job.client.by ?? []) await c.uploadBy(x.column, x.values, x.by, x.by_values, x.decimals, x.by_decimals);
   out.answers = [];
-  for (const [col, lo, hi] of job.client.queries) out.answers.push(await c.query(col, lo ?? undefined, hi ?? undefined));
+  for (const [col, lo, hi, by] of job.client.queries) out.answers.push(await c.query(col, lo ?? undefined, hi ?? undefined, by));
   out.p = c.priv.p.toString();
   if (job.client.save_password) out.keyfile = await c.saveKeyFile(job.client.save_password);
 }
