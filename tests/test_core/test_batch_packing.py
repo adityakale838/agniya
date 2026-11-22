@@ -5,7 +5,7 @@ Tests for Batch Packing optimization.
 import pytest
 from agniya.core.paillier import generate_keypair
 from agniya.core.batch_packing import (
-    BatchPacker, BatchOperations, BatchedAggregator, decrypt_sorted_groups, range_plan
+    BatchPacker, BatchOperations, BatchedAggregator, decrypt_sorted_groups, group_pages, range_plan
 )
 
 
@@ -334,7 +334,8 @@ class TestPackingHeadroom:
             aggregator.sum_values([1.5, 2.0])
 
     @pytest.mark.parametrize("k,n,lo,hi", [(1, 50, 0, 10), (4, 1338, -5_000, 640_000_000), (6, 999, 0, 2**32 - 1),
-                                           (30, 300, -3, 3), (3, 0, 0, 1)])
+                                           (30, 300, -3, 3), (3, 0, 0, 1), (47, 1338, 0, 640_000_000),
+                                           (300, 600, -9, 2**40)])
     def test_sum_groups_exact(self, aggregator, k, n, lo, hi):
         import random
         rng = random.Random(k * 1000 + n)
@@ -347,8 +348,11 @@ class TestPackingHeadroom:
             want[f"g{g}"] = (s + v, c + 1)
         assert aggregator.sum_groups(col) == want
         assert col['slots'] * col['slot_bits'] < aggregator.public_key.n.bit_length()
+        assert col['pages'] == 1 or k >= 30  # one decryption unless the groups cannot share a plaintext
+        assert len({len(cts) for cts in group_pages(col)}) == 1  # pages are the same size
 
-    @pytest.mark.parametrize("k,n,lo,hi", [(1, 50, 0, 10), (4, 1338, -5_000, 640_000_000), (16, 300, -3, 3), (3, 1, 0, 0)])
+    @pytest.mark.parametrize("k,n,lo,hi", [(1, 50, 0, 10), (4, 1338, -5_000, 640_000_000), (16, 300, -3, 3), (3, 1, 0, 0),
+                                           (47, 400, 0, 640_000_000)])
     def test_sorted_groups_every_row_range(self, aggregator, k, n, lo, hi):
         """Every range i..j of rows (including ones cutting ciphertexts) gives exact per-group sums."""
         import random
@@ -367,12 +371,13 @@ class TestPackingHeadroom:
                 for v, g in zip(values[i:j], groups[i:j]):
                     s, c = want.get(g, (0, 0))
                     want[g] = (s + v, c + 1)
-                product, edges = range_plan(pub, col['ciphertexts'], lanes, n, i, j)
-                assert decrypt_sorted_groups(pub, priv, product, edges, col) == want, (i, j)
+                plans = [range_plan(pub, cts, lanes, n, i, j) for cts in group_pages(col)]
+                assert decrypt_sorted_groups(pub, priv, plans, col) == want, (i, j)
+        assert k < 47 or col['pages'] > 1
 
-    def test_too_many_groups(self, aggregator):
-        with pytest.raises(ValueError, match="groups do not fit"):
-            aggregator.encrypt_groups([2**40] * 2000, list(range(2000)))
+    def test_values_too_large(self, aggregator):
+        with pytest.raises(ValueError, match="too large"):
+            aggregator.encrypt_groups([2**1100, 1], ["a", "b"])
 
     def test_sum_range_exact(self, aggregator):
         import random

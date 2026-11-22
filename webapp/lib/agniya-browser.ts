@@ -139,19 +139,31 @@ export function layout(pub: PublicKey, maxValue: bigint, count: number): [number
   }
 }
 
-/** (slotBits, lanes) for GROUP BY packing (as Python group_layout): each of the sizes.length groups gets
- *  `lanes` value slots plus one count slot per ciphertext, and every group fits one plaintext. */
-export function groupLayout(pub: PublicKey, maxValue: bigint, sizes: number[]): [number, number] {
-  const usable = bitLength(pub.n) - 1, k = sizes.length, biggest = Math.max(0, ...sizes);
-  let lanes = Math.max(1, Math.floor(Math.floor(usable / (bitLength(maxValue > 1n ? maxValue : 1n) + 1)) / Math.max(k, 1)) - 1);
-  for (;;) {
-    const m = BigInt(Math.max(1, Math.ceil(biggest / lanes)));
-    const top = [maxValue * m, BigInt(lanes) * m, 1n].reduce((a, b) => (a > b ? a : b));
-    const bits = bitLength(top);
-    if (k * (lanes + 1) * bits <= usable) return [bits, lanes];
-    if (lanes === 1) throw new Error(`${k} groups do not fit in one plaintext; group by fewer values or use a larger key`);
-    lanes--;
+/** (slotBits, lanes, perPage) for GROUP BY packing (as Python group_layout): each of up to perPage groups
+ *  gets `lanes` value slots plus one count slot per ciphertext. Groups are split into pages of perPage, each
+ *  its own run of ciphertexts and decryption: one page whenever all groups fit, else the fewest ciphertexts
+ *  counting each decryption a page adds to a query as 16. */
+export function groupLayout(pub: PublicKey, maxValue: bigint, sizes: number[],
+                            decryptionsPerPage = 1): [number, number, number] {
+  const usable = bitLength(pub.n) - 1, k = Math.max(sizes.length, 1), biggest = Math.max(0, ...sizes);
+  const fit = (lanes: number) => {  // [slot bits, groups per plaintext, ciphertexts per page]
+    const m = Math.max(1, Math.ceil(biggest / lanes));
+    const bits = bitLength([maxValue * BigInt(m), BigInt(lanes * m), 1n].reduce((a, b) => (a > b ? a : b)));
+    return [bits, Math.floor(usable / ((lanes + 1) * bits)), m];
+  };
+  for (let lanes = Math.max(1, Math.floor(Math.floor(usable / (bitLength(maxValue > 1n ? maxValue : 1n) + 1)) / k) - 1); lanes > 0; lanes--) {
+    const [bits, per] = fit(lanes);
+    if (per >= k) return [bits, lanes, k];
   }
+  let best: number[] | null = null;
+  for (let lanes = 1; ; lanes++) {
+    const [bits, per, m] = fit(lanes);
+    if (per < 1) break;
+    const pages = Math.ceil(k / per), cost = pages * m + 16 * decryptionsPerPage * pages;
+    if (!best || cost < best[0]) best = [cost, bits, lanes, per];
+  }
+  if (!best) throw new Error('Values too large for one plaintext; use a larger key');
+  return [best[1], best[2], best[3]];
 }
 
 export function decryptRange(priv: PrivateKey, product: bigint | null,
@@ -421,6 +433,7 @@ interface ColumnMeta {
   ope?: OPE; opeOffset?: bigint; opeTop?: bigint;
   fscale?: number;  // scale of the filter values when they differ (Python upload_by columns "a|b")
   lanes?: number; labels?: Array<string | number>;  // GROUP BY copies "a#g" (Python upload_grouped)
+  pages?: number;  // ... stored as server columns "a#g", "a#g@1", ... when the groups need several plaintexts
 }
 
 export interface QueryAnswer {
@@ -430,7 +443,7 @@ export interface QueryAnswer {
 
 export interface GroupAnswer {
   groups: Array<{ group: string | number; sum: number; count: number; avg: number }>;
-  ciphertextsUsed: number; ciphertextBits: number[]; serverMs: number;
+  ciphertextsUsed: number; ciphertextBits: number[]; serverMs: number; pages: number;
 }
 
 /** int(round(v * scale)) exactly as Python: round half to even. Data with one more decimal than the
@@ -484,11 +497,12 @@ export class BrowserClient {
    *  AgniyaClient.upload_grouped). Row r of group g goes to ciphertext r / lanes, lane r % lanes of g's
    *  block, and each block counts its rows, so one product and one decryption give every group. The labels
    *  stay here; the server sees slots per ciphertext and the number of ciphertexts. Rows missing either are skipped.
+   *  Groups that do not share one plaintext are split into pages, stored as "column#by", "column#by@1", ...
    *  With `where`, the copy ("column#by|where") is packed in where order with OPE tags of where, so
    *  queryGroups(..., lo, hi, where) groups only rows with lo <= where <= hi (as encrypt_sorted_groups). */
   async uploadGrouped(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>,
                       decimals: number, where?: string, whereValues?: Array<number | null>,
-                      whereDecimals = 0): Promise<{ ciphertexts: number }> {
+                      whereDecimals = 0): Promise<{ ciphertexts: number; pages: number }> {
     const scale = 10 ** decimals, fscale = 10 ** whereDecimals;
     const rows: Array<[bigint, bigint, string]> = [];  // [where key (0 without where), value, label]
     values.forEach((a, i) => {
@@ -502,84 +516,99 @@ export class BrowserClient {
     const offset = rows.reduce((m, r) => (r[1] < m ? r[1] : m), 0n);
     const top = rows.reduce((m, r) => (r[1] > m ? r[1] : m), rows[0][1]) - offset;
     const meta: ColumnMeta = { scale, slotBits: 0, slots: 0, offset, count: rows.length, labels };
-    let plain: bigint[], body: Record<string, unknown>;
+    let plain: bigint[], body: Record<string, unknown>, m: number, pages: number;  // m = ciphertexts per page
     if (where === undefined) {
       const byLabel = new Map(labels.map(l => [l, [] as bigint[]]));
       for (const [, v, g] of rows) byLabel.get(g)!.push(v - offset);
       const sizes = labels.map(l => byLabel.get(l)!.length);
-      const [bits, lanes] = groupLayout(this.pub, top, sizes);
-      plain = Array(Math.max(1, Math.ceil(Math.max(...sizes) / lanes))).fill(0n);
+      const [bits, lanes, per] = groupLayout(this.pub, top, sizes);
+      m = Math.max(1, Math.ceil(Math.max(...sizes) / lanes));
+      pages = Math.ceil(labels.length / per);
+      plain = Array(pages * m).fill(0n);
       labels.forEach((l, gi) => {
-        const base = gi * (lanes + 1), vs = byLabel.get(l)!;
-        vs.forEach((v, r) => { plain[Math.floor(r / lanes)] |= v << BigInt((base + r % lanes) * bits); });
-        plain.forEach((_, c) => { plain[c] |= BigInt(Math.min(lanes, Math.max(0, vs.length - c * lanes))) << BigInt((base + lanes) * bits); });
+        const first = Math.floor(gi / per) * m, base = (gi % per) * (lanes + 1), vs = byLabel.get(l)!;
+        vs.forEach((v, r) => { plain[first + Math.floor(r / lanes)] |= v << BigInt((base + r % lanes) * bits); });
+        for (let c = 0; c < m; c++) {
+          plain[first + c] |= BigInt(Math.min(lanes, Math.max(0, vs.length - c * lanes))) << BigInt((base + lanes) * bits);
+        }
       });
-      Object.assign(meta, { slotBits: bits, lanes });
-      body = { slots: labels.length * (lanes + 1), count: labels.length * (lanes + 1) * plain.length };  // every ciphertext whole
+      Object.assign(meta, { slotBits: bits, lanes, pages, slots: per * (lanes + 1) });
+      body = { slots: meta.slots, count: meta.slots * m };  // every ciphertext whole
     } else {
       rows.sort((x, y) => cmp(x[0], y[0]) || cmp(x[1], y[1]));
       const index = new Map(labels.map((l, i) => [l, i]));
-      const [bits, lanes] = groupLayout(this.pub, top + 1n, labels.map(() => rows.length));
-      plain = Array(Math.ceil(rows.length / lanes)).fill(0n);
+      const [bits, lanes, per] = groupLayout(this.pub, top + 1n, labels.map(() => rows.length), 3);  // product + <=2 edges
+      m = Math.ceil(rows.length / lanes);
+      pages = Math.ceil(labels.length / per);
+      plain = Array(pages * m).fill(0n);
       rows.forEach(([, v, g], r) => {  // lane holds value - offset + 1, so 0 marks a lane of another group
-        const base = index.get(g)! * (lanes + 1);
-        plain[Math.floor(r / lanes)] += ((v - offset + 1n) << BigInt((base + r % lanes) * bits)) + (1n << BigInt((base + lanes) * bits));
+        const gi = index.get(g)!, base = (gi % per) * (lanes + 1);
+        plain[Math.floor(gi / per) * m + Math.floor(r / lanes)] +=
+          ((v - offset + 1n) << BigInt((base + r % lanes) * bits)) + (1n << BigInt((base + lanes) * bits));
       });
       const { tags, ...ope } = await this.opeTags(rows.map(r => r[0]));
-      Object.assign(meta, { slotBits: bits, lanes, ...ope });
+      Object.assign(meta, { slotBits: bits, lanes, pages, slots: per * (lanes + 1), ...ope });
       if (fscale !== scale) meta.fscale = fscale;
-      body = { slots: lanes, count: rows.length, ope_tags: tags };  // the server cuts it like a sorted column
+      body = { slots: lanes, count: rows.length, ope_tags: tags };  // the server cuts each page like a sorted column
     }
-    meta.slots = labels.length * (meta.lanes! + 1);
     const name = `${column}#${by}` + (where !== undefined ? `|${where}` : '');
-    const r = await this.post('/api/v2/columns', { dataset: this.dataset, column: name, n: hex(this.pub.n), ...body,
-      ciphertexts: plain.map(p => hex(encrypt(this.pub, this.priv, p))) });
+    let r: Record<string, unknown> = {};
+    for (let p = 0; p < pages; p++) {
+      r = await this.post('/api/v2/columns', { dataset: this.dataset, column: name + (p ? `@${p}` : ''), n: hex(this.pub.n),
+        ...body, ciphertexts: plain.slice(p * m, (p + 1) * m).map(x => hex(encrypt(this.pub, this.priv, x))) });
+    }
     this.columns.set(name, meta);
-    return r as { ciphertexts: number };
+    return { ...r, ciphertexts: plain.length, pages };
   }
 
-  /** Every group's SUM, COUNT and AVG of `column` by `by` (needs uploadGrouped): one decryption here. With
-   *  `where`, only rows with lo <= where <= hi (plus up to two edge ciphertexts); empty groups are left out. */
+  /** Every group's SUM, COUNT and AVG of `column` by `by` (needs uploadGrouped): one decryption here per page
+   *  of groups. With `where`, only rows with lo <= where <= hi (plus up to two edge ciphertexts per page);
+   *  empty groups are left out. */
   async queryGroups(column: string, by: string, lo?: number, hi?: number, where?: string): Promise<GroupAnswer> {
     const name = `${column}#${by}` + (where ? `|${where}` : ''), m = this.columns.get(name);
     if (!m?.labels || !m.lanes) throw new Error(`No GROUP BY copy of ${column} by ${by}` + (where ? ` filtered by ${where}` : ''));
     const body: Record<string, unknown> = { dataset: this.dataset, column: name };
     if (where) {
       const tags = await this.rangeTags(m, lo, hi);
-      if (!tags) return { groups: [], ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0 };
+      if (!tags) return { groups: [], ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0, pages: m.pages ?? 1 };
       Object.assign(body, tags);
     }
-    const r = await this.post('/api/v2/aggregate', body) as unknown as AggregateResponse;
-    const bits = BigInt(m.slotBits), mask = (1n << bits) - 1n, lanes = m.lanes;
+    const rs = await Promise.all(Array.from({ length: m.pages ?? 1 }, (_, p) =>
+      this.post('/api/v2/aggregate', { ...body, column: name + (p ? `@${p}` : '') }) as unknown as Promise<AggregateResponse>));
+    const bits = BigInt(m.slotBits), mask = (1n << bits) - 1n, lanes = m.lanes, per = Math.floor(m.slots / (lanes + 1));
     const slot = (p: bigint, s: number) => (p >> (BigInt(s) * bits)) & mask;
-    const sums = m.labels.map(() => 0n), counts = m.labels.map(() => 0n);
-    const product = r.product ? unhex(r.product) : null;
-    if (product !== null) {
-      const p = decrypt(this.priv, product);
-      m.labels.forEach((_, gi) => {
-        const base = gi * (lanes + 1), c = slot(p, base + lanes);
-        let s = 0n;
-        for (let k = 0; k < lanes; k++) s += slot(p, base + k);
-        sums[gi] += where ? s - c : s;  // filtered copies hold value - offset + 1
-        counts[gi] += c;
-      });
-    }
-    const edges = r.edges.map(e => [unhex(e.ciphertext), Math.max(0, e.first_slot), Math.min(e.end_slot, lanes)] as const);
-    for (const [ct, a, b] of edges) {  // only filtered copies have edges
-      const p = decrypt(this.priv, ct);
-      m.labels.forEach((_, gi) => {
-        for (let k = a; k < b; k++) {
-          const v = slot(p, gi * (lanes + 1) + k);
-          if (v) { sums[gi] += v - 1n; counts[gi] += 1n; }  // 0 = a row of another group
+    const sums = m.labels.map(() => 0n), counts = m.labels.map(() => 0n), decrypted: bigint[] = [];
+    rs.forEach((r, page) => {
+      const own = m.labels!.map((_, gi) => gi).filter(gi => Math.floor(gi / per) === page);
+      const at = (gi: number) => (gi % per) * (lanes + 1);  // first slot of gi's block
+      if (r.product) {
+        decrypted.push(unhex(r.product));
+        const p = decrypt(this.priv, unhex(r.product));
+        for (const gi of own) {
+          const c = slot(p, at(gi) + lanes);
+          let s = 0n;
+          for (let k = 0; k < lanes; k++) s += slot(p, at(gi) + k);
+          sums[gi] += where ? s - c : s;  // filtered copies hold value - offset + 1
+          counts[gi] += c;
         }
-      });
-    }
+      }
+      for (const e of r.edges) {  // only filtered copies have edges
+        const ct = unhex(e.ciphertext), p = decrypt(this.priv, ct);
+        decrypted.push(ct);
+        for (const gi of own) {
+          for (let k = Math.max(0, e.first_slot); k < Math.min(e.end_slot, lanes); k++) {
+            const v = slot(p, at(gi) + k);
+            if (v) { sums[gi] += v - 1n; counts[gi] += 1n; }  // 0 = a row of another group
+          }
+        }
+      }
+    });
     const groups = m.labels.map((group, gi) => {
       const sum = Number(sums[gi] + m.offset * counts[gi]) / m.scale, n = Number(counts[gi]);
       return { group, sum, count: n, avg: n ? sum / n : 0 };
     }).filter(g => g.count > 0);
-    return { groups, ciphertextsUsed: r.ciphertexts_used, serverMs: r.time_ms,
-             ciphertextBits: [...(product !== null ? [product] : []), ...edges.map(e => e[0])].map(bitLength) };
+    return { groups, ciphertextsUsed: rs.reduce((n, r) => n + r.ciphertexts_used, 0), pages: rs.length,
+             serverMs: rs.reduce((t, r) => t + r.time_ms, 0), ciphertextBits: decrypted.map(bitLength) };
   }
 
   /** OPE tags (decimal strings) for sorted `keys` under a fresh key, and what is needed to make more. */
@@ -665,7 +694,7 @@ export class BrowserClient {
       const c: Record<string, unknown> = { scale: m.scale, slot_bits: m.slotBits, slots: m.slots,
                                            offset: safeNum(m.offset), count: m.count };
       if (m.fscale !== undefined) c.fscale = m.fscale;
-      if (m.labels) Object.assign(c, { lanes: m.lanes, labels: m.labels });
+      if (m.labels) Object.assign(c, { lanes: m.lanes, labels: m.labels, pages: m.pages ?? 1 });
       if (m.ope) Object.assign(c, { ope_key: b64(m.ope.key), ope_offset: safeNum(m.opeOffset!), ope_top: safeNum(m.opeTop!) });
       columns[name] = c;
     }
@@ -703,6 +732,7 @@ export class BrowserClient {
       if (c.labels !== undefined) {
         meta.lanes = c.lanes as number;
         meta.labels = c.labels as unknown as Array<string | number>;
+        meta.pages = (c.pages as number | undefined) ?? 1;  // files from before pages: one
       }
       if (c.ope_key !== undefined) {
         meta.ope = new OPE(unb64(c.ope_key as string), BigInt(c.ope_top));

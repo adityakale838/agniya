@@ -29,14 +29,14 @@ import { parseCsv } from '@/lib/agniya-browser';
 import { CryptoWorker } from '@/lib/agniya-worker-client';
 
 const PAILLIER: string[] = ['Paillier-2048', 'OPE+Paillier'];
-const GROUP_MAX_VALUES = 16;  // as api/server_optimized.py: GROUP BY copies for columns with 2-16 distinct values
+const GROUP_MAX_VALUES = 64;  // as api/server_optimized.py: GROUP BY copies for columns with 2-64 distinct values
 
 /** {field: [group columns]} from stored column names, where "a#g" is a packed by g ("a#g|w" also filters on w). */
 const groupsFromNames = (names: string[]): Record<string, string[]> => {
   const out: Record<string, string[]> = {};
   for (const n of names) {
     const i = n.indexOf('#');
-    if (i > 0 && !n.includes('|', i)) (out[n.slice(0, i)] ??= []).push(n.slice(i + 1));
+    if (i > 0 && !/[|@]/.test(n.slice(i))) (out[n.slice(0, i)] ??= []).push(n.slice(i + 1));  // "@p": later pages
   }
   return out;
 };
@@ -256,7 +256,7 @@ export default function Dashboard() {
                                               decimals[a.name], decimals[b.name])).ciphertexts;
       }
     }
-    // GROUP BY: a copy of every field packed by each column with 2-16 distinct values (as the server does).
+    // GROUP BY: a copy of every field packed by each column with 2-64 distinct values (as the server does).
     const groupCols = csvRef.current!.header.filter(g => {
       const n = new Set(rowLabels(g).filter(v => v !== null)).size;
       return n >= 2 && n <= GROUP_MAX_VALUES;
@@ -268,7 +268,7 @@ export default function Dashboard() {
           ciphertexts += (await worker.uploadGrouped(a.name, rowValues(a.name), g, rowLabels(g), decimals[a.name])).ciphertexts;
           (groups[a.name] ??= []).push(g);
         } catch (err) {
-          if (!/do not fit|No rows/.test(String(err))) throw err;  // skip copies that cannot be built
+          if (!/too large|No rows/.test(String(err))) throw err;  // skip copies that cannot be built
         }
       }
     }
@@ -301,9 +301,11 @@ export default function Dashboard() {
       time_ms: performance.now() - t0, records_processed: count, ciphertexts_aggregated: a.ciphertextsUsed,
       ...(filtered && { filter_applied: true, filter_column: fc, range: { min: minVal ?? null, max: maxVal ?? null },
                         records_before_filter: a.total, filter_selectivity: a.total ? count / a.total : 0 }),
-      security_note: filtered
-        ? `The server compared OPE tags of ${fc} (it learns their order) and multiplied ciphertexts; this browser decrypted the product once plus the <=2 edge ciphertexts. The server never saw the labels.`
-        : 'One product of all ciphertexts, one decryption in this browser: every group sum and count comes out of its own slots. The server never saw the labels.',
+      security_note: (filtered
+        ? `The server compared OPE tags of ${fc} (it learns their order) and multiplied ciphertexts; this browser decrypted the product once plus the <=2 edge ciphertexts`
+        : 'One product of the ciphertexts, one decryption in this browser')
+        + (a.pages > 1 ? ` for each of ${a.pages} pages of groups (they do not share one plaintext)` : '')
+        + (filtered ? '. ' : ': every group sum and count comes out of its own slots. ') + 'The server never saw the labels.',
       encryption_proof: {
         ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits, modulus_n_bit_length: 2048,
         verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`,
@@ -927,7 +929,7 @@ export default function Dashboard() {
 
                     {groupOptions.length > 0 && (
                       <div>
-                        <Label>Group by (one decryption for every group)</Label>
+                        <Label>Group by (one decryption per plaintext of groups)</Label>
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="outline" className="w-full justify-between">

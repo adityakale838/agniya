@@ -42,6 +42,10 @@ def setup():
     c.upload_grouped("amount", df["amount"], by="region", by_values=df["region"], decimals=4,
                      where="score", where_values=df["score"], where_decimals=2)
     c.upload_grouped("age", df["age"], by="decade", by_values=df["decade"], where="age", where_values=df["age"])
+    # 60 groups: more than one plaintext holds, so several pages ("score#age", "score#age@1", ...)
+    assert c.upload_grouped("score", df["score"], by="age", by_values=df["age"], decimals=2)["pages"] > 1
+    assert c.upload_grouped("amount", df["amount"], by="age", by_values=df["age"], decimals=4,
+                            where="score", where_values=df["score"], where_decimals=2)["pages"] > 1
     return c, df
 
 
@@ -83,7 +87,7 @@ def test_upload_by_skips_missing_rows(setup):
         c.query("amount", 1, 2, by="score")
 
 
-@pytest.mark.parametrize("col,by", [("amount", "region"), ("score", "decade")])
+@pytest.mark.parametrize("col,by", [("amount", "region"), ("score", "decade"), ("score", "age")])
 def test_group_by_matches_pandas(setup, col, by):
     c, df = setup
     want = df[[col, by]].dropna().groupby(by)[col].agg(["sum", "count"])
@@ -97,7 +101,8 @@ def test_group_by_matches_pandas(setup, col, by):
 @pytest.mark.parametrize("col,by,where,lo,hi", [("amount", "region", "score", -10.5, 120.25), ("amount", "region", "score", None, 0),
                                                ("amount", "region", "score", 300, None), ("amount", "region", "score", 12.34, 12.34),
                                                ("amount", "region", "score", 900, 1000), ("amount", "region", "score", None, None),
-                                               ("age", "decade", "age", 25, 44)])
+                                               ("age", "decade", "age", 25, 44), ("amount", "age", "score", -10.5, 120.25),
+                                               ("amount", "age", "score", None, None), ("amount", "age", "score", 12.34, 12.34)])
 def test_group_by_with_range_matches_pandas(setup, col, by, where, lo, hi):
     c, df = setup
     rows = df[list(dict.fromkeys([col, by, where]))].dropna()
@@ -120,8 +125,6 @@ def test_group_by_skips_missing_rows(setup):
         c.query_groups("amount", "region", 1, 2, where="age")
     with pytest.raises(ValueError, match="No rows"):
         c.upload_grouped("x", [None], by="g", by_values=["a"])
-    with pytest.raises(ValueError, match="60 groups do not fit"):  # one plaintext holds every group
-        c.upload_grouped("score", df["score"], by="age", by_values=df["age"], decimals=2)
 
 
 def test_server_never_sees_private_key_or_plaintext(setup):
@@ -177,6 +180,8 @@ def test_key_file_round_trip(setup, tmp_path):
     assert c2.query_groups("amount", "region") == c.query_groups("amount", "region")
     assert c2.query_groups("score", "decade") == c.query_groups("score", "decade")  # int labels survive JSON
     assert c2.query_groups("amount", "region", 0, 99.5, where="score") == c.query_groups("amount", "region", 0, 99.5, where="score")
+    assert c2.query_groups("score", "age") == c.query_groups("score", "age")  # pages survive the file
+    assert c2.query_groups("amount", "age", 0, 99.5, where="score") == c.query_groups("amount", "age", 0, 99.5, where="score")
 
 
 def test_key_file_rejects_wrong_password_and_tampering(setup, tmp_path):

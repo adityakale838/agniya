@@ -74,7 +74,7 @@ def test_sum_where_other_column_in_range(client, field, by, lo, hi):
 
 
 @pytest.mark.parametrize("field,by", [("amount", "region"), ("visits", "region"), ("amount", "visits"),
-                                      ("score", "region"), ("age", "visits")])
+                                      ("score", "region"), ("age", "visits"), ("amount", "age")])
 def test_group_by(client, field, by):
     c, df = client
     want = df[[field, by]].dropna().groupby(by)[field].agg(["sum", "mean", "count"])
@@ -85,6 +85,7 @@ def test_group_by(client, field, by):
         for label, row in want.iterrows():
             assert got[label] == pytest.approx(row[agg], abs=1e-6), (op, label)
         assert r["records_processed"] == want["count"].sum()
+        assert (r["pages"] > 1) == (by == "age")  # 60 groups: several plaintexts
 
 
 def test_group_by_rejects(client):
@@ -95,7 +96,8 @@ def test_group_by_rejects(client):
 
 @pytest.mark.parametrize("field,by,fc,lo,hi", [("amount", "region", "age", 30, 40), ("amount", "region", "amount", -100, 2000),
                                                ("visits", "region", "score", -10.5, 120.25), ("age", "visits", "age", None, 25),
-                                               ("score", "region", "age", 18, 18), ("amount", "region", "age", 200, 300)])
+                                               ("score", "region", "age", 18, 18), ("amount", "region", "age", 200, 300),
+                                               ("amount", "age", "score", -10.5, 120.25), ("score", "age", "age", 30, 49)])
 def test_group_by_with_range(client, field, by, fc, lo, hi):
     c, df = client
     rows = df[list(dict.fromkeys([field, by, fc]))].dropna()

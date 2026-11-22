@@ -38,12 +38,12 @@ from pyope.ope import ValueRange
 
 from agniya.core.ultimate_system import UltimateOptimizedDatabase
 from agniya.core.paillier import MIN_KEY_BITS, PaillierPublicKey, generate_keypair
-from agniya.core.batch_packing import decrypt_sorted_groups, range_plan
+from agniya.core.batch_packing import decrypt_sorted_groups, group_pages, range_plan
 from agniya.hybrid.fast_ope import FastOPE
 
 FIXED_POINT_DECIMALS = 4
 PAILLIER_TYPES = {'Paillier-2048', 'OPE+Paillier'}
-GROUP_MAX_VALUES = 16  # GROUP BY copies are built for columns with at most this many distinct values
+GROUP_MAX_VALUES = 64  # GROUP BY copies are built for columns with at most this many distinct values
 
 app = Flask(__name__)
 CORS(app, origins=os.environ.get('AGNIYA_CORS_ORIGINS', 'http://localhost:3000').split(','))
@@ -178,7 +178,7 @@ def encrypt_dataset():
             total_cts += len(packed['ciphertexts'])
 
     # SUM(a) GROUP BY g: for every column g (encrypted or not) with few distinct values, a copy of each
-    # encrypted column a packed by group, so one decryption gives every group's sum and count.
+    # encrypted column a packed by group, so one decryption per page of groups gives every sum and count.
     group_cols = [g for g in df.columns if 2 <= df[g].nunique() <= GROUP_MAX_VALUES]
     for a, cs in columns.items():
         cs['groups'] = {}
@@ -188,7 +188,7 @@ def encrypt_dataset():
                 continue
             try:
                 packed = db.packer.encrypt_groups([int(round(float(x) * cs['scale'])) for x in rows[a]], list(rows[g]))
-            except ValueError:  # too many groups for these values in one plaintext: no copy, query says so
+            except ValueError:  # values too large for one plaintext: no copy, query says so
                 continue
             cs['groups'][g] = packed
             total_cts += len(packed['ciphertexts'])
@@ -279,7 +279,7 @@ def execute_query():
         packed = col['groups'].get(group_by)
         if packed is None:
             return jsonify({'error': f'No GROUP BY copy of {field} by {group_by} (needs 2-{GROUP_MAX_VALUES} '
-                                     'distinct values that fit one plaintext, and rows with both)'}), 400
+                                     'distinct values and rows with both)'}), 400
         if filtered:
             try:
                 packed = _filtered_groups(ds, field, group_by, fc)
@@ -287,10 +287,10 @@ def execute_query():
                 return jsonify({'error': str(e)}), 400
             i, j = _tag_range(packed['ope_tags'], packed['ope'], packed['ope_max'], packed['fscale'],
                               packed['ope_offset'], range_min, range_max)
-            lanes = packed['lanes']
-            product, edges = range_plan(db.pub, packed['ciphertexts'], lanes, packed['count'], i, j) if i < j else (None, [])
-            sums = decrypt_sorted_groups(db.pub, db.priv, product, edges, packed)
-            cts = packed['ciphertexts'][i // lanes:(j - 1) // lanes + 1] if i < j else []
+            lanes, pages = packed['lanes'], group_pages(packed)
+            plans = [range_plan(db.pub, p, lanes, packed['count'], i, j) if i < j else (None, []) for p in pages]
+            sums = decrypt_sorted_groups(db.pub, db.priv, plans, packed)
+            cts = [c for p in pages for c in p[i // lanes:(j - 1) // lanes + 1]] if i < j else []
             response.update(filter_applied=True, filter_column=fc, range={'min': range_min, 'max': range_max},
                             records_before_filter=packed['count'], filter_selectivity=(j - i) / packed['count'])
         else:
@@ -302,11 +302,14 @@ def execute_query():
             x['result'] = {'SUM': x['sum'], 'AVG': x['avg'], 'COUNT': x['count']}[operation]
         count = sum(c for _, c in sums.values())
         total_scaled = sum(s for s, _ in sums.values())
-        response.update(group_by=group_by, groups=groups, security_note=(
-            f'The ciphertexts inside the range are multiplied and decrypted once, the <=2 cut by its edges on their own. '
-            f'OPE tags of {fc} reveal its order; the ciphertexts alone reveal no labels or group sizes.' if filtered else
-            'One product of all ciphertexts, one decryption: every group sum and count comes out of its own slots. '
-            'The ciphertexts alone reveal no labels or group sizes.'))
+        pages = packed.get('pages', 1)
+        per_page = f' per page of groups ({pages} pages)' if pages > 1 else ''
+        response.update(group_by=group_by, groups=groups, pages=pages, security_note=(
+            f'The ciphertexts inside the range are multiplied and decrypted once{per_page}, the <=2 cut by its edges '
+            f'on their own. OPE tags of {fc} reveal its order; the ciphertexts alone reveal no labels or group sizes.'
+            if filtered else
+            f'One product of the ciphertexts and one decryption{per_page}: every group sum and count comes out of its '
+            'own slots. The ciphertexts alone reveal no labels or group sizes.'))
     elif filtered:
         fcol = ds['columns'].get(fc)
         if fcol is None or 'ope' not in fcol:

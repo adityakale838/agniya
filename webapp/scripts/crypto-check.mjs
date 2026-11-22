@@ -21,6 +21,7 @@ if (job.paillier) {  // fresh key: encrypt; given key: decrypt and encrypt
 if (job.layout) {
   const keys = A.keypairFromPrimes(big(job.layout.p), big(job.layout.q));
   out.layout = job.layout.cases.map(([max, count]) => A.layout(keys.pub, big(max), count));
+  out.groupLayout = (job.layout.group_cases ?? []).map(([max, sizes, dpp]) => A.groupLayout(keys.pub, big(max), sizes, dpp));
 }
 if (job.ope) {
   const t = performance.now();

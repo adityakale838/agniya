@@ -45,7 +45,7 @@ export class CryptoWorker {
    *  packed in whereValues order so queryGroups can also filter lo <= where <= hi. */
   uploadGrouped(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>, decimals: number,
                 where?: string, whereValues?: Array<number | null>, whereDecimals?: number) {
-    return this.call<{ ciphertexts: number }>('uploadGrouped', { column, values, by, byValues, decimals, where, whereValues, whereDecimals });
+    return this.call<{ ciphertexts: number; pages: number }>('uploadGrouped', { column, values, by, byValues, decimals, where, whereValues, whereDecimals });
   }
 
   queryGroups(column: string, by: string, lo?: number, hi?: number, where?: string) {

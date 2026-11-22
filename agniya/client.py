@@ -37,7 +37,7 @@ from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pyope.ope import ValueRange
 
-from agniya.core.batch_packing import BatchedAggregator, decrypt_groups, decrypt_range, decrypt_sorted_groups
+from agniya.core.batch_packing import BatchedAggregator, decrypt_groups, decrypt_range, decrypt_sorted_groups, group_pages
 from agniya.core.paillier import generate_keypair, is_djn_admissible, keypair_from_primes
 from agniya.core.precomputation import RandomnessPool
 from agniya.hybrid.fast_ope import FastOPE
@@ -79,7 +79,7 @@ class AgniyaClient:
             raise ValueError('A password is required')
         cols = {}
         for name, m in self.columns.items():
-            c = {k: m[k] for k in ('scale', 'fscale', 'slot_bits', 'slots', 'offset', 'count', 'lanes', 'labels') if k in m}
+            c = {k: m[k] for k in ('scale', 'fscale', 'slot_bits', 'slots', 'offset', 'count', 'lanes', 'labels', 'pages') if k in m}
             if 'ope' in m:
                 c.update(ope_key=base64.b64encode(m['ope'].key).decode(), ope_offset=m['ope_offset'], ope_top=m['ope_top'])
             cols[name] = c
@@ -143,6 +143,8 @@ class AgniyaClient:
         query_groups(column, by) returns every group's sum and count from one decryption. Rows where
         either is missing are left out. The labels stay here; the server sees the number of slots
         per ciphertext and the number of ciphertexts (about the biggest group's size / lanes).
+        Groups that do not share one plaintext are split into pages, each stored as its own server
+        column ("column#by", "column#by@1", ...) and decrypted on its own.
 
         With where= (and where_values, one per row), the copy is packed in the order of that column
         and gets its OPE tags, so query_groups(..., lo, hi, where=where) groups only the rows with
@@ -165,20 +167,22 @@ class AgniyaClient:
         agg = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch)
         if where is None:
             packed = agg.encrypt_groups([a for a, _ in rows], [b for _, b in rows])
-            name, cts = f'{column}#{by}', packed['ciphertexts']
-            body = {'slots': packed['slots'], 'count': packed['slots'] * len(cts)}  # every ciphertext is whole
+            name = f'{column}#{by}'
+            body = {'slots': packed['slots']}
             meta = {'scale': s}
         else:
             packed = agg.encrypt_sorted_groups([a for _, a, _ in rows], [b for _, _, b in rows])
-            name, cts = f'{column}#{by}|{where}', packed['ciphertexts']
+            name = f'{column}#{by}|{where}'
             tags, meta = self._ope_tags([w for w, _, _ in rows])
             body = {'slots': packed['lanes'], 'count': len(rows), 'ope_tags': tags}  # cut like a sorted column
             meta.update(scale=s, fscale=fs, count=len(rows))
         pool.close()
-        r = self.post('/api/v2/columns', {'dataset': self.dataset, 'column': name, 'n': format(self.pub.n, 'x'),
-                                          'ciphertexts': [format(c, 'x') for c in cts], **body})
-        self.columns[name] = {**meta, **{k: packed[k] for k in ('slot_bits', 'slots', 'lanes', 'labels', 'offset')}}
-        return r
+        for p, cts in enumerate(group_pages(packed)):
+            r = self.post('/api/v2/columns', {'dataset': self.dataset, 'column': name + (f'@{p}' if p else ''),
+                                              'n': format(self.pub.n, 'x'), 'ciphertexts': [format(c, 'x') for c in cts],
+                                              'count': body.get('count', packed['slots'] * len(cts)), **body})
+        self.columns[name] = {**meta, **{k: packed[k] for k in ('slot_bits', 'slots', 'lanes', 'labels', 'offset', 'pages')}}
+        return {**r, 'column': name, 'ciphertexts': len(packed['ciphertexts']), 'pages': packed['pages']}
 
     def query_groups(self, column: str, by: str, lo: Optional[float] = None, hi: Optional[float] = None,
                      where: Optional[str] = None) -> dict:
@@ -190,17 +194,21 @@ class AgniyaClient:
             raise ValueError(f'Call upload_grouped({column!r}, ..., by={by!r}' + (f', where={where!r}' if where else '')
                              + ') first')
         m = self.columns[name]
-        body = {'dataset': self.dataset, 'column': name}
+        body = {'dataset': self.dataset}
         if where:
-            tags = self._range_tags(m, lo, hi)
-            if tags is None:
+            body = self._range_tags(m, lo, hi)
+            if body is None:
                 return {}
-            r = self.post('/api/v2/aggregate', {**body, **tags})
-            edges = [(int(e['ciphertext'], 16), max(0, e['first_slot']), min(e['end_slot'], m['lanes'])) for e in r['edges']]
-            sums = decrypt_sorted_groups(self.pub, self.priv, int(r['product'], 16) if r['product'] else None, edges, m)
+            body['dataset'] = self.dataset
+        rs = [self.post('/api/v2/aggregate', {**body, 'column': name + (f'@{p}' if p else '')})
+              for p in range(m.get('pages', 1))]
+        if where:
+            sums = decrypt_sorted_groups(self.pub, self.priv, [
+                (int(r['product'], 16) if r['product'] else None,
+                 [(int(e['ciphertext'], 16), max(0, e['first_slot']), min(e['end_slot'], m['lanes'])) for e in r['edges']])
+                for r in rs], m)
         else:
-            r = self.post('/api/v2/aggregate', body)
-            sums = decrypt_groups(self.pub, self.priv, int(r['product'], 16), m)
+            sums = decrypt_groups(self.pub, self.priv, [int(r['product'], 16) for r in rs], m)
         out = {}
         for label, (total, count) in sums.items():
             total = total / m['scale'] if m['scale'] != 1 else total

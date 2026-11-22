@@ -15,7 +15,7 @@ import pandas as pd
 import pytest
 from pyope.ope import OPE, ValueRange
 
-from agniya.core.batch_packing import BatchedAggregator
+from agniya.core.batch_packing import BatchedAggregator, group_layout
 from agniya.core.paillier import keypair_from_primes, decrypt_crt, encrypt
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -50,9 +50,12 @@ def test_layout_matches_python(tmp_path):
     a = run_ts({"paillier": {"encrypt": []}}, tmp_path)
     pub, priv = keypair_from_primes(int(a["p"]), int(a["q"]))
     cases = [[0, 0], [1, 1], [46, 1338], [633_000_000, 1338], [2**32 - 1, 3000], [15_000_000, 10**6]]
-    b = run_ts({"layout": {"p": a["p"], "q": a["q"], "cases": cases}}, tmp_path)
+    group_cases = [[0, [1], 1], [637_704_270, [325, 364, 325, 324], 1], [637_704_270, [69] * 47, 1],
+                   [637_704_271, [1338] * 47, 3], [2**40, [10**6] * 100, 1], [9, [3] * 300, 3]]
+    b = run_ts({"layout": {"p": a["p"], "q": a["q"], "cases": cases, "group_cases": group_cases}}, tmp_path)
     agg = BatchedAggregator(pub, priv)
     assert [list(x) for x in b["layout"]] == [list(agg.layout(m, c)) for m, c in cases]
+    assert [list(x) for x in b["groupLayout"]] == [list(group_layout(pub, m, s, d)) for m, s, d in group_cases]
 
 
 @pytest.mark.parametrize("top", [1, 46, 10**5, 633_000_000, 2**40])
@@ -136,6 +139,14 @@ def _groups(df, col, by, where=None, lo=None, hi=None):
     return {g: (len(x), sum(int(round(v * 10**4)) for v in x) / 10**4) for g, x in df.dropna(subset=[by]).groupby(by)[col]}
 
 
+def _check(got_groups, want):
+    got = {g["group"]: (g["count"], g["sum"]) for g in got_groups}
+    assert got.keys() == want.keys()
+    for label, (count, total) in want.items():
+        assert got[label][0] == count and got[label][1] == pytest.approx(total, abs=1e-9)
+    return got
+
+
 def test_key_file_browser_to_python(tmp_path, live_server):
     from agniya.client import AgniyaClient
     df = pd.read_csv(os.path.join(ROOT, "data", "insurance_real.csv"))
@@ -151,8 +162,13 @@ def test_key_file_browser_to_python(tmp_path, live_server):
         "grouped": [{"column": "charges", "values": df["charges"].tolist(), "by": "region", "by_values": regions,
                      "decimals": 4},
                     {"column": "charges", "values": df["charges"].tolist(), "by": "region", "by_values": regions,
-                     "decimals": 4, "where": "age", "where_values": ages, "where_decimals": 0}],
-        "group_queries": [["charges", "region"], ["charges", "region", 30, 45, "age"]],
+                     "decimals": 4, "where": "age", "where_values": ages, "where_decimals": 0},
+                    # 47 ages: several plaintexts ("charges#age", "charges#age@1", ...)
+                    {"column": "charges", "values": df["charges"].tolist(), "by": "age", "by_values": ages, "decimals": 4},
+                    {"column": "charges", "values": df["charges"].tolist(), "by": "age", "by_values": ages,
+                     "decimals": 4, "where": "bmi", "where_values": df["bmi"].tolist(), "where_decimals": 4}],
+        "group_queries": [["charges", "region"], ["charges", "region", 30, 45, "age"], ["charges", "age"],
+                          ["charges", "age", 25.5, 30.07, "bmi"]],
         "queries": [["charges", 30, 45, "age"], ["charges", None, None, "age"]]}}, tmp_path)
     rest = df.iloc[1:]
     for (lo, hi), ans in zip([(30, 45), (-1e18, 1e18)], a["answers"]):
@@ -169,6 +185,9 @@ def test_key_file_browser_to_python(tmp_path, live_server):
     assert got_f.keys() == want_f.keys()
     for label, (count, total) in want_f.items():
         assert got_f[label][0] == count and got_f[label][1] == pytest.approx(total, abs=1e-9)
+    assert a["groups"][2]["pages"] > 1 and a["groups"][3]["pages"] > 1
+    got_a = _check(a["groups"][2]["groups"], _groups(df.drop(index=0), "charges", "age"))
+    got_af = _check(a["groups"][3]["groups"], _groups(df.drop(index=0), "charges", "age", "bmi", 25.5, 30.07))
     path = tmp_path / "browser.agniya-key"
     path.write_text(a["keyfile"])
     with pytest.raises(ValueError, match="Wrong password"):
@@ -185,6 +204,9 @@ def test_key_file_browser_to_python(tmp_path, live_server):
     assert {k: (v["count"], pytest.approx(v["sum"], abs=1e-9)) for k, v in py.items()} == got
     py = c.query_groups("charges", "region", 30, 45, where="age")  # "charges#region|age", read by Python
     assert {k: (v["count"], pytest.approx(v["sum"], abs=1e-9)) for k, v in py.items()} == got_f
+    for args, want in [(("charges", "age"), got_a), (("charges", "age", 25.5, 30.07, "bmi"), got_af)]:
+        py = c.query_groups(*args[:2], *args[2:4], where=args[4] if len(args) > 2 else None)  # the browser's pages
+        assert {k: (v["count"], pytest.approx(v["sum"], abs=1e-9)) for k, v in py.items()} == want
 
 
 def test_key_file_python_to_browser(tmp_path, live_server):
@@ -196,11 +218,15 @@ def test_key_file_python_to_browser(tmp_path, live_server):
     c.upload_grouped("charges", df["charges"], by="children", by_values=df["children"], decimals=4)  # int labels
     c.upload_grouped("charges", df["charges"], by="children", by_values=df["children"], decimals=4,
                      where="bmi", where_values=df["bmi"], where_decimals=4)
+    assert c.upload_grouped("charges", df["charges"], by="age", by_values=df["age"], decimals=4)["pages"] > 1
+    assert c.upload_grouped("charges", df["charges"], by="age", by_values=df["age"], decimals=4,
+                            where="bmi", where_values=df["bmi"], where_decimals=4)["pages"] > 1
     path = tmp_path / "python.agniya-key"
     c.save(str(path), "pw")
     queries = [["charges", 5000, 20000.5], ["charges", None, 1200], ["bmi", None, None]]
     a = run_ts({"load": {"keyfile": path.read_text(), "password": "pw", "url": live_server, "queries": queries,
-                         "group_queries": [["charges", "children"], ["charges", "children", 25.5, 30.07, "bmi"]]}},
+                         "group_queries": [["charges", "children"], ["charges", "children", 25.5, 30.07, "bmi"],
+                                           ["charges", "age"], ["charges", "age", 25.5, 30.07, "bmi"]]}},
                 tmp_path)
     assert "error" not in a, a.get("error")
     assert a["dataset"] == "kf-p2b"
@@ -215,6 +241,8 @@ def test_key_file_python_to_browser(tmp_path, live_server):
     assert got_f.keys() == want_f.keys()
     for label, (count, total) in want_f.items():
         assert got_f[label][0] == count and got_f[label][1] == pytest.approx(total, abs=1e-9)
+    _check(a["groups"][2]["groups"], _groups(df, "charges", "age"))  # Python's pages, read by the browser
+    _check(a["groups"][3]["groups"], _groups(df, "charges", "age", "bmi", 25.5, 30.07))
     for (col, lo, hi), ans in zip(queries, a["answers"]):
         count, total = _exact(df, col, lo, hi, 10**4)
         assert ans["count"] == count and ans["sum"] == pytest.approx(total, abs=1e-9)
