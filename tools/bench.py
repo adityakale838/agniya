@@ -183,6 +183,13 @@ def main():
             assert all(abs(got[k] - v) < len(df) * 0.5e-4 for k, v in want.items()) and len(got) == len(want), got
             out.update(group_by_query={"sum": "charges", "group_by": "region", "groups": len(want),
                                        "ms": ms(stats(lambda: cl.post("/api/query", json=gbody), max(5, reps // 3)))})
+            abody = {**body, "group_by": "age"}  # 47 groups: more than one plaintext holds, so several pages
+            want = df.groupby("age")["charges"].sum()
+            r = cl.post("/api/query", json=abody).get_json()
+            got = {g["group"]: g["sum"] for g in r["groups"]}
+            assert all(abs(got[k] - v) < len(df) * 0.5e-4 for k, v in want.items()) and len(got) == len(want), got
+            out.update(group_by_age_query={"sum": "charges", "group_by": "age", "groups": len(want), "pages": r["pages"],
+                                           "ms": ms(stats(lambda: cl.post("/api/query", json=abody), max(5, reps // 3)))})
         if schema_name == "packed+ope_age":  # SUM(charges) WHERE 30 <= age <= 45
             xbody = {**body, "filter_column": "age", "rangeMin": 30, "rangeMax": 45}
             xsel = df["charges"][(df["age"] >= 30) & (df["age"] <= 45)]
@@ -238,12 +245,21 @@ def main():
     oc.upload_grouped("charges", df["charges"], by="region", by_values=df["region"], decimals=4,
                       where="age", where_values=df["age"])
     t_fgrp = time.perf_counter() - t
+    t = time.perf_counter()
+    apages = oc.upload_grouped("charges", df["charges"], by="age", by_values=df["age"], decimals=4)["pages"]
+    t_age = time.perf_counter() - t
+    awant = df.groupby("age")["charges"].sum()
+    aq = oc.query_groups("charges", "age")
+    assert all(abs(aq[k]["sum"] - v) < len(df) * 0.5e-4 for k, v in awant.items()) and len(aq) == len(awant), aq
     fwant = df[(df["age"] >= 30) & (df["age"] <= 45)].groupby("region")["charges"].sum()
     fq = oc.query_groups("charges", "region", 30, 45, where="age")
     assert all(abs(fq[k]["sum"] - v) < len(df) * 0.5e-4 for k, v in fwant.items()) and len(fq) == len(fwant), fq
     section("split_insurance_charges_ope", {
         "group_by_query": {"sum": "charges", "group_by": "region", "groups": len(want), "upload_grouped_s": round(t_grp, 3),
                            "ms": ms(stats(lambda: oc.query_groups("charges", "region"), max(5, reps // 3)))},
+        "group_by_age_query": {"sum": "charges", "group_by": "age", "groups": len(awant), "pages": apages,
+                               "upload_grouped_s": round(t_age, 3),
+                               "ms": ms(stats(lambda: oc.query_groups("charges", "age"), max(5, reps // 3)))},
         "filtered_group_by_query": {"sum": "charges", "where": "age", "min": 30, "max": 45, "group_by": "region",
                                     "groups": len(fwant), "upload_grouped_s": round(t_fgrp, 3),
                                     "ms": ms(stats(lambda: oc.query_groups("charges", "region", 30, 45, where="age"),
@@ -334,6 +350,13 @@ def update_readme(results_path=None):
         rows.append((f"SUM(charges) GROUP BY region ({ga['groups']} groups, one decryption): server-side / client-held keys",
                      f"{ga['ms']['median']:.1f} ms / {gs['ms']['median']:.1f} ms "
                      f"(client `upload_grouped` {gs['upload_grouped_s']:.2f} s)"))
+    aa = (api or {}).get("group_by_age_query")
+    as_ = (sp or {}).get("group_by_age_query")
+    if aa and as_:
+        rows.append((f"SUM(charges) GROUP BY age ({aa['groups']} groups, {aa['pages']} pages = {aa['pages']} decryptions): "
+                     "server-side / client-held keys",
+                     f"{aa['ms']['median']:.1f} ms / {as_['ms']['median']:.1f} ms "
+                     f"(client `upload_grouped` {as_['upload_grouped_s']:.2f} s)"))
     fa = (r.get("api_insurance_packed+ope_age") or {}).get("filtered_group_by_query")
     fs = (sp or {}).get("filtered_group_by_query")
     if fa and fs:
