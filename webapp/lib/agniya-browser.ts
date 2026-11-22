@@ -2,7 +2,7 @@
  * AGNIYA in the browser: the data owner's side of /api/v2, so the server never sees keys
  * or plaintext. Mirrors the Python modules it must agree with:
  *   Paillier + CRT decryption ........ agniya/core/paillier.py
- *   slot layout / range decryption ... agniya/core/batch_packing.py (layout, decrypt_range)
+ *   slot layout / range decryption ... agniya/core/batch_packing.py (layout, decrypt_range, group_layout)
  *   OPE tags ......................... pyope 0.2.2 + agniya/hybrid/fast_ope.py (same scheme;
  *                                      tests/test_integration/test_browser_crypto.py checks
  *                                      tags and ciphertexts against the Python side)
@@ -136,6 +136,21 @@ export function layout(pub: PublicKey, maxValue: bigint, count: number): [number
     if (slots * bits <= usable) return [bits, slots];
     if (slots === 1) throw new Error('Sum of values does not fit in one plaintext');
     slots--;
+  }
+}
+
+/** (slotBits, lanes) for GROUP BY packing (as Python group_layout): each of the sizes.length groups gets
+ *  `lanes` value slots plus one count slot per ciphertext, and every group fits one plaintext. */
+export function groupLayout(pub: PublicKey, maxValue: bigint, sizes: number[]): [number, number] {
+  const usable = bitLength(pub.n) - 1, k = sizes.length, biggest = Math.max(0, ...sizes);
+  let lanes = Math.max(1, Math.floor(Math.floor(usable / (bitLength(maxValue > 1n ? maxValue : 1n) + 1)) / Math.max(k, 1)) - 1);
+  for (;;) {
+    const m = BigInt(Math.max(1, Math.ceil(biggest / lanes)));
+    const top = [maxValue * m, BigInt(lanes) * m, 1n].reduce((a, b) => (a > b ? a : b));
+    const bits = bitLength(top);
+    if (k * (lanes + 1) * bits <= usable) return [bits, lanes];
+    if (lanes === 1) throw new Error(`${k} groups do not fit in one plaintext; group by fewer values or use a larger key`);
+    lanes--;
   }
 }
 
@@ -405,10 +420,16 @@ interface ColumnMeta {
   scale: number; slotBits: number; slots: number; offset: bigint; count: number;
   ope?: OPE; opeOffset?: bigint; opeTop?: bigint;
   fscale?: number;  // scale of the filter values when they differ (Python upload_by columns "a|b")
+  lanes?: number; labels?: Array<string | number>;  // GROUP BY copies "a#g" (Python upload_grouped)
 }
 
 export interface QueryAnswer {
   sum: number; count: number; avg: number;
+  ciphertextsUsed: number; ciphertextBits: number[]; serverMs: number;
+}
+
+export interface GroupAnswer {
+  groups: Array<{ group: string | number; sum: number; count: number; avg: number }>;
   ciphertextsUsed: number; ciphertextBits: number[]; serverMs: number;
 }
 
@@ -457,6 +478,58 @@ export class BrowserClient {
     });
     rows.sort((x, y) => cmp(x[0], y[0]) || cmp(x[1], y[1]));
     return this.put(`${column}|${by}`, rows.map(r => r[1]), scale, rows.map(r => r[0]), fscale);
+  }
+
+  /** For SUM / COUNT / AVG(column) GROUP BY by: `column` packed by label, stored as "column#by" (as
+   *  AgniyaClient.upload_grouped). Row r of group g goes to ciphertext r / lanes, lane r % lanes of g's
+   *  block, and each block counts its rows, so one product and one decryption give every group. The labels
+   *  stay here; the server sees slots per ciphertext and the number of ciphertexts. Rows missing either are skipped. */
+  async uploadGrouped(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>,
+                      decimals: number): Promise<{ ciphertexts: number }> {
+    const scale = 10 ** decimals;
+    const rows: Array<[bigint, string]> = [];
+    values.forEach((a, i) => {
+      const g = byValues[i];
+      if (a !== null && Number.isFinite(a) && g !== null && g !== '') rows.push([fixedPoint(a, scale), g]);
+    });
+    if (!rows.length) throw new Error(`No rows have both ${column} and ${by}`);
+    const labels = [...new Set(rows.map(r => r[1]))].sort();
+    const offset = rows.reduce((m, r) => (r[0] < m ? r[0] : m), 0n);
+    const top = rows.reduce((m, r) => (r[0] > m ? r[0] : m), rows[0][0]) - offset;
+    const byLabel = new Map(labels.map(l => [l, [] as bigint[]]));
+    for (const [v, g] of rows) byLabel.get(g)!.push(v - offset);
+    const sizes = labels.map(l => byLabel.get(l)!.length);
+    const [bits, lanes] = groupLayout(this.pub, top, sizes);
+    const plain: bigint[] = Array(Math.max(1, Math.ceil(Math.max(...sizes) / lanes))).fill(0n);
+    labels.forEach((l, gi) => {
+      const base = gi * (lanes + 1), vs = byLabel.get(l)!;
+      vs.forEach((v, r) => { plain[Math.floor(r / lanes)] |= v << BigInt((base + r % lanes) * bits); });
+      plain.forEach((_, c) => { plain[c] |= BigInt(Math.min(lanes, Math.max(0, vs.length - c * lanes))) << BigInt((base + lanes) * bits); });
+    });
+    const name = `${column}#${by}`, slots = labels.length * (lanes + 1);
+    const r = await this.post('/api/v2/columns', {  // every ciphertext is whole: the server multiplies them all
+      dataset: this.dataset, column: name, n: hex(this.pub.n), slots, count: slots * plain.length,
+      ciphertexts: plain.map(p => hex(encrypt(this.pub, this.priv, p))) });
+    this.columns.set(name, { scale, slotBits: bits, slots, offset, count: rows.length, lanes, labels });
+    return r as { ciphertexts: number };
+  }
+
+  /** Every group's SUM, COUNT and AVG of `column` by `by` (needs uploadGrouped): one decryption here. */
+  async queryGroups(column: string, by: string): Promise<GroupAnswer> {
+    const name = `${column}#${by}`, m = this.columns.get(name);
+    if (!m?.labels || !m.lanes) throw new Error(`No GROUP BY copy of ${column} by ${by}`);
+    const r = await this.post('/api/v2/aggregate', { dataset: this.dataset, column: name }) as unknown as AggregateResponse;
+    const product = unhex(r.product!), plain = decrypt(this.priv, product);
+    const bits = BigInt(m.slotBits), mask = (1n << bits) - 1n, lanes = m.lanes;
+    const slot = (s: number) => (plain >> (BigInt(s) * bits)) & mask;
+    const groups = m.labels.map((group, gi) => {
+      const base = gi * (lanes + 1), count = slot(base + lanes);
+      let total = m.offset * count;
+      for (let k = 0; k < lanes; k++) total += slot(base + k);
+      const sum = Number(total) / m.scale, n = Number(count);
+      return { group, sum, count: n, avg: n ? sum / n : 0 };
+    });
+    return { groups, ciphertextsUsed: r.ciphertexts_used, ciphertextBits: [bitLength(product)], serverMs: r.time_ms };
   }
 
   /** Pack `ints` (already in row order); `keys` (sorted, same length) become OPE tags when given. */
@@ -531,6 +604,7 @@ export class BrowserClient {
       const c: Record<string, unknown> = { scale: m.scale, slot_bits: m.slotBits, slots: m.slots,
                                            offset: safeNum(m.offset), count: m.count };
       if (m.fscale !== undefined) c.fscale = m.fscale;
+      if (m.labels) Object.assign(c, { lanes: m.lanes, labels: m.labels });
       if (m.ope) Object.assign(c, { ope_key: b64(m.ope.key), ope_offset: safeNum(m.opeOffset!), ope_top: safeNum(m.opeTop!) });
       columns[name] = c;
     }
@@ -565,6 +639,10 @@ export class BrowserClient {
       const meta: ColumnMeta = { scale: c.scale as number, slotBits: c.slot_bits as number, slots: c.slots as number,
                                  offset: BigInt(c.offset), count: (c.count as number) ?? 0 };
       if (c.fscale !== undefined) meta.fscale = c.fscale as number;
+      if (c.labels !== undefined) {
+        meta.lanes = c.lanes as number;
+        meta.labels = c.labels as unknown as Array<string | number>;
+      }
       if (c.ope_key !== undefined) {
         meta.ope = new OPE(unb64(c.ope_key as string), BigInt(c.ope_top));
         meta.opeOffset = BigInt(c.ope_offset);

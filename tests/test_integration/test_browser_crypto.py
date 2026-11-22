@@ -127,22 +127,37 @@ def _exact(df, col, lo, hi, scale):
     return len(sel), sum(int(round(float(v) * scale)) for v in sel) / scale
 
 
+def _groups(df, col, by):
+    """{label: (count, exact fixed-point sum)} as both clients store charges (4 decimals)."""
+    return {g: (len(x), sum(int(round(v * 10**4)) for v in x) / 10**4) for g, x in df.groupby(by)[col]}
+
+
 def test_key_file_browser_to_python(tmp_path, live_server):
     from agniya.client import AgniyaClient
     df = pd.read_csv(os.path.join(ROOT, "data", "insurance_real.csv"))
     ages = df["age"].tolist()
     ages[0] = None  # rows missing either value are skipped by uploadBy, as by upload_by
+    regions = df["region"].tolist()
+    regions[1] = None  # and by uploadGrouped, as by upload_grouped
     a = run_ts({"client": {"url": live_server, "dataset": "kf-b2p", "save_password": "pw \u00e9", "columns": [
         {"name": "charges", "values": df["charges"].tolist(), "decimals": 4, "range": True},
         {"name": "age", "values": df["age"].tolist(), "decimals": 0, "range": False}],
         "by": [{"column": "charges", "values": df["charges"].tolist(), "by": "age", "by_values": ages,
                 "decimals": 4, "by_decimals": 0}],
+        "grouped": [{"column": "charges", "values": df["charges"].tolist(), "by": "region", "by_values": regions,
+                     "decimals": 4}],
+        "group_queries": [["charges", "region"]],
         "queries": [["charges", 30, 45, "age"], ["charges", None, None, "age"]]}}, tmp_path)
     rest = df.iloc[1:]
     for (lo, hi), ans in zip([(30, 45), (-1e18, 1e18)], a["answers"]):
         sel = rest["charges"][(rest["age"] >= lo) & (rest["age"] <= hi)]
         assert ans["count"] == len(sel)
         assert ans["sum"] == pytest.approx(sum(int(round(v * 10**4)) for v in sel) / 10**4, abs=1e-9)
+    want = _groups(df.drop(index=1), "charges", "region")
+    got = {g["group"]: (g["count"], g["sum"]) for g in a["groups"][0]["groups"]}
+    assert got.keys() == want.keys()
+    for label, (count, total) in want.items():
+        assert got[label][0] == count and got[label][1] == pytest.approx(total, abs=1e-9)
     path = tmp_path / "browser.agniya-key"
     path.write_text(a["keyfile"])
     with pytest.raises(ValueError, match="Wrong password"):
@@ -155,6 +170,8 @@ def test_key_file_browser_to_python(tmp_path, live_server):
         assert r["count"] == count and r["sum"] == pytest.approx(total, abs=1e-9)
     r = c.query("charges", 30, 45, by="age")  # the browser's "charges|age" copy, read by Python
     assert (r["count"], r["sum"]) == (a["answers"][0]["count"], pytest.approx(a["answers"][0]["sum"], abs=1e-9))
+    py = c.query_groups("charges", "region")  # the browser's "charges#region" copy, read by Python
+    assert {k: (v["count"], pytest.approx(v["sum"], abs=1e-9)) for k, v in py.items()} == got
 
 
 def test_key_file_python_to_browser(tmp_path, live_server):
@@ -163,12 +180,20 @@ def test_key_file_python_to_browser(tmp_path, live_server):
     c = AgniyaClient(live_server, dataset="kf-p2b")
     c.upload("charges", df["charges"], decimals=4, range_filter=True)
     c.upload("bmi", df["bmi"], decimals=4)
+    c.upload_grouped("charges", df["charges"], by="children", by_values=df["children"], decimals=4)  # int labels
     path = tmp_path / "python.agniya-key"
     c.save(str(path), "pw")
     queries = [["charges", 5000, 20000.5], ["charges", None, 1200], ["bmi", None, None]]
-    a = run_ts({"load": {"keyfile": path.read_text(), "password": "pw", "url": live_server, "queries": queries}}, tmp_path)
+    a = run_ts({"load": {"keyfile": path.read_text(), "password": "pw", "url": live_server, "queries": queries,
+                         "group_queries": [["charges", "children"]]}}, tmp_path)
     assert "error" not in a, a.get("error")
-    assert a["dataset"] == "kf-p2b" and {x["name"]: x["count"] for x in a["columns"]} == {"charges": 1338, "bmi": 1338}
+    assert a["dataset"] == "kf-p2b"
+    assert {x["name"]: x["count"] for x in a["columns"] if "#" not in x["name"]} == {"charges": 1338, "bmi": 1338}
+    want = _groups(df, "charges", "children")
+    got = {g["group"]: (g["count"], g["sum"]) for g in a["groups"][0]["groups"]}
+    assert got.keys() == want.keys()  # Python's int labels come back as numbers
+    for label, (count, total) in want.items():
+        assert got[label][0] == count and got[label][1] == pytest.approx(total, abs=1e-9)
     for (col, lo, hi), ans in zip(queries, a["answers"]):
         count, total = _exact(df, col, lo, hi, 10**4)
         assert ans["count"] == count and ans["sum"] == pytest.approx(total, abs=1e-9)

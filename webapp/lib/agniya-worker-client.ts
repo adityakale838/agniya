@@ -1,5 +1,5 @@
 // Page-side handle to lib/agniya-worker.ts: one worker = one key pair. terminate() drops the key.
-import type { QueryAnswer } from './agniya-browser';
+import type { GroupAnswer, QueryAnswer } from './agniya-browser';
 
 export type WorkerAnswer = QueryAnswer & { total: number };
 
@@ -40,6 +40,13 @@ export class CryptoWorker {
            decimals: number, byDecimals: number) {
     return this.call<{ ciphertexts: number }>('uploadBy', { column, values, by, byValues, decimals, byDecimals });
   }
+
+  /** Copy of `column` packed by the labels in byValues (one per row) for GROUP BY `by`. */
+  uploadGrouped(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>, decimals: number) {
+    return this.call<{ ciphertexts: number }>('uploadGrouped', { column, values, by, byValues, decimals });
+  }
+
+  queryGroups(column: string, by: string) { return this.call<GroupAnswer>('queryGroups', { column, by }); }
 
   query(column: string, lo?: number, hi?: number, by?: string) {
     return this.call<WorkerAnswer>('query', { column, lo, hi, by });

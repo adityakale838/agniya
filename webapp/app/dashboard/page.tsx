@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Lock, ArrowLeft, FileText, Zap, Database, Search, Calculator, Filter, TrendingUp, AlertCircle, Shield } from 'lucide-react';
+import { Upload, Lock, ArrowLeft, FileText, Zap, Database, Search, Calculator, Filter, TrendingUp, AlertCircle, Shield, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -29,6 +29,17 @@ import { parseCsv } from '@/lib/agniya-browser';
 import { CryptoWorker } from '@/lib/agniya-worker-client';
 
 const PAILLIER: string[] = ['Paillier-2048', 'OPE+Paillier'];
+const GROUP_MAX_VALUES = 16;  // as api/server_optimized.py: GROUP BY copies for columns with 2-16 distinct values
+
+/** {field: [group columns]} from stored column names, where "a#g" is a packed by g. */
+const groupsFromNames = (names: string[]): Record<string, string[]> => {
+  const out: Record<string, string[]> = {};
+  for (const n of names) {
+    const i = n.indexOf('#');
+    if (i > 0) (out[n.slice(0, i)] ??= []).push(n.slice(i + 1));
+  }
+  return out;
+};
 
 interface Field {
   name: string;
@@ -66,6 +77,8 @@ interface QueryResult {
   ciphertexts_aggregated?: number;
   filter_applied?: boolean;
   filter_column?: string;
+  group_by?: string;
+  groups?: Array<{ group: string | number; sum: number; count: number; avg: number; result: number }>;
   range?: { min: number | null; max: number | null };
   records_before_filter?: number;
   filter_selectivity?: number;
@@ -106,6 +119,10 @@ export default function Dashboard() {
   const [rangeMin, setRangeMin] = useState('');
   const [rangeMax, setRangeMax] = useState('');
   const [filterBy, setFilterBy] = useState('');  // '' = filter on the queried field itself
+  const [groupBy, setGroupBy] = useState('');  // '' = no GROUP BY
+  const [groupable, setGroupable] = useState<Record<string, string[]>>({});  // field -> columns it can be grouped by
+  const groupOptions = groupable[selectedField] ?? [];
+  const activeGroupBy = groupOptions.includes(groupBy) ? groupBy : '';
 
   const [error, setError] = useState<string | null>(null);
 
@@ -157,7 +174,8 @@ export default function Dashboard() {
       setSchema(restored);
       setEncryptionResult({ success: true, records_encrypted: records, message: 'Restored from key file' });
       setQueries([]);
-      setSelectedField(restored[0]?.name ?? ''); setFilterBy('');
+      setSelectedField(restored[0]?.name ?? ''); setFilterBy(''); setGroupBy('');
+      setGroupable(groupsFromNames(info.columns.map(c => c.name)));
       setKeyPassword(''); setRestoreFile(null);
       setActiveTab('query');
     } catch (err) {
@@ -171,7 +189,7 @@ export default function Dashboard() {
   const switchMode = (browser: boolean) => {
     setBrowserMode(browser);
     setFile(null); setUploadData(null); setEncryptionResult(null); setSchema([]); setQueries([]);
-    setSelectedField(''); setRangeMin(''); setRangeMax(''); setFilterBy('');
+    setSelectedField(''); setRangeMin(''); setRangeMax(''); setFilterBy(''); setGroupBy(''); setGroupable({});
     csvRef.current = null;
     dropWorker();
     setActiveTab('upload');
@@ -188,6 +206,13 @@ export default function Dashboard() {
     const { header, rows } = csvRef.current!;
     const i = header.indexOf(name);
     return rows.map(r => ((r[i] ?? '').trim() === '' ? null : Number(r[i])));
+  };
+
+  /** Raw CSV labels, one per row (null where empty), for GROUP BY. */
+  const rowLabels = (name: string): Array<string | null> => {
+    const { header, rows } = csvRef.current!;
+    const i = header.indexOf(name);
+    return rows.map(r => (r[i] ?? '').trim() || null);
   };
 
   const parseLocally = async (f: File): Promise<UploadedData> => {
@@ -228,9 +253,45 @@ export default function Dashboard() {
                                               decimals[a.name], decimals[b.name])).ciphertexts;
       }
     }
+    // GROUP BY: a copy of every field packed by each column with 2-16 distinct values (as the server does).
+    const groupCols = csvRef.current!.header.filter(g => {
+      const n = new Set(rowLabels(g).filter(v => v !== null)).size;
+      return n >= 2 && n <= GROUP_MAX_VALUES;
+    });
+    const groups: Record<string, string[]> = {};
+    for (const a of fields) {
+      for (const g of groupCols.filter(g => g !== a.name)) {
+        try {
+          ciphertexts += (await worker.uploadGrouped(a.name, rowValues(a.name), g, rowLabels(g), decimals[a.name])).ciphertexts;
+          (groups[a.name] ??= []).push(g);
+        } catch (err) {
+          if (!/do not fit|No rows/.test(String(err))) throw err;  // skip copies that cannot be built
+        }
+      }
+    }
+    setGroupable(groups);
     const secs = (performance.now() - t0) / 1000;
     const records = csvRef.current!.rows.length;
     return { success: true, records_encrypted: records, time_seconds: secs, throughput: records / secs, ciphertexts };
+  };
+
+  const queryGroupsLocally = async (): Promise<QueryResult> => {
+    const t0 = performance.now();
+    const a = await workerRef.current!.queryGroups(selectedField, activeGroupBy);
+    const pick = (g: { sum: number; count: number; avg: number }) => ({ SUM: g.sum, AVG: g.avg, COUNT: g.count })[selectedOperation];
+    const sum = a.groups.reduce((s, g) => s + g.sum, 0), count = a.groups.reduce((s, g) => s + g.count, 0);
+    return {
+      operation: selectedOperation, field: selectedField, column: selectedField, group_by: activeGroupBy,
+      groups: a.groups.map(g => ({ ...g, result: pick(g) })),
+      result: pick({ sum, count, avg: count ? sum / count : 0 }),
+      time_ms: performance.now() - t0, records_processed: count, ciphertexts_aggregated: a.ciphertextsUsed,
+      security_note: 'One product of all ciphertexts, one decryption in this browser: every group sum and count comes out of its own slots. The server never saw the labels.',
+      encryption_proof: {
+        ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits, modulus_n_bit_length: 2048,
+        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`,
+        computation_type: 'Paillier homomorphic addition',
+      },
+    };
   };
 
   const queryLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
@@ -315,6 +376,9 @@ export default function Dashboard() {
         schema.map(f => ({ name: f.name, encryption: f.encryption }))
       );
       setEncryptionResult(response);
+      if (!browserMode && 'fields' in response && response.fields) {
+        setGroupable(Object.fromEntries(Object.entries(response.fields).map(([n, f]) => [n, f.group_by ?? []])));
+      }
       setActiveTab('query');
       
       // Set first numeric field for queries
@@ -347,7 +411,11 @@ export default function Dashboard() {
         return;
       }
       
-      const response = browserMode ? await queryLocally(minVal, maxVal) : await apiService.executeQuery(
+      const response = activeGroupBy
+        ? (browserMode ? await queryGroupsLocally()
+                       : await apiService.executeQuery(selectedOperation, selectedField, uploadData.filename,
+                                                       undefined, undefined, undefined, activeGroupBy))
+        : browserMode ? await queryLocally(minVal, maxVal) : await apiService.executeQuery(
         selectedOperation,
         selectedField,
         uploadData.filename,
@@ -839,6 +907,29 @@ export default function Dashboard() {
                       </DropdownMenu>
                     </div>
 
+                    {groupOptions.length > 0 && (
+                      <div>
+                        <Label>Group by (one decryption for every group)</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between">
+                              {activeGroupBy || 'No grouping'}
+                              <Layers className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-full">
+                            <DropdownMenuItem onClick={() => setGroupBy('')}>No grouping</DropdownMenuItem>
+                            {groupOptions.map(g => (
+                              <DropdownMenuItem key={g} onClick={() => setGroupBy(g)}>{g}</DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+
+                    {activeGroupBy ? (
+                      <p className="text-xs text-muted-foreground">Range filters can&apos;t be combined with GROUP BY yet.</p>
+                    ) : <>
                     {schema.some(f => f.encryption === 'OPE+Paillier') && (
                       <div>
                         <Label>Filter by (range on an OPE+Paillier field)</Label>
@@ -883,6 +974,7 @@ export default function Dashboard() {
                         />
                       </div>
                     </div>
+                    </>}
 
                     <Button
                       onClick={handleQuery}
@@ -938,10 +1030,26 @@ export default function Dashboard() {
                             <span className="text-muted-foreground">{query.operation || query.column}(</span>
                             <span className="font-semibold">{query.field || query.column}</span>
                             <span className="text-muted-foreground">)</span>
+                            {query.group_by && <span className="text-muted-foreground"> GROUP BY <span className="font-semibold text-foreground">{query.group_by}</span></span>}
                           </div>
+                          {query.groups ? (<>
+                            <table className="w-full text-sm my-2">
+                              <tbody>
+                                {[...query.groups].sort((x, y) => String(x.group).localeCompare(String(y.group), undefined, { numeric: true })).map(g => (
+                                  <tr key={String(g.group)} className="border-b border-primary/10 last:border-0">
+                                    <td className="py-1 font-mono">{String(g.group)}</td>
+                                    <td className="py-1 text-right font-bold text-primary">{g.result.toLocaleString()}</td>
+                                    <td className="py-1 text-right text-xs text-muted-foreground">{g.count} rows</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {query.security_note && <div className="text-xs text-muted-foreground mb-1">🔐 {query.security_note}</div>}
+                          </>) : (
                           <div className="text-2xl font-bold text-primary">
                             {(query.result || 0).toLocaleString()}
                           </div>
+                          )}
                           <div className="text-xs text-muted-foreground mt-1">
                             {query.records_processed || 0} records processed (encrypted)
                             {query.filter_applied && (
@@ -1015,7 +1123,7 @@ export default function Dashboard() {
                             {query.operation || query.column}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-mono">{query.field || query.column}</TableCell>
+                        <TableCell className="font-mono">{query.field || query.column}{query.group_by && ` by ${query.group_by}`}</TableCell>
                         <TableCell className="text-right font-bold text-primary text-lg">
                           {(query.result || 0).toLocaleString()}
                         </TableCell>

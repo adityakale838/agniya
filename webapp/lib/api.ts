@@ -22,6 +22,7 @@ export interface EncryptResponse {
   time_seconds?: number;
   throughput?: number;
   ciphertexts?: number;
+  fields?: Record<string, { group_by?: string[] }>;
 }
 
 export interface QueryResponse {
@@ -172,7 +173,8 @@ class APIService {
     filename: string,
     rangeMin?: number,
     rangeMax?: number,
-    filterColumn?: string
+    filterColumn?: string,
+    groupBy?: string
   ): Promise<QueryResponse> {
     const body: Record<string, unknown> = {
       type: operation,
@@ -180,6 +182,7 @@ class APIService {
       filename
     };
     if (filterColumn) body.filter_column = filterColumn;
+    if (groupBy) body.group_by = groupBy;
     
     // Add range parameters if provided
     if (rangeMin !== undefined && rangeMin !== null) {
