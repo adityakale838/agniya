@@ -5,7 +5,7 @@ Tests for Batch Packing optimization.
 import pytest
 from agniya.core.paillier import generate_keypair
 from agniya.core.batch_packing import (
-    BatchPacker, BatchOperations, BatchedAggregator
+    BatchPacker, BatchOperations, BatchedAggregator, decrypt_sorted_groups, range_plan
 )
 
 
@@ -347,6 +347,28 @@ class TestPackingHeadroom:
             want[f"g{g}"] = (s + v, c + 1)
         assert aggregator.sum_groups(col) == want
         assert col['slots'] * col['slot_bits'] < aggregator.public_key.n.bit_length()
+
+    @pytest.mark.parametrize("k,n,lo,hi", [(1, 50, 0, 10), (4, 1338, -5_000, 640_000_000), (16, 300, -3, 3), (3, 1, 0, 0)])
+    def test_sorted_groups_every_row_range(self, aggregator, k, n, lo, hi):
+        """Every range i..j of rows (including ones cutting ciphertexts) gives exact per-group sums."""
+        import random
+        rng = random.Random(k * 7 + n)
+        values = [rng.randint(lo, hi) for _ in range(n)]
+        groups = [rng.choice(range(k)) if rng.random() < 0.5 else 0 for _ in range(n)]
+        col = aggregator.encrypt_sorted_groups(values, groups)
+        lanes, pub, priv = col['lanes'], aggregator.public_key, aggregator.private_key
+        assert col['slots'] * col['slot_bits'] < pub.n.bit_length()
+        cuts = sorted({0, n, 1, n - 1, lanes, lanes + 1, n // 2, *(rng.randint(0, n) for _ in range(6))} & set(range(n + 1)))
+        for i in cuts:
+            for j in cuts:
+                if i >= j:
+                    continue
+                want = {}
+                for v, g in zip(values[i:j], groups[i:j]):
+                    s, c = want.get(g, (0, 0))
+                    want[g] = (s + v, c + 1)
+                product, edges = range_plan(pub, col['ciphertexts'], lanes, n, i, j)
+                assert decrypt_sorted_groups(pub, priv, product, edges, col) == want, (i, j)
 
     def test_too_many_groups(self, aggregator):
         with pytest.raises(ValueError, match="groups do not fit"):

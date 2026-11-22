@@ -34,11 +34,15 @@ if (job.client) {  // end to end against a running server
   const c = new A.BrowserClient(A.httpPost(job.client.url), job.client.dataset);
   for (const col of job.client.columns) await c.upload(col.name, col.values, col.decimals, col.range);
   for (const x of job.client.by ?? []) await c.uploadBy(x.column, x.values, x.by, x.by_values, x.decimals, x.by_decimals);
-  for (const x of job.client.grouped ?? []) await c.uploadGrouped(x.column, x.values, x.by, x.by_values, x.decimals);
+  for (const x of job.client.grouped ?? []) {
+    await c.uploadGrouped(x.column, x.values, x.by, x.by_values, x.decimals, x.where, x.where_values, x.where_decimals);
+  }
   out.answers = [];
   for (const [col, lo, hi, by] of job.client.queries) out.answers.push(await c.query(col, lo ?? undefined, hi ?? undefined, by));
   out.groups = [];
-  for (const [col, by] of job.client.group_queries ?? []) out.groups.push(await c.queryGroups(col, by));
+  for (const [col, by, lo, hi, where] of job.client.group_queries ?? []) {
+    out.groups.push(await c.queryGroups(col, by, lo ?? undefined, hi ?? undefined, where));
+  }
   out.p = c.priv.p.toString();
   if (job.client.save_password) out.keyfile = await c.saveKeyFile(job.client.save_password);
 }
@@ -56,7 +60,9 @@ if (job.load) {  // restore from a key file (either side's), then query
     out.answers = [];
     for (const [col, lo, hi] of job.load.queries) out.answers.push(await c.query(col, lo ?? undefined, hi ?? undefined));
     out.groups = [];
-    for (const [col, by] of job.load.group_queries ?? []) out.groups.push(await c.queryGroups(col, by));
+    for (const [col, by, lo, hi, where] of job.load.group_queries ?? []) {
+      out.groups.push(await c.queryGroups(col, by, lo ?? undefined, hi ?? undefined, where));
+    }
   } catch (e) {
     out.error = e.message;
   }

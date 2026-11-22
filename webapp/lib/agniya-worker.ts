@@ -29,9 +29,14 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; args: Record<s
                                      args.byValues as Array<number | null>, args.decimals as number, args.byDecimals as number);
     } else if (op === 'uploadGrouped') {
       result = await client.uploadGrouped(args.column as string, args.values as Array<number | null>, args.by as string,
-                                          args.byValues as Array<string | null>, args.decimals as number);
+                                          args.byValues as Array<string | null>, args.decimals as number,
+                                          args.where as string | undefined, args.whereValues as Array<number | null> | undefined,
+                                          args.whereDecimals as number | undefined);
     } else if (op === 'queryGroups') {
-      result = await client.queryGroups(args.column as string, args.by as string);
+      const where = args.where as string | undefined, name = `${args.column}#${args.by}` + (where ? `|${where}` : '');
+      const answer = await client.queryGroups(args.column as string, args.by as string, args.lo as number | undefined,
+                                              args.hi as number | undefined, where);
+      result = { ...answer, total: client.columns.get(name)?.count ?? 0 };
     } else if (op === 'save') {
       result = { text: await client.saveKeyFile(args.password as string), dataset: client.dataset };
     } else if (op === 'query') {

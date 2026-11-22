@@ -294,6 +294,30 @@ def decrypt_groups(public_key: PaillierPublicKey, private_key: PaillierPrivateKe
     return out
 
 
+def decrypt_sorted_groups(public_key: PaillierPublicKey, private_key: PaillierPrivateKey, product: Optional[int],
+                          edges: List[Tuple[int, int, int]], column: Dict) -> Dict:
+    """{label: (sum, count)} over a row range of a column from encrypt_sorted_groups: `product` and
+    `edges` come from range_plan(..., slots=lanes, ...). Groups with no rows in the range are left out."""
+    bits, lanes, labels = column['slot_bits'], column['lanes'], column['labels']
+    mask = (1 << bits) - 1
+    sums, counts = [0] * len(labels), [0] * len(labels)
+    if product is not None:
+        m = decrypt_crt(public_key, private_key, product)
+        for gi in range(len(labels)):
+            base = gi * (lanes + 1)
+            counts[gi] += (m >> ((base + lanes) * bits)) & mask
+            sums[gi] += sum((m >> ((base + k) * bits)) & mask for k in range(lanes))
+        sums = [s - c for s, c in zip(sums, counts)]  # every lane held value - offset + 1
+    for ct, lo, hi in edges:
+        m = decrypt_crt(public_key, private_key, ct)
+        for gi in range(len(labels)):
+            for k in range(lo, hi):
+                v = (m >> ((gi * (lanes + 1) + k) * bits)) & mask
+                if v:  # 0 = this row is in another group
+                    sums[gi], counts[gi] = sums[gi] + v - 1, counts[gi] + 1
+    return {g: (s + column['offset'] * c, c) for g, s, c in zip(labels, sums, counts) if c}
+
+
 class BatchedAggregator:
     """SUM / COUNT / AVG over non-negative integers using packed ciphertexts."""
 
@@ -380,6 +404,28 @@ class BatchedAggregator:
                 plain[c] |= min(lanes, max(0, len(rows[g]) - c * lanes)) << ((base + lanes) * bits)
         return {'ciphertexts': self.encrypt_batch(plain), 'slot_bits': bits, 'lanes': lanes,
                 'slots': len(labels) * (lanes + 1), 'labels': labels, 'offset': offset}
+
+    def encrypt_sorted_groups(self, values: List[int], groups: List) -> Dict:
+        """GROUP BY packing that keeps the row order given (sorted by a filter column), so a range of
+        rows is a run of ciphertexts, as in encrypt_column: row r goes to ciphertext r // lanes, lane
+        r % lanes of its group's block, holding value - offset + 1 (0 marks a lane of another group).
+        Store it with slots=lanes and count=len(values); range_plan then cuts it like any column."""
+        if any(not isinstance(v, int) for v in values):
+            raise ValueError("Packed columns hold integers only (scale decimals first)")
+        groups = [g.item() if hasattr(g, 'item') else g for g in groups]
+        if len(groups) != len(values) or not values:
+            raise ValueError("One group label per value, and at least one value")
+        labels = sorted(set(groups))
+        index = {g: i for i, g in enumerate(labels)}
+        offset = min(0, min(values))
+        bits, lanes = group_layout(self.public_key, max(values) - offset + 1, [len(values)] * len(labels))
+        plain = [0] * -(-len(values) // lanes)
+        for r, (v, g) in enumerate(zip(values, groups)):
+            c, lane = divmod(r, lanes)
+            base = index[g] * (lanes + 1)
+            plain[c] += ((v - offset + 1) << ((base + lane) * bits)) + (1 << ((base + lanes) * bits))
+        return {'ciphertexts': self.encrypt_batch(plain), 'slot_bits': bits, 'lanes': lanes,
+                'slots': len(labels) * (lanes + 1), 'labels': labels, 'offset': offset, 'count': len(values)}
 
     def sum_groups(self, column: Dict) -> Dict:
         """{label: (sum, count)} for a column from encrypt_groups: one product, one decryption."""

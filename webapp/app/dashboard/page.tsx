@@ -31,12 +31,12 @@ import { CryptoWorker } from '@/lib/agniya-worker-client';
 const PAILLIER: string[] = ['Paillier-2048', 'OPE+Paillier'];
 const GROUP_MAX_VALUES = 16;  // as api/server_optimized.py: GROUP BY copies for columns with 2-16 distinct values
 
-/** {field: [group columns]} from stored column names, where "a#g" is a packed by g. */
+/** {field: [group columns]} from stored column names, where "a#g" is a packed by g ("a#g|w" also filters on w). */
 const groupsFromNames = (names: string[]): Record<string, string[]> => {
   const out: Record<string, string[]> = {};
   for (const n of names) {
     const i = n.indexOf('#');
-    if (i > 0) (out[n.slice(0, i)] ??= []).push(n.slice(i + 1));
+    if (i > 0 && !n.includes('|', i)) (out[n.slice(0, i)] ??= []).push(n.slice(i + 1));
   }
   return out;
 };
@@ -130,6 +130,7 @@ export default function Dashboard() {
   const [browserMode, setBrowserMode] = useState(true);
   const csvRef = useRef<{ header: string[]; rows: string[][] } | null>(null);
   const workerRef = useRef<CryptoWorker | null>(null);
+  const filteredCopies = useRef(new Set<string>());  // "a#g|w" copies the worker has (GROUP BY g WHERE w in range)
 
   const dropWorker = () => { workerRef.current?.terminate(); workerRef.current = null; };  // drops the key
   useEffect(() => () => workerRef.current?.terminate(), []);  // leaving the page drops the key too
@@ -176,6 +177,7 @@ export default function Dashboard() {
       setQueries([]);
       setSelectedField(restored[0]?.name ?? ''); setFilterBy(''); setGroupBy('');
       setGroupable(groupsFromNames(info.columns.map(c => c.name)));
+      filteredCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#.*\|/.test(n)));
       setKeyPassword(''); setRestoreFile(null);
       setActiveTab('query');
     } catch (err) {
@@ -237,6 +239,7 @@ export default function Dashboard() {
     dropWorker();  // re-encrypting starts a fresh key pair
     const worker = new CryptoWorker();
     workerRef.current = worker;
+    filteredCopies.current = new Set();
     await worker.init(API_BASE_URL, `${uploadData!.filename}-${crypto.randomUUID().slice(0, 8)}`);
     let ciphertexts = 0;
     const decimals: Record<string, number> = {};
@@ -275,9 +278,20 @@ export default function Dashboard() {
     return { success: true, records_encrypted: records, time_seconds: secs, throughput: records / secs, ciphertexts };
   };
 
-  const queryGroupsLocally = async (): Promise<QueryResult> => {
+  const queryGroupsLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
+    const worker = workerRef.current!, fc = filterBy || selectedField;
+    const filtered = minVal !== undefined || maxVal !== undefined;
+    const copy = `${selectedField}#${activeGroupBy}|${fc}`;
+    if (filtered && !filteredCopies.current.has(copy)) {
+      // A copy packed in fc order, built on first use: one per field x group x filter up front would be too many.
+      if (!csvRef.current) throw new Error(`GROUP BY ${activeGroupBy} with a range on ${fc} needs the CSV: upload it and encrypt again`);
+      const dec = (n: string) => (columnValues(n).every(Number.isInteger) ? 0 : 4);
+      await worker.uploadGrouped(selectedField, rowValues(selectedField), activeGroupBy, rowLabels(activeGroupBy),
+                                 dec(selectedField), fc, rowValues(fc), dec(fc));
+      filteredCopies.current.add(copy);
+    }
     const t0 = performance.now();
-    const a = await workerRef.current!.queryGroups(selectedField, activeGroupBy);
+    const a = await worker.queryGroups(selectedField, activeGroupBy, minVal, maxVal, filtered ? fc : undefined);
     const pick = (g: { sum: number; count: number; avg: number }) => ({ SUM: g.sum, AVG: g.avg, COUNT: g.count })[selectedOperation];
     const sum = a.groups.reduce((s, g) => s + g.sum, 0), count = a.groups.reduce((s, g) => s + g.count, 0);
     return {
@@ -285,7 +299,11 @@ export default function Dashboard() {
       groups: a.groups.map(g => ({ ...g, result: pick(g) })),
       result: pick({ sum, count, avg: count ? sum / count : 0 }),
       time_ms: performance.now() - t0, records_processed: count, ciphertexts_aggregated: a.ciphertextsUsed,
-      security_note: 'One product of all ciphertexts, one decryption in this browser: every group sum and count comes out of its own slots. The server never saw the labels.',
+      ...(filtered && { filter_applied: true, filter_column: fc, range: { min: minVal ?? null, max: maxVal ?? null },
+                        records_before_filter: a.total, filter_selectivity: a.total ? count / a.total : 0 }),
+      security_note: filtered
+        ? `The server compared OPE tags of ${fc} (it learns their order) and multiplied ciphertexts; this browser decrypted the product once plus the <=2 edge ciphertexts. The server never saw the labels.`
+        : 'One product of all ciphertexts, one decryption in this browser: every group sum and count comes out of its own slots. The server never saw the labels.',
       encryption_proof: {
         ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits, modulus_n_bit_length: 2048,
         verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`,
@@ -412,9 +430,9 @@ export default function Dashboard() {
       }
       
       const response = activeGroupBy
-        ? (browserMode ? await queryGroupsLocally()
+        ? (browserMode ? await queryGroupsLocally(minVal, maxVal)
                        : await apiService.executeQuery(selectedOperation, selectedField, uploadData.filename,
-                                                       undefined, undefined, undefined, activeGroupBy))
+                                                       minVal, maxVal, filterBy || undefined, activeGroupBy))
         : browserMode ? await queryLocally(minVal, maxVal) : await apiService.executeQuery(
         selectedOperation,
         selectedField,
@@ -927,9 +945,6 @@ export default function Dashboard() {
                       </div>
                     )}
 
-                    {activeGroupBy ? (
-                      <p className="text-xs text-muted-foreground">Range filters can&apos;t be combined with GROUP BY yet.</p>
-                    ) : <>
                     {schema.some(f => f.encryption === 'OPE+Paillier') && (
                       <div>
                         <Label>Filter by (range on an OPE+Paillier field)</Label>
@@ -974,7 +989,9 @@ export default function Dashboard() {
                         />
                       </div>
                     </div>
-                    </>}
+                    {activeGroupBy && (
+                      <p className="text-xs text-muted-foreground">With a range, the first query per filter column encrypts a copy of {selectedField} packed in that column&apos;s order.</p>
+                    )}
 
                     <Button
                       onClick={handleQuery}

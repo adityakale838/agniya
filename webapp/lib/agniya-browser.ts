@@ -483,53 +483,123 @@ export class BrowserClient {
   /** For SUM / COUNT / AVG(column) GROUP BY by: `column` packed by label, stored as "column#by" (as
    *  AgniyaClient.upload_grouped). Row r of group g goes to ciphertext r / lanes, lane r % lanes of g's
    *  block, and each block counts its rows, so one product and one decryption give every group. The labels
-   *  stay here; the server sees slots per ciphertext and the number of ciphertexts. Rows missing either are skipped. */
+   *  stay here; the server sees slots per ciphertext and the number of ciphertexts. Rows missing either are skipped.
+   *  With `where`, the copy ("column#by|where") is packed in where order with OPE tags of where, so
+   *  queryGroups(..., lo, hi, where) groups only rows with lo <= where <= hi (as encrypt_sorted_groups). */
   async uploadGrouped(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>,
-                      decimals: number): Promise<{ ciphertexts: number }> {
-    const scale = 10 ** decimals;
-    const rows: Array<[bigint, string]> = [];
+                      decimals: number, where?: string, whereValues?: Array<number | null>,
+                      whereDecimals = 0): Promise<{ ciphertexts: number }> {
+    const scale = 10 ** decimals, fscale = 10 ** whereDecimals;
+    const rows: Array<[bigint, bigint, string]> = [];  // [where key (0 without where), value, label]
     values.forEach((a, i) => {
-      const g = byValues[i];
-      if (a !== null && Number.isFinite(a) && g !== null && g !== '') rows.push([fixedPoint(a, scale), g]);
+      const g = byValues[i], w = where !== undefined ? whereValues![i] : 0;
+      if (a !== null && Number.isFinite(a) && g !== null && g !== '' && w !== null && Number.isFinite(w)) {
+        rows.push([fixedPoint(w, fscale), fixedPoint(a, scale), g]);
+      }
     });
-    if (!rows.length) throw new Error(`No rows have both ${column} and ${by}`);
-    const labels = [...new Set(rows.map(r => r[1]))].sort();
-    const offset = rows.reduce((m, r) => (r[0] < m ? r[0] : m), 0n);
-    const top = rows.reduce((m, r) => (r[0] > m ? r[0] : m), rows[0][0]) - offset;
-    const byLabel = new Map(labels.map(l => [l, [] as bigint[]]));
-    for (const [v, g] of rows) byLabel.get(g)!.push(v - offset);
-    const sizes = labels.map(l => byLabel.get(l)!.length);
-    const [bits, lanes] = groupLayout(this.pub, top, sizes);
-    const plain: bigint[] = Array(Math.max(1, Math.ceil(Math.max(...sizes) / lanes))).fill(0n);
-    labels.forEach((l, gi) => {
-      const base = gi * (lanes + 1), vs = byLabel.get(l)!;
-      vs.forEach((v, r) => { plain[Math.floor(r / lanes)] |= v << BigInt((base + r % lanes) * bits); });
-      plain.forEach((_, c) => { plain[c] |= BigInt(Math.min(lanes, Math.max(0, vs.length - c * lanes))) << BigInt((base + lanes) * bits); });
-    });
-    const name = `${column}#${by}`, slots = labels.length * (lanes + 1);
-    const r = await this.post('/api/v2/columns', {  // every ciphertext is whole: the server multiplies them all
-      dataset: this.dataset, column: name, n: hex(this.pub.n), slots, count: slots * plain.length,
+    if (!rows.length) throw new Error(where !== undefined ? `No rows have ${column}, ${by} and ${where}` : `No rows have both ${column} and ${by}`);
+    const labels = [...new Set(rows.map(r => r[2]))].sort();
+    const offset = rows.reduce((m, r) => (r[1] < m ? r[1] : m), 0n);
+    const top = rows.reduce((m, r) => (r[1] > m ? r[1] : m), rows[0][1]) - offset;
+    const meta: ColumnMeta = { scale, slotBits: 0, slots: 0, offset, count: rows.length, labels };
+    let plain: bigint[], body: Record<string, unknown>;
+    if (where === undefined) {
+      const byLabel = new Map(labels.map(l => [l, [] as bigint[]]));
+      for (const [, v, g] of rows) byLabel.get(g)!.push(v - offset);
+      const sizes = labels.map(l => byLabel.get(l)!.length);
+      const [bits, lanes] = groupLayout(this.pub, top, sizes);
+      plain = Array(Math.max(1, Math.ceil(Math.max(...sizes) / lanes))).fill(0n);
+      labels.forEach((l, gi) => {
+        const base = gi * (lanes + 1), vs = byLabel.get(l)!;
+        vs.forEach((v, r) => { plain[Math.floor(r / lanes)] |= v << BigInt((base + r % lanes) * bits); });
+        plain.forEach((_, c) => { plain[c] |= BigInt(Math.min(lanes, Math.max(0, vs.length - c * lanes))) << BigInt((base + lanes) * bits); });
+      });
+      Object.assign(meta, { slotBits: bits, lanes });
+      body = { slots: labels.length * (lanes + 1), count: labels.length * (lanes + 1) * plain.length };  // every ciphertext whole
+    } else {
+      rows.sort((x, y) => cmp(x[0], y[0]) || cmp(x[1], y[1]));
+      const index = new Map(labels.map((l, i) => [l, i]));
+      const [bits, lanes] = groupLayout(this.pub, top + 1n, labels.map(() => rows.length));
+      plain = Array(Math.ceil(rows.length / lanes)).fill(0n);
+      rows.forEach(([, v, g], r) => {  // lane holds value - offset + 1, so 0 marks a lane of another group
+        const base = index.get(g)! * (lanes + 1);
+        plain[Math.floor(r / lanes)] += ((v - offset + 1n) << BigInt((base + r % lanes) * bits)) + (1n << BigInt((base + lanes) * bits));
+      });
+      const { tags, ...ope } = await this.opeTags(rows.map(r => r[0]));
+      Object.assign(meta, { slotBits: bits, lanes, ...ope });
+      if (fscale !== scale) meta.fscale = fscale;
+      body = { slots: lanes, count: rows.length, ope_tags: tags };  // the server cuts it like a sorted column
+    }
+    meta.slots = labels.length * (meta.lanes! + 1);
+    const name = `${column}#${by}` + (where !== undefined ? `|${where}` : '');
+    const r = await this.post('/api/v2/columns', { dataset: this.dataset, column: name, n: hex(this.pub.n), ...body,
       ciphertexts: plain.map(p => hex(encrypt(this.pub, this.priv, p))) });
-    this.columns.set(name, { scale, slotBits: bits, slots, offset, count: rows.length, lanes, labels });
+    this.columns.set(name, meta);
     return r as { ciphertexts: number };
   }
 
-  /** Every group's SUM, COUNT and AVG of `column` by `by` (needs uploadGrouped): one decryption here. */
-  async queryGroups(column: string, by: string): Promise<GroupAnswer> {
-    const name = `${column}#${by}`, m = this.columns.get(name);
-    if (!m?.labels || !m.lanes) throw new Error(`No GROUP BY copy of ${column} by ${by}`);
-    const r = await this.post('/api/v2/aggregate', { dataset: this.dataset, column: name }) as unknown as AggregateResponse;
-    const product = unhex(r.product!), plain = decrypt(this.priv, product);
+  /** Every group's SUM, COUNT and AVG of `column` by `by` (needs uploadGrouped): one decryption here. With
+   *  `where`, only rows with lo <= where <= hi (plus up to two edge ciphertexts); empty groups are left out. */
+  async queryGroups(column: string, by: string, lo?: number, hi?: number, where?: string): Promise<GroupAnswer> {
+    const name = `${column}#${by}` + (where ? `|${where}` : ''), m = this.columns.get(name);
+    if (!m?.labels || !m.lanes) throw new Error(`No GROUP BY copy of ${column} by ${by}` + (where ? ` filtered by ${where}` : ''));
+    const body: Record<string, unknown> = { dataset: this.dataset, column: name };
+    if (where) {
+      const tags = await this.rangeTags(m, lo, hi);
+      if (!tags) return { groups: [], ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0 };
+      Object.assign(body, tags);
+    }
+    const r = await this.post('/api/v2/aggregate', body) as unknown as AggregateResponse;
     const bits = BigInt(m.slotBits), mask = (1n << bits) - 1n, lanes = m.lanes;
-    const slot = (s: number) => (plain >> (BigInt(s) * bits)) & mask;
+    const slot = (p: bigint, s: number) => (p >> (BigInt(s) * bits)) & mask;
+    const sums = m.labels.map(() => 0n), counts = m.labels.map(() => 0n);
+    const product = r.product ? unhex(r.product) : null;
+    if (product !== null) {
+      const p = decrypt(this.priv, product);
+      m.labels.forEach((_, gi) => {
+        const base = gi * (lanes + 1), c = slot(p, base + lanes);
+        let s = 0n;
+        for (let k = 0; k < lanes; k++) s += slot(p, base + k);
+        sums[gi] += where ? s - c : s;  // filtered copies hold value - offset + 1
+        counts[gi] += c;
+      });
+    }
+    const edges = r.edges.map(e => [unhex(e.ciphertext), Math.max(0, e.first_slot), Math.min(e.end_slot, lanes)] as const);
+    for (const [ct, a, b] of edges) {  // only filtered copies have edges
+      const p = decrypt(this.priv, ct);
+      m.labels.forEach((_, gi) => {
+        for (let k = a; k < b; k++) {
+          const v = slot(p, gi * (lanes + 1) + k);
+          if (v) { sums[gi] += v - 1n; counts[gi] += 1n; }  // 0 = a row of another group
+        }
+      });
+    }
     const groups = m.labels.map((group, gi) => {
-      const base = gi * (lanes + 1), count = slot(base + lanes);
-      let total = m.offset * count;
-      for (let k = 0; k < lanes; k++) total += slot(base + k);
-      const sum = Number(total) / m.scale, n = Number(count);
+      const sum = Number(sums[gi] + m.offset * counts[gi]) / m.scale, n = Number(counts[gi]);
       return { group, sum, count: n, avg: n ? sum / n : 0 };
-    });
-    return { groups, ciphertextsUsed: r.ciphertexts_used, ciphertextBits: [bitLength(product)], serverMs: r.time_ms };
+    }).filter(g => g.count > 0);
+    return { groups, ciphertextsUsed: r.ciphertexts_used, serverMs: r.time_ms,
+             ciphertextBits: [...(product !== null ? [product] : []), ...edges.map(e => e[0])].map(bitLength) };
+  }
+
+  /** OPE tags (decimal strings) for sorted `keys` under a fresh key, and what is needed to make more. */
+  private async opeTags(keys: bigint[]) {
+    const opeOffset = keys[0], last = keys[keys.length - 1];
+    const opeTop = last - opeOffset > 1n ? last - opeOffset : 1n;
+    const ope = new OPE(webcrypto.getRandomValues(new Uint8Array(32)), opeTop);
+    const tags = await ope.encryptMany(keys.map(v => v - opeOffset));
+    return { ope, opeOffset, opeTop, tags: keys.map(v => tags.get(v - opeOffset)!.toString()) };
+  }
+
+  /** lo_tag / hi_tag for lo <= value <= hi on a column with OPE tags; null when the range is empty. */
+  private async rangeTags(m: ColumnMeta, lo?: number, hi?: number): Promise<Record<string, string> | null> {
+    const fs = m.fscale ?? m.scale;
+    const loS = lo !== undefined ? fixedPoint(lo, fs) - m.opeOffset! : 0n;
+    const hiS = hi !== undefined ? fixedPoint(hi, fs) - m.opeOffset! : m.opeTop!;
+    if (loS > m.opeTop! || hiS < 0n || loS > hiS) return null;  // never reaches the server
+    const a = loS > 0n ? loS : 0n, b = hiS < m.opeTop! ? hiS : m.opeTop!;
+    const tags = await m.ope!.encryptMany([a, b]);
+    return { lo_tag: tags.get(a)!.toString(), hi_tag: tags.get(b)!.toString() };
   }
 
   /** Pack `ints` (already in row order); `keys` (sorted, same length) become OPE tags when given. */
@@ -539,14 +609,9 @@ export class BrowserClient {
     if (fscale !== scale) meta.fscale = fscale;
     const body: Record<string, unknown> = { dataset: this.dataset, column, n: hex(this.pub.n) };
     if (keys && keys.length) {
-      const off = keys[0], top = keys[keys.length - 1] - off > 1n ? keys[keys.length - 1] - off : 1n;
-      const key = new Uint8Array(32);
-      webcrypto.getRandomValues(key);
-      meta.ope = new OPE(key, top);
-      meta.opeOffset = off;
-      meta.opeTop = top;
-      const tags = await meta.ope.encryptMany(keys.map(v => v - off));
-      body.ope_tags = keys.map(v => tags.get(v - off)!.toString());
+      const { tags, ...ope } = await this.opeTags(keys);
+      Object.assign(meta, ope);
+      body.ope_tags = tags;
     }
     const offset = ints.reduce((m, v) => (v < m ? v : m), 0n);
     const shifted = ints.map(v => v - offset);
@@ -574,13 +639,9 @@ export class BrowserClient {
     const empty: QueryAnswer = { sum: 0, count: 0, avg: 0, ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0 };
     if (lo !== undefined || hi !== undefined) {
       if (!m.ope) throw new Error(`Range filters need ${column} encrypted as OPE+Paillier`);
-      const fs = m.fscale ?? m.scale;
-      const loS = lo !== undefined ? fixedPoint(lo, fs) - m.opeOffset! : 0n;
-      const hiS = hi !== undefined ? fixedPoint(hi, fs) - m.opeOffset! : m.opeTop!;
-      if (loS > m.opeTop! || hiS < 0n || loS > hiS) return empty;  // never reaches the server
-      const tags = await m.ope.encryptMany([loS > 0n ? loS : 0n, hiS < m.opeTop! ? hiS : m.opeTop!]);
-      body.lo_tag = tags.get(loS > 0n ? loS : 0n)!.toString();
-      body.hi_tag = tags.get(hiS < m.opeTop! ? hiS : m.opeTop!)!.toString();
+      const tags = await this.rangeTags(m, lo, hi);
+      if (!tags) return empty;
+      Object.assign(body, tags);
     }
     const r = await this.post('/api/v2/aggregate', body) as unknown as AggregateResponse;
     const product = r.product ? unhex(r.product) : null;

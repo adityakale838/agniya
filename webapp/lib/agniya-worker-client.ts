@@ -41,12 +41,16 @@ export class CryptoWorker {
     return this.call<{ ciphertexts: number }>('uploadBy', { column, values, by, byValues, decimals, byDecimals });
   }
 
-  /** Copy of `column` packed by the labels in byValues (one per row) for GROUP BY `by`. */
-  uploadGrouped(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>, decimals: number) {
-    return this.call<{ ciphertexts: number }>('uploadGrouped', { column, values, by, byValues, decimals });
+  /** Copy of `column` packed by the labels in byValues (one per row) for GROUP BY `by`; with `where`,
+   *  packed in whereValues order so queryGroups can also filter lo <= where <= hi. */
+  uploadGrouped(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>, decimals: number,
+                where?: string, whereValues?: Array<number | null>, whereDecimals?: number) {
+    return this.call<{ ciphertexts: number }>('uploadGrouped', { column, values, by, byValues, decimals, where, whereValues, whereDecimals });
   }
 
-  queryGroups(column: string, by: string) { return this.call<GroupAnswer>('queryGroups', { column, by }); }
+  queryGroups(column: string, by: string, lo?: number, hi?: number, where?: string) {
+    return this.call<GroupAnswer & { total: number }>('queryGroups', { column, by, lo, hi, where });
+  }
 
   query(column: string, lo?: number, hi?: number, by?: string) {
     return this.call<WorkerAnswer>('query', { column, lo, hi, by });

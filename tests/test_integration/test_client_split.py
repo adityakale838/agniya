@@ -39,6 +39,9 @@ def setup():
     c.upload_grouped("amount", df["amount"], by="region", by_values=df["region"], decimals=4)
     df["decade"] = df["age"] // 10 * 10
     c.upload_grouped("score", df["score"], by="decade", by_values=df["decade"], decimals=2)  # int labels
+    c.upload_grouped("amount", df["amount"], by="region", by_values=df["region"], decimals=4,
+                     where="score", where_values=df["score"], where_decimals=2)
+    c.upload_grouped("age", df["age"], by="decade", by_values=df["decade"], where="age", where_values=df["age"])
     return c, df
 
 
@@ -91,12 +94,30 @@ def test_group_by_matches_pandas(setup, col, by):
         assert got[label]["avg"] == pytest.approx(row["sum"] / row["count"], abs=1e-6)
 
 
+@pytest.mark.parametrize("col,by,where,lo,hi", [("amount", "region", "score", -10.5, 120.25), ("amount", "region", "score", None, 0),
+                                               ("amount", "region", "score", 300, None), ("amount", "region", "score", 12.34, 12.34),
+                                               ("amount", "region", "score", 900, 1000), ("amount", "region", "score", None, None),
+                                               ("age", "decade", "age", 25, 44)])
+def test_group_by_with_range_matches_pandas(setup, col, by, where, lo, hi):
+    c, df = setup
+    rows = df[list(dict.fromkeys([col, by, where]))].dropna()
+    w = rows[where]
+    want = rows[(w >= (lo if lo is not None else -1e9)) & (w <= (hi if hi is not None else 1e9))].groupby(by)[col].agg(
+        ["sum", "count"])
+    got = c.query_groups(col, by, lo, hi, where=where)
+    assert set(got) == set(want.index)
+    for label, row in want.iterrows():
+        assert got[label]["count"] == row["count"] and got[label]["sum"] == pytest.approx(row["sum"], abs=1e-6)
+
+
 def test_group_by_skips_missing_rows(setup):
     c, df = setup
     c.upload_grouped("x", [1, None, 3, float("nan"), 5, 7], by="g", by_values=["a", "a", None, "b", "b", "a"])
     assert c.query_groups("x", "g") == {"a": {"sum": 8, "count": 2, "avg": 4.0}, "b": {"sum": 5, "count": 1, "avg": 5.0}}
     with pytest.raises(ValueError, match="upload_grouped"):
         c.query_groups("amount", "score")
+    with pytest.raises(ValueError, match="where='age'"):
+        c.query_groups("amount", "region", 1, 2, where="age")
     with pytest.raises(ValueError, match="No rows"):
         c.upload_grouped("x", [None], by="g", by_values=["a"])
     with pytest.raises(ValueError, match="60 groups do not fit"):  # one plaintext holds every group
@@ -155,6 +176,7 @@ def test_key_file_round_trip(setup, tmp_path):
     assert c2.query("amount")["sum"] == pytest.approx(df["amount"].sum(), abs=1e-6)
     assert c2.query_groups("amount", "region") == c.query_groups("amount", "region")
     assert c2.query_groups("score", "decade") == c.query_groups("score", "decade")  # int labels survive JSON
+    assert c2.query_groups("amount", "region", 0, 99.5, where="score") == c.query_groups("amount", "region", 0, 99.5, where="score")
 
 
 def test_key_file_rejects_wrong_password_and_tampering(setup, tmp_path):

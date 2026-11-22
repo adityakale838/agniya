@@ -38,7 +38,7 @@ from pyope.ope import ValueRange
 
 from agniya.core.ultimate_system import UltimateOptimizedDatabase
 from agniya.core.paillier import MIN_KEY_BITS, PaillierPublicKey, generate_keypair
-from agniya.core.batch_packing import range_plan
+from agniya.core.batch_packing import decrypt_sorted_groups, range_plan
 from agniya.hybrid.fast_ope import FastOPE
 
 FIXED_POINT_DECIMALS = 4
@@ -195,7 +195,7 @@ def encrypt_dataset():
 
     db.pool.close()  # release worker processes; queries need no new randomness
     elapsed = time.perf_counter() - start
-    encrypted_datasets[filename] ={'db': db, 'columns': columns, 'record_count': len(df)}
+    encrypted_datasets[filename] = {'db': db, 'columns': columns, 'record_count': len(df), 'df': df}
     return jsonify({
         'success': True,
         'records_encrypted': len(df),
@@ -209,6 +209,43 @@ def encrypt_dataset():
                        'range_filterable': 'ope' in c, 'group_by': sorted(c['groups'])} for n, c in columns.items()},
         'key_bits': db.public_key.n.bit_length(),
     })
+
+
+def _tag_range(tags, ope, top, scale, offset, lo, hi):
+    """Rows i..j-1 of a column with sorted OPE `tags` whose value is in [lo, hi] (either may be None or '')."""
+    shift = lambda v: int(round(float(v) * scale)) - offset  # noqa: E731
+    lo_s = shift(lo) if lo not in (None, '') else 0
+    hi_s = shift(hi) if hi not in (None, '') else top
+    if lo_s > top or hi_s < 0 or lo_s > hi_s:
+        return 0, 0
+    return bisect_left(tags, ope.encrypt(max(lo_s, 0))), bisect_right(tags, ope.encrypt(min(hi_s, top)))
+
+
+def _filtered_groups(ds, field, by, fc):
+    """Copy of `field` for GROUP BY `by` WHERE fc in range, packed in fc order with fc's OPE tags.
+    Built on first use and kept: one per (field, by, fc) up front would be fields x groups x filters copies."""
+    col = ds['columns'][field]
+    cache = col.setdefault('filtered_groups', {})
+    if (by, fc) not in cache:
+        df = ds['df']
+        if fc not in df.columns or not pd.api.types.is_numeric_dtype(df[fc]):
+            raise ValueError(f'Range filters need a numeric column, not {fc}')
+        rows = df[list(dict.fromkeys([field, by, fc]))].dropna()
+        if rows.empty:
+            raise ValueError(f'No rows have {field}, {by} and {fc}')
+        fscale = 1 if pd.api.types.is_integer_dtype(df[fc]) else 10 ** FIXED_POINT_DECIMALS
+        trip = sorted(((int(round(float(w) * fscale)), int(round(float(a) * col['scale'])), g)
+                       for a, g, w in zip(rows[field], rows[by], rows[fc])), key=lambda r: r[:2])
+        db = ds['db']
+        packed = db.packer.encrypt_sorted_groups([a for _, a, _ in trip], [g for _, _, g in trip])
+        db.pool.close()
+        keys = [w for w, _, _ in trip]
+        offset, top = keys[0], max(keys[-1] - keys[0], 1)
+        ope = FastOPE(secrets.token_bytes(32), in_range=ValueRange(0, top), out_range=ValueRange(0, 2 ** 64 - 1))
+        packed.update(ope=ope, ope_max=top, ope_offset=offset, fscale=fscale,
+                      ope_tags=ope.encrypt_list([k - offset for k in keys]))
+        cache[(by, fc)] = packed
+    return cache[(by, fc)]
 
 
 @app.route('/api/query', methods=['POST'])
@@ -239,22 +276,37 @@ def execute_query():
     response = {}
 
     if group_by:
-        if filtered:
-            return jsonify({'error': 'GROUP BY with a range filter is not supported yet'}), 400
         packed = col['groups'].get(group_by)
         if packed is None:
             return jsonify({'error': f'No GROUP BY copy of {field} by {group_by} (needs 2-{GROUP_MAX_VALUES} '
                                      'distinct values that fit one plaintext, and rows with both)'}), 400
-        sums = db.packer.sum_groups(packed)
+        if filtered:
+            try:
+                packed = _filtered_groups(ds, field, group_by, fc)
+            except ValueError as e:
+                return jsonify({'error': str(e)}), 400
+            i, j = _tag_range(packed['ope_tags'], packed['ope'], packed['ope_max'], packed['fscale'],
+                              packed['ope_offset'], range_min, range_max)
+            lanes = packed['lanes']
+            product, edges = range_plan(db.pub, packed['ciphertexts'], lanes, packed['count'], i, j) if i < j else (None, [])
+            sums = decrypt_sorted_groups(db.pub, db.priv, product, edges, packed)
+            cts = packed['ciphertexts'][i // lanes:(j - 1) // lanes + 1] if i < j else []
+            response.update(filter_applied=True, filter_column=fc, range={'min': range_min, 'max': range_max},
+                            records_before_filter=packed['count'], filter_selectivity=(j - i) / packed['count'])
+        else:
+            sums = db.packer.sum_groups(packed)
+            cts = packed['ciphertexts']
         sc = col['scale']
         groups = [{'group': g, 'sum': s / sc, 'count': c, 'avg': s / sc / c if c else 0} for g, (s, c) in sums.items()]
         for x in groups:
             x['result'] = {'SUM': x['sum'], 'AVG': x['avg'], 'COUNT': x['count']}[operation]
-        cts, count = packed['ciphertexts'], sum(c for _, c in sums.values())
+        count = sum(c for _, c in sums.values())
         total_scaled = sum(s for s, _ in sums.values())
-        response.update(group_by=group_by, groups=groups,
-                        security_note='One product of all ciphertexts, one decryption: every group sum and count '
-                                      'comes out of its own slots. The ciphertexts alone reveal no labels or group sizes.')
+        response.update(group_by=group_by, groups=groups, security_note=(
+            f'The ciphertexts inside the range are multiplied and decrypted once, the <=2 cut by its edges on their own. '
+            f'OPE tags of {fc} reveal its order; the ciphertexts alone reveal no labels or group sizes.' if filtered else
+            'One product of all ciphertexts, one decryption: every group sum and count comes out of its own slots. '
+            'The ciphertexts alone reveal no labels or group sizes.'))
     elif filtered:
         fcol = ds['columns'].get(fc)
         if fcol is None or 'ope' not in fcol:
@@ -265,15 +317,7 @@ def execute_query():
             packed, tags = fcol['by'][field]['packed'], fcol['by'][field]['tags']
         else:
             return jsonify({'error': f'No rows have both {field} and {fc}'}), 400
-        scale, offset, ope, top = fcol['scale'], fcol['offset'], fcol['ope'], fcol['ope_max']
-        shift = lambda v: int(round(float(v) * scale)) - offset
-        lo_s = shift(range_min) if range_min not in (None, '') else 0
-        hi_s = shift(range_max) if range_max not in (None, '') else top
-        if lo_s > top or hi_s < 0 or lo_s > hi_s:
-            idx = None
-        else:
-            idx = (bisect_left(tags, ope.encrypt(max(lo_s, 0))), bisect_right(tags, ope.encrypt(min(hi_s, top))))
-        i, j = idx or (0, 0)
+        i, j = _tag_range(tags, fcol['ope'], fcol['ope_max'], fcol['scale'], fcol['offset'], range_min, range_max)
         count, s = j - i, packed['slots']
         cts = packed['ciphertexts'][i // s:(j - 1) // s + 1] if count else []
         total_scaled = db.packer.sum_range(packed, i, j) if operation != 'COUNT' else 0

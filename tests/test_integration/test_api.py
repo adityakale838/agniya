@@ -90,7 +90,25 @@ def test_group_by(client, field, by):
 def test_group_by_rejects(client):
     c, _ = client
     assert "No GROUP BY copy" in q(c, type="SUM", column="amount", group_by="name")["error"]  # 200 distinct
-    assert "not supported" in q(c, type="SUM", column="amount", group_by="region", rangeMin=1)["error"]
+    assert "numeric" in q(c, type="SUM", column="amount", group_by="region", filter_column="name", rangeMin=1)["error"]
+
+
+@pytest.mark.parametrize("field,by,fc,lo,hi", [("amount", "region", "age", 30, 40), ("amount", "region", "amount", -100, 2000),
+                                               ("visits", "region", "score", -10.5, 120.25), ("age", "visits", "age", None, 25),
+                                               ("score", "region", "age", 18, 18), ("amount", "region", "age", 200, 300)])
+def test_group_by_with_range(client, field, by, fc, lo, hi):
+    c, df = client
+    rows = df[list(dict.fromkeys([field, by, fc]))].dropna()
+    w = rows[fc]
+    want = rows[(w >= (lo if lo is not None else -1e9)) & (w <= (hi if hi is not None else 1e9))].groupby(by)[field].agg(
+        ["sum", "mean", "count"])
+    for op, agg in [("SUM", "sum"), ("AVG", "mean"), ("COUNT", "count")]:
+        r = q(c, type=op, column=field, group_by=by, filter_column=fc, rangeMin=lo, rangeMax=hi)
+        got = {g["group"]: g["result"] for g in r["groups"]}
+        assert set(got) == set(want.index), r  # groups with no rows in range are left out, as in SQL
+        for label, row in want.iterrows():
+            assert got[label] == pytest.approx(row[agg], abs=1e-6), (op, label)
+        assert r["records_processed"] == want["count"].sum() and r["filter_applied"]
 
 
 def test_ciphertexts_are_real(client):
