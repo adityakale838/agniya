@@ -30,13 +30,14 @@ class IntegrityError(Exception):
 
 class ColumnMac:
     def __init__(self, n: int, key: Optional[bytes] = None):
-        self.key = key or secrets.token_bytes(32)
+        self.key = key or secrets.token_bytes(32)  # stored in key files; tags and cut MACs use subkeys of it
+        self._aes, self._hmac = (hmac.new(self.key, label, hashlib.sha256).digest() for label in (b'tags', b'cuts'))
         self.shift = n.bit_length() - 1 - RESERVE  # the data stays below 2^shift (layouts reserve RESERVE bits)
         self.alpha = self._blocks(1 << 127, 1)[0]
 
     def _blocks(self, start: int, n: int) -> List[int]:
         """n pseudorandom values < 2^127: AES-256-CTR keystream blocks start..start+n-1."""
-        ks = Cipher(algorithms.AES(self.key), modes.CTR(start.to_bytes(16, 'big'))).encryptor().update(bytes(16 * n))
+        ks = Cipher(algorithms.AES(self._aes), modes.CTR(start.to_bytes(16, 'big'))).encryptor().update(bytes(16 * n))
         return [int.from_bytes(ks[k:k + 16], 'big') >> 1 for k in range(0, len(ks), 16)]
 
     def beta_sum(self, page: int, first: int, n: int) -> int:
@@ -55,7 +56,7 @@ class ColumnMac:
 
     def tags_mac(self, page: int, c: int, tags: List) -> str:
         msg = f"{page}:{c}:{','.join(str(t) for t in tags)}".encode()
-        return hmac.new(self.key, msg, hashlib.sha256).digest()[:16].hex()
+        return hmac.new(self._hmac, msg, hashlib.sha256).digest()[:16].hex()
 
     def tag_macs(self, page: int, tags: List[int], slots: int) -> List[str]:
         return [self.tags_mac(page, c, tags[k:k + slots]) for c, k in enumerate(range(0, len(tags), slots))]

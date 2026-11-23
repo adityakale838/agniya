@@ -192,10 +192,14 @@ export class ColumnMac {
   private readonly hmac: Promise<CryptoKey>;
   private alphaP?: Promise<bigint>;
   constructor(n: bigint, key: Uint8Array = webcrypto.getRandomValues(new Uint8Array(32))) {
-    this.key = key;
+    this.key = key;  // stored in key files; tags and cut MACs use subkeys of it (as Python)
     this.shift = bitLength(n) - 1 - RESERVE;
-    this.aes = webcrypto.subtle.importKey('raw', key as BufferSource, 'AES-CTR', false, ['encrypt']);
-    this.hmac = webcrypto.subtle.importKey('raw', key as BufferSource, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const hmacAlg = { name: 'HMAC', hash: 'SHA-256' };
+    const base = webcrypto.subtle.importKey('raw', key as BufferSource, hmacAlg, false, ['sign']);
+    const sub = async (label: string) =>
+      webcrypto.subtle.sign('HMAC', await base, new TextEncoder().encode(label));
+    this.aes = sub('tags').then(k => webcrypto.subtle.importKey('raw', k, 'AES-CTR', false, ['encrypt']));
+    this.hmac = sub('cuts').then(k => webcrypto.subtle.importKey('raw', k, hmacAlg, false, ['sign']));
   }
 
   /** n values < 2^127: AES-256-CTR keystream blocks start..start+n-1 (as Python _blocks). */
@@ -733,14 +737,17 @@ export class BrowserClient {
    *  is the product and edges of the stored ciphertexts for the rows the range selects (as AgniyaClient._answer). */
   private async answer(m: ColumnMeta, name: string, r: AggregateResponse, page: number,
                        rng: Record<string, string> | null): Promise<Map<bigint, bigint>> {
-    const product = r.product ? unhex(r.product) : null, edges = r.edges.map(e => unhex(e.ciphertext));
+    if (rng && m.macKey && !r.rows) {
+      throw new Error(`Integrity check failed: the server sent no rows to check ${name} against; it predates integrity checks (update the server before the clients)`);
+    }
     const plain = new Map<bigint, bigint>();
-    for (const c of product !== null ? [product, ...edges] : edges) plain.set(c, decrypt(this.priv, c));
-    if (!m.macKey) return plain;  // uploaded before integrity tags: not checked
-    const mac = new ColumnMac(this.pub.n, m.macKey);
-    const s = m.lanes && m.ope ? m.lanes : m.slots;  // values per ciphertext on the server
     let ok = false;
-    try {
+    try {  // a malformed answer is a failed check too
+      const product = r.product ? unhex(r.product) : null, edges = r.edges.map(e => unhex(e.ciphertext));
+      for (const c of product !== null ? [product, ...edges] : edges) plain.set(c, decrypt(this.priv, c));
+      if (!m.macKey) return plain;  // uploaded before integrity tags: not checked
+      const mac = new ColumnMac(this.pub.n, m.macKey);
+      const s = m.lanes && m.ope ? m.lanes : m.slots;  // values per ciphertext on the server
       const [i, j] = rng ? [Number(r.rows![0]), Number(r.rows![1])] : [0, m.count];
       const [full, cuts] = rangeCuts(s, m.count, i, j);
       ok = r.count === j - i && (product === null) === !full.length && cuts.length === edges.length

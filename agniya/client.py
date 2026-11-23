@@ -266,14 +266,17 @@ class AgniyaClient:
     def _answer(self, m: dict, name: str, r: dict, page: int, rng: Optional[dict]) -> Dict[int, int]:
         """{ciphertext: plaintext} for one /api/v2/aggregate answer (page `page` of column `name`), after
         checking it is the product and edges of the stored ciphertexts for the rows the range selects."""
-        product = int(r['product'], 16) if r['product'] else None
-        edges = [int(e['ciphertext'], 16) for e in r['edges']]
-        plain = {c: decrypt_crt(self.pub, self.priv, c) for c in ([product] if product is not None else []) + edges}
-        if 'mac_key' not in m:
-            return plain  # uploaded before integrity tags: not checked
-        mac = ColumnMac(self.pub.n, base64.b64decode(m['mac_key']))
-        s = m['lanes'] if 'lanes' in m and 'ope' in m else m['slots']  # values per ciphertext on the server
-        try:
+        if rng and 'mac_key' in m and 'rows' not in r:
+            raise IntegrityError(f'The server sent no rows to check {name} against: it predates integrity checks '
+                                 '(update the server before the clients)')
+        try:  # a malformed answer is a failed check too
+            product = int(r['product'], 16) if r['product'] else None
+            edges = [int(e['ciphertext'], 16) for e in r['edges']]
+            plain = {c: decrypt_crt(self.pub, self.priv, c) for c in ([product] if product is not None else []) + edges}
+            if 'mac_key' not in m:
+                return plain  # uploaded before integrity tags: not checked
+            mac = ColumnMac(self.pub.n, base64.b64decode(m['mac_key']))
+            s = m['lanes'] if 'lanes' in m and 'ope' in m else m['slots']  # values per ciphertext on the server
             i, j = (int(r['rows'][0]), int(r['rows'][1])) if rng else (0, m['count'])
             full, cuts = range_cuts(s, m['count'], i, j)
             ok = (r['count'] == j - i and (product is None) == (not full) and len(cuts) == len(edges)

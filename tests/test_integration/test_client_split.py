@@ -176,6 +176,9 @@ PAGES_RANGE = lambda c: c.query_groups("amount", "age", 0, 99.5, where="score") 
     (RANGE, lambda c, b, r: {**r, "edges": [{**r["edges"][0], "first_slot": r["edges"][0]["first_slot"] + 1}] + r["edges"][1:]}),
     (RANGE, lambda c, b, r: _later_cut(r, b)),  # a consistent answer for fewer rows
     (RANGE, lambda c, b, r: {**r, "witnesses": []}),
+    (RANGE, lambda c, b, r: {k: v for k, v in r.items() if k != "rows"}),  # a server from before integrity checks
+    (RANGE, lambda c, b, r: {**r, "product": "zz"}),  # malformed
+    (SUM_ALL, lambda c, b, r: {**r, "edges": None}),
     (RANGE, lambda c, b, r: _wit(r, lambda w: w[0]["tags"].__setitem__(0, str(int(w[0]["tags"][0]) - 1)))),
     (RANGE, lambda c, b, r: _wit(r, lambda w: w[0].__setitem__("index", w[0]["index"] + 1))),
     (PAGES, lambda c, b, r: transport("/api/v2/aggregate", {**b, "column": "score#age@1"})

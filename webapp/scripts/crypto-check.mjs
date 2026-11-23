@@ -51,6 +51,7 @@ if (job.client) {  // end to end against a running server
       if (path !== '/api/v2/aggregate') return r;
       if (mode === 'double' && r.product) r.product = (BigInt('0x' + r.product) ** 2n % c.pub.nSquared).toString(16);
       if (mode === 'no-witnesses') r.witnesses = [];
+      if (mode === 'malformed') r.product = 'zz';
       return r;
     };
     (out.tampered ??= []).push(await (kind === 'groups' ? c.queryGroups(...args.map(x => x ?? undefined))

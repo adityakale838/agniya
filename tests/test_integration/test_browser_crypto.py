@@ -84,7 +84,8 @@ def test_browser_client_end_to_end(tmp_path):
                          "decimals": 4}],
             "queries": queries, "tamper": [["double", "query", "charges", None, None], ["double", "query", "age", 30, 45],
                                            ["no-witnesses", "query", "charges", 5000, 20000.5],
-                                           ["double", "groups", "charges", "age"]]}}, tmp_path)
+                                           ["double", "groups", "charges", "age"], ["malformed", "query", "charges", None, None]]}},
+           tmp_path)
     finally:
         httpd.shutdown()
     scale = {"charges": 10**4, "age": 1, "bmi": 10**4}
@@ -95,7 +96,7 @@ def test_browser_client_end_to_end(tmp_path):
         assert ans["count"] == len(sel), (col, lo, hi)
         assert ans["sum"] == pytest.approx(exact, abs=1e-9), (col, lo, hi)
         assert ans["verified"] is True
-    assert len(a["tampered"]) == 4 and all(m.startswith("Integrity check failed") for m in a["tampered"]), a["tampered"]
+    assert len(a["tampered"]) == 5 and all(m.startswith("Integrity check failed") for m in a["tampered"]), a["tampered"]
     stored = json.dumps({k: str(v) for k, v in srv.owner_datasets["browser-e2e"]["columns"]["charges"].items()})
     assert a["p"] not in stored and format(int(a["p"]), "x") not in stored
 
