@@ -353,7 +353,8 @@ def update_readme(results_path=None):
     aa = (api or {}).get("group_by_age_query")
     as_ = (sp or {}).get("group_by_age_query")
     if aa and as_:
-        rows.append((f"SUM(charges) GROUP BY age ({aa['groups']} groups, {aa['pages']} pages = {aa['pages']} decryptions): "
+        pages = f"{aa['pages']}" if aa['pages'] == as_['pages'] else f"{aa['pages']} / {as_['pages']}"  # integrity tags change the layout
+        rows.append((f"SUM(charges) GROUP BY age ({aa['groups']} groups, {pages} pages = {pages} decryptions): "
                      "server-side / client-held keys",
                      f"{aa['ms']['median']:.1f} ms / {as_['ms']['median']:.1f} ms "
                      f"(client `upload_grouped` {as_['upload_grouped_s']:.2f} s)"))

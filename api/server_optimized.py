@@ -367,13 +367,16 @@ owner_datasets = {}
 STORE_PATH = os.environ.get('AGNIYA_STORE', os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                                          'agniya_store.sqlite3'))
 TAG_BYTES = 8  # OPE tags live in [0, 2^64)
+MAC_BYTES = 16  # client MACs of each ciphertext's OPE tags (truncated HMAC-SHA256)
 STORE_MAX_BYTES = int(float(os.environ.get('AGNIYA_STORE_MAX_MB', '1024')) * 2**20)  # ciphertexts + tags
 
 
 def _store():
     con = sqlite3.connect(STORE_PATH)
     con.execute('CREATE TABLE IF NOT EXISTS columns (dataset TEXT, name TEXT, n TEXT, slots INTEGER, '
-                'count INTEGER, cts BLOB, tags BLOB, PRIMARY KEY (dataset, name))')
+                'count INTEGER, cts BLOB, tags BLOB, macs BLOB, PRIMARY KEY (dataset, name))')
+    if 'macs' not in [r[1] for r in con.execute('PRAGMA table_info(columns)')]:  # stores from before tag MACs
+        con.execute('ALTER TABLE columns ADD COLUMN macs BLOB')
     return con
 
 
@@ -393,11 +396,13 @@ def load_store():
     """Rebuild owner_datasets from the SQLite store (runs at import, i.e. at server start)."""
     owner_datasets.clear()
     with closing(_store()) as con:
-        for dataset, name, n, slots, count, cts, tags in con.execute('SELECT * FROM columns'):
+        for dataset, name, n, slots, count, cts, tags, macs in con.execute(
+                'SELECT dataset, name, n, slots, count, cts, tags, macs FROM columns'):
             pub = _public_key(int(n, 16))
             ds = owner_datasets.setdefault(dataset, {'pub': pub, 'columns': {}})
             ds['columns'][name] = {'cts': _unpack(cts, (pub.n_squared.bit_length() + 7) // 8), 'slots': slots,
-                                   'count': count, 'tags': _unpack(tags, TAG_BYTES) if tags is not None else None}
+                                   'count': count, 'tags': _unpack(tags, TAG_BYTES) if tags is not None else None,
+                                   'macs': _unpack(macs, MAC_BYTES) if macs is not None else None}
 
 
 def _hex_ints(xs, bound, what):
@@ -424,6 +429,11 @@ def v2_store_column():
             tags = [int(t) for t in tags]
             if len(tags) != count or any(a > b for a, b in zip(tags, tags[1:]))                     or (tags and not 0 <= tags[0] <= tags[-1] < 2 ** (8 * TAG_BYTES)):
                 raise ValueError('ope_tags must be sorted 64-bit values, one per value')
+        macs = d.get('tag_macs')  # the client's MAC of each ciphertext's OPE tags, returned with range answers
+        if macs is not None:
+            macs = [int(x, 16) for x in macs]
+            if tags is None or len(macs) != len(cts) or any(not 0 <= x < 2 ** (8 * MAC_BYTES) for x in macs):
+                raise ValueError('tag_macs must be one 16-byte hex MAC per ciphertext, with ope_tags')
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({'error': f'Bad column upload: {e}'}), 400
     ds = owner_datasets.get(name)
@@ -432,16 +442,17 @@ def v2_store_column():
     pub = ds['pub'] if ds else _public_key(n)
     cts_blob = _pack(cts, (pub.n_squared.bit_length() + 7) // 8)
     tags_blob = _pack(tags, TAG_BYTES) if tags is not None else None
+    macs_blob = _pack(macs, MAC_BYTES) if macs is not None else None
     with closing(_store()) as con, con:  # committed to disk before we answer
-        used = con.execute('SELECT COALESCE(SUM(LENGTH(cts) + COALESCE(LENGTH(tags), 0)), 0) FROM columns '
-                           'WHERE NOT (dataset = ? AND name = ?)', (name, column)).fetchone()[0]
-        if used + len(cts_blob) + len(tags_blob or b'') > STORE_MAX_BYTES:
+        used = con.execute('SELECT COALESCE(SUM(LENGTH(cts) + COALESCE(LENGTH(tags), 0) + COALESCE(LENGTH(macs), 0)), 0) '
+                           'FROM columns WHERE NOT (dataset = ? AND name = ?)', (name, column)).fetchone()[0]
+        if used + len(cts_blob) + len(tags_blob or b'') + len(macs_blob or b'') > STORE_MAX_BYTES:
             return jsonify({'error': f'Store limit of {STORE_MAX_BYTES // 2**20} MB reached '
                                      '(AGNIYA_STORE_MAX_MB); delete a dataset first'}), 507
-        con.execute('INSERT OR REPLACE INTO columns VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    (name, column, format(n, 'x'), slots, count, cts_blob, tags_blob))
+        con.execute('INSERT OR REPLACE INTO columns (dataset, name, n, slots, count, cts, tags, macs) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (name, column, format(n, 'x'), slots, count, cts_blob, tags_blob, macs_blob))
     ds = owner_datasets.setdefault(name, {'pub': pub, 'columns': {}})
-    ds['columns'][column] = {'cts': cts, 'slots': slots, 'count': count, 'tags': tags}
+    ds['columns'][column] = {'cts': cts, 'slots': slots, 'count': count, 'tags': tags, 'macs': macs}
     return jsonify({'success': True, 'dataset': name, 'column': column, 'ciphertexts': len(cts),
                     'count': count, 'range_filterable': tags is not None})
 
@@ -469,7 +480,9 @@ def v2_delete_dataset():
 
 @app.route('/api/v2/aggregate', methods=['POST'])
 def v2_aggregate():
-    """Encrypted SUM over a column, optionally over rows whose OPE tag is in [lo_tag, hi_tag]."""
+    """Encrypted SUM over a column, optionally over rows whose OPE tag is in [lo_tag, hi_tag]. `rows` is
+    the row range used; with a range on a column with tag MACs, `witnesses` are the ciphertexts around
+    its ends with their rows' OPE tags and MACs, so the client can check where the range was cut."""
     d = request.json or {}
     ds = owner_datasets.get(d.get('dataset'))
     col = ds['columns'].get(d.get('column')) if ds else None
@@ -489,8 +502,14 @@ def v2_aggregate():
             return jsonify({'error': 'Tags must be integers'}), 400
     product, edges = range_plan(ds['pub'], col['cts'], col['slots'], col['count'], i, j) if i < j else (None, [])
     s = col['slots']
+    j = max(i, j)
+    witnesses = []
+    if col.get('macs') and (d.get('lo_tag') is not None or d.get('hi_tag') is not None):
+        for c in sorted({r // s for r in (i - 1, i, j - 1, j) if 0 <= r < col['count']}):
+            witnesses.append({'index': c, 'tags': [str(t) for t in col['tags'][c * s:(c + 1) * s]],
+                              'mac': format(col['macs'][c], '032x')})
     return jsonify({
-        'count': max(j - i, 0),
+        'count': j - i, 'rows': [i, j], 'witnesses': witnesses,
         'product': format(product, 'x') if product is not None else None,
         'edges': [{'ciphertext': format(c, 'x'), 'first_slot': lo, 'end_slot': hi} for c, lo, hi in edges],
         'ciphertexts_used': (j - 1) // s - i // s + 1 if i < j else 0,

@@ -80,7 +80,12 @@ def test_browser_client_end_to_end(tmp_path):
             {"name": "charges", "values": df["charges"].tolist(), "decimals": 4, "range": True},
             {"name": "age", "values": df["age"].tolist(), "decimals": 0, "range": True},
             {"name": "bmi", "values": df["bmi"].tolist(), "decimals": 4, "range": False}],
-            "queries": queries}}, tmp_path)
+            "grouped": [{"column": "charges", "values": df["charges"].tolist(), "by": "age", "by_values": df["age"].tolist(),
+                         "decimals": 4}],
+            "queries": queries, "tamper": [["double", "query", "charges", None, None], ["double", "query", "age", 30, 45],
+                                           ["no-witnesses", "query", "charges", 5000, 20000.5],
+                                           ["double", "groups", "charges", "age"], ["malformed", "query", "charges", None, None]]}},
+           tmp_path)
     finally:
         httpd.shutdown()
     scale = {"charges": 10**4, "age": 1, "bmi": 10**4}
@@ -90,6 +95,8 @@ def test_browser_client_end_to_end(tmp_path):
         exact = sum(int(round(float(v) * scale[col])) for v in sel) / scale[col]  # what Python stores
         assert ans["count"] == len(sel), (col, lo, hi)
         assert ans["sum"] == pytest.approx(exact, abs=1e-9), (col, lo, hi)
+        assert ans["verified"] is True
+    assert len(a["tampered"]) == 5 and all(m.startswith("Integrity check failed") for m in a["tampered"]), a["tampered"]
     stored = json.dumps({k: str(v) for k, v in srv.owner_datasets["browser-e2e"]["columns"]["charges"].items()})
     assert a["p"] not in stored and format(int(a["p"]), "x") not in stored
 

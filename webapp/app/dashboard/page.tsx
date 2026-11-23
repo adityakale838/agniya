@@ -170,7 +170,8 @@ export default function Dashboard() {
       // "a|b" = copy of a in b order, "a#g" = a packed by group g (Python client): not fields of their own
       const restored: Field[] = info.columns.filter(c => !/[|#]/.test(c.name)).map(c => ({
         name: c.name, type: c.scale === 1 ? 'int' : 'float', encryption: c.rangeFilter ? 'OPE+Paillier' : 'Paillier-2048' }));
-      const records = Math.max(0, ...info.columns.map(c => c.count));
+      // GROUP BY copies "a#g" count whole ciphertexts (padding included), not rows
+      const records = Math.max(0, ...info.columns.filter(c => !/#[^|]*$/.test(c.name)).map(c => c.count));
       setUploadData({ filename: info.dataset, records, fields: restored.length, schema: restored });
       setSchema(restored);
       setEncryptionResult({ success: true, records_encrypted: records, message: 'Restored from key file' });
@@ -308,7 +309,8 @@ export default function Dashboard() {
         + (filtered ? '. ' : ': every group sum and count comes out of its own slots. ') + 'The server never saw the labels.',
       encryption_proof: {
         ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits, modulus_n_bit_length: 2048,
-        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`,
+        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`
+          + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
         computation_type: 'Paillier homomorphic addition',
       },
     };
@@ -330,7 +332,8 @@ export default function Dashboard() {
       security_note: 'The server compared OPE tags (it learns their order) and multiplied ciphertexts; the edge ciphertexts were decrypted in this browser.',
       encryption_proof: {
         ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits.slice(0, 3), modulus_n_bit_length: 2048,
-        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`,
+        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`
+          + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
         computation_type: 'Paillier homomorphic addition',
       },
     };

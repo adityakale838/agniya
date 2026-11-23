@@ -21,7 +21,10 @@ ciphertexts and are decrypted here.
     c.save("claims.agniya-key", password)    # scrypt + AES-256-GCM; losing it loses the data
     c = AgniyaClient.load("claims.agniya-key", password, "http://127.0.0.1:5000")
 
-The server is trusted to compute correctly (honest-but-curious), not to see data.
+The server is not trusted to see data, nor to compute correctly: every answer is checked here
+against integrity tags in the ciphertexts (agniya/core/integrity.py) and IntegrityError is raised
+when it is not the honest result over the uploaded data. Columns from key files made before
+integrity tags are not checked.
 """
 
 import base64
@@ -38,7 +41,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pyope.ope import ValueRange
 
 from agniya.core.batch_packing import BatchedAggregator, decrypt_groups, decrypt_range, decrypt_sorted_groups, group_pages
-from agniya.core.paillier import generate_keypair, is_djn_admissible, keypair_from_primes
+from agniya.core.integrity import ColumnMac, IntegrityError, range_cuts
+from agniya.core.paillier import decrypt_crt, generate_keypair, is_djn_admissible, keypair_from_primes
 from agniya.core.precomputation import RandomnessPool
 from agniya.hybrid.fast_ope import FastOPE
 
@@ -79,7 +83,8 @@ class AgniyaClient:
             raise ValueError('A password is required')
         cols = {}
         for name, m in self.columns.items():
-            c = {k: m[k] for k in ('scale', 'fscale', 'slot_bits', 'slots', 'offset', 'count', 'lanes', 'labels', 'pages') if k in m}
+            c = {k: m[k] for k in ('scale', 'fscale', 'slot_bits', 'slots', 'offset', 'count', 'lanes', 'labels', 'pages',
+                                   'mac_key') if k in m}
             if 'ope' in m:
                 c.update(ope_key=base64.b64encode(m['ope'].key).decode(), ope_offset=m['ope_offset'], ope_top=m['ope_top'])
             cols[name] = c
@@ -164,23 +169,26 @@ class AgniyaClient:
             if not rows:
                 raise ValueError(f'No rows have {column}, {by} and {where}')
         pool = RandomnessPool(self.pub, method=None if self._djn_ok else 'standard')
-        agg = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch)
+        mac = ColumnMac(self.pub.n)
+        agg = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch, mac=mac)
+        tags = None
         if where is None:
             packed = agg.encrypt_groups([a for a, _ in rows], [b for _, b in rows])
             name = f'{column}#{by}'
-            body = {'slots': packed['slots']}
+            body = {'slots': packed['slots'], 'count': packed['slots'] * (len(packed['ciphertexts']) // packed['pages'])}
             meta = {'scale': s}
         else:
             packed = agg.encrypt_sorted_groups([a for _, a, _ in rows], [b for _, _, b in rows])
             name = f'{column}#{by}|{where}'
             tags, meta = self._ope_tags([w for w, _, _ in rows])
             body = {'slots': packed['lanes'], 'count': len(rows), 'ope_tags': tags}  # cut like a sorted column
-            meta.update(scale=s, fscale=fs, count=len(rows))
+            meta.update(fscale=fs)
         pool.close()
+        meta.update(scale=s, count=body['count'], mac_key=base64.b64encode(mac.key).decode())  # count: per server column
         for p, cts in enumerate(group_pages(packed)):
             r = self.post('/api/v2/columns', {'dataset': self.dataset, 'column': name + (f'@{p}' if p else ''),
                                               'n': format(self.pub.n, 'x'), 'ciphertexts': [format(c, 'x') for c in cts],
-                                              'count': body.get('count', packed['slots'] * len(cts)), **body})
+                                              **body, **({'tag_macs': mac.tag_macs(p, tags, packed['lanes'])} if tags else {})})
         self.columns[name] = {**meta, **{k: packed[k] for k in ('slot_bits', 'slots', 'lanes', 'labels', 'offset', 'pages')}}
         return {**r, 'column': name, 'ciphertexts': len(packed['ciphertexts']), 'pages': packed['pages']}
 
@@ -194,21 +202,25 @@ class AgniyaClient:
             raise ValueError(f'Call upload_grouped({column!r}, ..., by={by!r}' + (f', where={where!r}' if where else '')
                              + ') first')
         m = self.columns[name]
-        body = {'dataset': self.dataset}
+        rng = None
         if where:
-            body = self._range_tags(m, lo, hi)
-            if body is None:
+            rng = self._range_tags(m, lo, hi)
+            if rng is None:
                 return {}
-            body['dataset'] = self.dataset
-        rs = [self.post('/api/v2/aggregate', {**body, 'column': name + (f'@{p}' if p else '')})
+        rs = [self.post('/api/v2/aggregate', {**(rng or {}), 'dataset': self.dataset, 'column': name + (f'@{p}' if p else '')})
               for p in range(m.get('pages', 1))]
+        plain = {}
+        for p, r in enumerate(rs):
+            plain.update(self._answer(m, name, r, p, rng))
         if where:
+            if len({tuple(r.get('rows', ())) for r in rs}) > 1:
+                raise IntegrityError(f'The pages of {name} were cut at different rows')
             sums = decrypt_sorted_groups(self.pub, self.priv, [
                 (int(r['product'], 16) if r['product'] else None,
                  [(int(e['ciphertext'], 16), max(0, e['first_slot']), min(e['end_slot'], m['lanes'])) for e in r['edges']])
-                for r in rs], m)
+                for r in rs], m, dec=plain.__getitem__)
         else:
-            sums = decrypt_groups(self.pub, self.priv, [int(r['product'], 16) for r in rs], m)
+            sums = decrypt_groups(self.pub, self.priv, [int(r['product'], 16) for r in rs], m, dec=plain.__getitem__)
         out = {}
         for label, (total, count) in sums.items():
             total = total / m['scale'] if m['scale'] != 1 else total
@@ -232,21 +244,51 @@ class AgniyaClient:
 
     def _upload(self, name: str, ints: list, scale: int, keys: Optional[list], fscale: int) -> dict:
         """Pack and encrypt `ints`; `keys` (sorted, one per value) become the OPE tags."""
-        meta = {'scale': scale, 'fscale': fscale}
+        mac = ColumnMac(self.pub.n)
+        meta = {'scale': scale, 'fscale': fscale, 'mac_key': base64.b64encode(mac.key).decode()}
         body = {'dataset': self.dataset, 'column': name, 'n': format(self.pub.n, 'x')}
         if keys:
             body['ope_tags'], ope_meta = self._ope_tags(keys)
             meta.update(ope_meta)
         # DJN randomness only on admissible moduli (our keys); e.g. browser-made keys get textbook r^n
         pool = RandomnessPool(self.pub, method=None if self._djn_ok else 'standard')
-        packed = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch).encrypt_column(ints)
+        packed = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch, mac=mac).encrypt_column(ints)
         pool.close()  # ponytail: new pool per column; keep one open if many big columns are uploaded
         meta.update(slot_bits=packed['slot_bits'], slots=packed['slots'], offset=packed['offset'], count=packed['count'])
         body.update(ciphertexts=[format(c, 'x') for c in packed['ciphertexts']],
                     slots=packed['slots'], count=packed['count'])
+        if keys:
+            body['tag_macs'] = mac.tag_macs(0, body['ope_tags'], packed['slots'])
         r = self.post('/api/v2/columns', body)
         self.columns[name] = meta
         return r
+
+    def _answer(self, m: dict, name: str, r: dict, page: int, rng: Optional[dict]) -> Dict[int, int]:
+        """{ciphertext: plaintext} for one /api/v2/aggregate answer (page `page` of column `name`), after
+        checking it is the product and edges of the stored ciphertexts for the rows the range selects."""
+        if rng and 'mac_key' in m and 'rows' not in r:
+            raise IntegrityError(f'The server sent no rows to check {name} against: it predates integrity checks '
+                                 '(update the server before the clients)')
+        try:  # a malformed answer is a failed check too
+            product = int(r['product'], 16) if r['product'] else None
+            edges = [int(e['ciphertext'], 16) for e in r['edges']]
+            plain = {c: decrypt_crt(self.pub, self.priv, c) for c in ([product] if product is not None else []) + edges}
+            if 'mac_key' not in m:
+                return plain  # uploaded before integrity tags: not checked
+            mac = ColumnMac(self.pub.n, base64.b64decode(m['mac_key']))
+            s = m['lanes'] if 'lanes' in m and 'ope' in m else m['slots']  # values per ciphertext on the server
+            i, j = (int(r['rows'][0]), int(r['rows'][1])) if rng else (0, m['count'])
+            full, cuts = range_cuts(s, m['count'], i, j)
+            ok = (r['count'] == j - i and (product is None) == (not full) and len(cuts) == len(edges)
+                  and all((e['first_slot'], e['end_slot']) == (lo, hi) for e, (_, lo, hi) in zip(r['edges'], cuts))
+                  and (not full or mac.check(plain[product], page, full[0], len(full)))
+                  and all(mac.check(plain[ct], page, c, 1) for ct, (c, _, _) in zip(edges, cuts))
+                  and (not rng or mac.check_cut(page, s, m['count'], i, j, r['witnesses'], rng['lo_tag'], rng['hi_tag'])))
+        except (KeyError, TypeError, ValueError, IndexError):
+            ok = False
+        if not ok:
+            raise IntegrityError(f"The server's answer for {name} does not match the uploaded data")
+        return plain
 
     def delete(self) -> dict:
         """Delete this dataset from the server (all columns). The key stays usable for new uploads."""
@@ -263,7 +305,7 @@ class AgniyaClient:
             raise ValueError(f'Call upload_by({column!r}, ..., by={by!r}) first' if name != column
                              else f'Unknown column {column!r}')
         m = self.columns[name]
-        body = {'dataset': self.dataset, 'column': name}
+        body, tags = {'dataset': self.dataset, 'column': name}, None
         if lo is not None or hi is not None:
             if 'ope' not in m:
                 raise ValueError(f'{column} was uploaded without range_filter=True')
@@ -272,9 +314,11 @@ class AgniyaClient:
                 return {'sum': 0, 'count': 0, 'avg': 0}
             body.update(tags)
         r = self.post('/api/v2/aggregate', body)
+        plain = self._answer(m, name, r, 0, tags)
         slots = m['slots']
         product = int(r['product'], 16) if r['product'] else None
         edges = [(int(e['ciphertext'], 16), max(0, e['first_slot']), min(e['end_slot'], slots)) for e in r['edges']]
-        total = decrypt_range(self.pub, self.priv, product, edges, m['slot_bits'], slots) + m['offset'] * r['count']
+        total = decrypt_range(self.pub, self.priv, product, edges, m['slot_bits'], slots, dec=plain.__getitem__) \
+            + m['offset'] * r['count']
         total = total / m['scale'] if m['scale'] != 1 else total
         return {'sum': total, 'count': r['count'], 'avg': total / r['count'] if r['count'] else 0}
