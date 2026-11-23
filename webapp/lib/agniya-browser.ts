@@ -6,6 +6,7 @@
  *   OPE tags ......................... pyope 0.2.2 + agniya/hybrid/fast_ope.py (same scheme;
  *                                      tests/test_integration/test_browser_crypto.py checks
  *                                      tags and ciphertexts against the Python side)
+ *   integrity tags / checks .......... agniya/core/integrity.py (ColumnMac, range_cuts)
  *   upload / query ................... agniya/client.py (AgniyaClient)
  * One file with no imports, so Node can run it directly for those checks.
  */
@@ -126,8 +127,8 @@ export function decrypt(priv: PrivateKey, c: bigint): bigint {
 
 // ---------------------------------------------------------------- packing
 /** (slotBits, slots) so that no slot overflows when all `count` values are summed (as Python). */
-export function layout(pub: PublicKey, maxValue: bigint, count: number): [number, number] {
-  const usable = bitLength(pub.n) - 1;
+export function layout(pub: PublicKey, maxValue: bigint, count: number, reserve = 0): [number, number] {
+  const usable = bitLength(pub.n) - 1 - reserve;
   const vb = bitLength(maxValue > 1n ? maxValue : 1n);
   let slots = Math.max(1, Math.floor(usable / (vb + 1)));
   for (;;) {
@@ -144,8 +145,8 @@ export function layout(pub: PublicKey, maxValue: bigint, count: number): [number
  *  its own run of ciphertexts and decryption: one page whenever all groups fit, else the fewest ciphertexts
  *  counting each decryption a page adds to a query as 16. */
 export function groupLayout(pub: PublicKey, maxValue: bigint, sizes: number[],
-                            decryptionsPerPage = 1): [number, number, number] {
-  const usable = bitLength(pub.n) - 1, k = Math.max(sizes.length, 1), biggest = Math.max(0, ...sizes);
+                            decryptionsPerPage = 1, reserve = 0): [number, number, number] {
+  const usable = bitLength(pub.n) - 1 - reserve, k = Math.max(sizes.length, 1), biggest = Math.max(0, ...sizes);
   const fit = (lanes: number) => {  // [slot bits, groups per plaintext, ciphertexts per page]
     const m = Math.max(1, Math.ceil(biggest / lanes));
     const bits = bitLength([maxValue * BigInt(m), BigInt(lanes * m), 1n].reduce((a, b) => (a > b ? a : b)));
@@ -166,16 +167,117 @@ export function groupLayout(pub: PublicKey, maxValue: bigint, sizes: number[],
   return [best[1], best[2], best[3]];
 }
 
-export function decryptRange(priv: PrivateKey, product: bigint | null,
-                             edges: Array<[bigint, number, number]>, slotBits: number, slots: number): bigint {
+export function decryptRange(priv: PrivateKey, product: bigint | null, edges: Array<[bigint, number, number]>,
+                             slotBits: number, slots: number, dec = (c: bigint) => decrypt(priv, c)): bigint {
   const mask = (1n << BigInt(slotBits)) - 1n;
   let total = 0n;
   const parts: Array<[bigint, number, number]> = product !== null ? [[product, 0, slots], ...edges] : edges;
   for (const [ct, lo, hi] of parts) {
-    const m = decrypt(priv, ct);
+    const m = dec(ct);
     for (let k = lo; k < hi; k++) total += (m >> BigInt(k * slotBits)) & mask;
   }
   return total;
+}
+
+// ---------------------------------------------------------------- integrity (as agniya/core/integrity.py)
+const MAC_P = (1n << 127n) - 1n;
+export const RESERVE = 159;  // bits above the data: a 127-bit tag summed over up to 2^32 ciphertexts
+
+/** Per-column key for integrity tags: plaintext m of page p, ciphertext c carries (alpha*m + beta(p, c)) mod P
+ *  above the data, so the client can check that an answer is the honest product of the stored ciphertexts. */
+export class ColumnMac {
+  readonly key: Uint8Array;
+  readonly shift: number;
+  private readonly aes: Promise<CryptoKey>;
+  private readonly hmac: Promise<CryptoKey>;
+  private alphaP?: Promise<bigint>;
+  constructor(n: bigint, key: Uint8Array = webcrypto.getRandomValues(new Uint8Array(32))) {
+    this.key = key;
+    this.shift = bitLength(n) - 1 - RESERVE;
+    this.aes = webcrypto.subtle.importKey('raw', key as BufferSource, 'AES-CTR', false, ['encrypt']);
+    this.hmac = webcrypto.subtle.importKey('raw', key as BufferSource, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  }
+
+  /** n values < 2^127: AES-256-CTR keystream blocks start..start+n-1 (as Python _blocks). */
+  private async blocks(start: bigint, n: number): Promise<bigint[]> {
+    const counter = new Uint8Array(16);
+    for (let k = 15, x = start; k >= 0; k--, x >>= 8n) counter[k] = Number(x & 255n);
+    const ks = new Uint8Array(await webcrypto.subtle.encrypt({ name: 'AES-CTR', counter, length: 128 }, await this.aes,
+      new Uint8Array(16 * n)));
+    const out: bigint[] = [];
+    for (let k = 0; k < n; k++) {
+      let v = 0n;
+      for (let b = 0; b < 16; b++) v = (v << 8n) | BigInt(ks[16 * k + b]);
+      out.push(v >> 1n);
+    }
+    return out;
+  }
+
+  private alpha(): Promise<bigint> {
+    return (this.alphaP ??= this.blocks(1n << 127n, 1).then(b => b[0]));
+  }
+
+  private async betaSum(page: number, first: number, n: number): Promise<bigint> {
+    return n ? (await this.blocks((BigInt(page) << 64n) + BigInt(first), n)).reduce((a, b) => a + b, 0n) : 0n;
+  }
+
+  /** Plaintexts (pages of equal length, page-major) with their tags above the data. */
+  async tag(plain: bigint[], pages = 1): Promise<bigint[]> {
+    const m = Math.floor(plain.length / Math.max(pages, 1)), alpha = await this.alpha(), shift = BigInt(this.shift);
+    const out: bigint[] = [];
+    for (let p = 0; p < pages && m; p++) {
+      const betas = await this.blocks(BigInt(p) << 64n, m);
+      betas.forEach((b, c) => { const x = plain[p * m + c]; out.push(x + (((alpha * x + b) % MAC_P) << shift)); });
+    }
+    return out;
+  }
+
+  /** plaintext = product of ciphertexts first..first+n-1 of the page, decrypted. */
+  async check(plaintext: bigint, page: number, first: number, n: number): Promise<boolean> {
+    const shift = BigInt(this.shift), low = plaintext & ((1n << shift) - 1n);
+    return (plaintext >> shift) % MAC_P === (await this.alpha() * low + await this.betaSum(page, first, n)) % MAC_P;
+  }
+
+  async tagsMac(page: number, c: number, tags: string[]): Promise<string> {
+    const d = new Uint8Array(await webcrypto.subtle.sign('HMAC', await this.hmac,
+      new TextEncoder().encode(`${page}:${c}:${tags.join(',')}`)));
+    return [...d.subarray(0, 16)].map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async tagMacs(page: number, tags: string[], slots: number): Promise<string[]> {
+    const out: string[] = [];
+    for (let k = 0; k < tags.length; k += slots) out.push(await this.tagsMac(page, k / slots, tags.slice(k, k + slots)));
+    return out;
+  }
+
+  /** Rows i..j-1 are exactly the rows with loTag <= tag <= hiTag (tags are sorted). */
+  async checkCut(page: number, slots: number, count: number, i: number, j: number, witnesses: Witness[],
+                 loTag: bigint, hiTag: bigint): Promise<boolean> {
+    const seen = new Map<number, bigint>();
+    for (const w of witnesses) {
+      if (await this.tagsMac(page, w.index, w.tags) !== w.mac) return false;
+      w.tags.forEach((t, k) => seen.set(w.index * slots + k, BigInt(t)));
+    }
+    const at = (r: number) => { const t = seen.get(r); if (t === undefined) throw new Error('missing'); return t; };
+    try {
+      return 0 <= i && i <= j && j <= count && (i === 0 || at(i - 1) < loTag) && (j === count || at(j) > hiTag)
+        && (i === j || (at(i) >= loTag && at(j - 1) <= hiTag));
+    } catch {
+      return false;  // a needed row was not sent
+    }
+  }
+}
+
+/** Ciphertexts wholly inside rows i..j-1, and the (at most two) cut ones as [index, firstSlot, endSlot]. */
+export function rangeCuts(slots: number, count: number, i: number, j: number): [number[], Array<[number, number, number]>] {
+  const full: number[] = [], edges: Array<[number, number, number]> = [];
+  if (i < j) {
+    for (let c = Math.floor(i / slots); c <= Math.floor((j - 1) / slots); c++) {
+      const lo = Math.max(i, c * slots) - c * slots, hi = Math.min(j, (c + 1) * slots, count) - c * slots;
+      if (lo === 0 && hi === Math.min(slots, count - c * slots)) full.push(c); else edges.push([c, lo, hi]);
+    }
+  }
+  return [full, edges];
 }
 
 // ---------------------------------------------------------------- OPE (port of pyope 0.2.2)
@@ -412,9 +514,11 @@ async function gcmKey(password: string, salt: Uint8Array, kdf: { n: number; r: n
 
 // ---------------------------------------------------------------- client for /api/v2
 type Post = (path: string, body: unknown) => Promise<Record<string, unknown>>;
+interface Witness { index: number; tags: string[]; mac: string }
 interface AggregateResponse {
   count: number; product: string | null; ciphertexts_used: number; time_ms: number;
   edges: Array<{ ciphertext: string; first_slot: number; end_slot: number }>;
+  rows?: [number, number]; witnesses?: Witness[];
 }
 
 export function httpPost(baseUrl: string): Post {
@@ -434,16 +538,19 @@ interface ColumnMeta {
   fscale?: number;  // scale of the filter values when they differ (Python upload_by columns "a|b")
   lanes?: number; labels?: Array<string | number>;  // GROUP BY copies "a#g" (Python upload_grouped)
   pages?: number;  // ... stored as server columns "a#g", "a#g@1", ... when the groups need several plaintexts
+  macKey?: Uint8Array;  // integrity tags (absent in key files from before them: answers are not checked)
 }
 
 export interface QueryAnswer {
   sum: number; count: number; avg: number;
   ciphertextsUsed: number; ciphertextBits: number[]; serverMs: number;
+  verified: boolean;  // checked against the integrity tags of the uploaded data
 }
 
 export interface GroupAnswer {
   groups: Array<{ group: string | number; sum: number; count: number; avg: number }>;
   ciphertextsUsed: number; ciphertextBits: number[]; serverMs: number; pages: number;
+  verified: boolean;
 }
 
 /** int(round(v * scale)) exactly as Python: round half to even. Data with one more decimal than the
@@ -515,13 +622,15 @@ export class BrowserClient {
     const labels = [...new Set(rows.map(r => r[2]))].sort();
     const offset = rows.reduce((m, r) => (r[1] < m ? r[1] : m), 0n);
     const top = rows.reduce((m, r) => (r[1] > m ? r[1] : m), rows[0][1]) - offset;
-    const meta: ColumnMeta = { scale, slotBits: 0, slots: 0, offset, count: rows.length, labels };
+    const mac = new ColumnMac(this.pub.n);
+    const meta: ColumnMeta = { scale, slotBits: 0, slots: 0, offset, count: rows.length, labels, macKey: mac.key };
     let plain: bigint[], body: Record<string, unknown>, m: number, pages: number;  // m = ciphertexts per page
+    let tags: string[] | null = null;
     if (where === undefined) {
       const byLabel = new Map(labels.map(l => [l, [] as bigint[]]));
       for (const [, v, g] of rows) byLabel.get(g)!.push(v - offset);
       const sizes = labels.map(l => byLabel.get(l)!.length);
-      const [bits, lanes, per] = groupLayout(this.pub, top, sizes);
+      const [bits, lanes, per] = groupLayout(this.pub, top, sizes, 1, RESERVE);
       m = Math.max(1, Math.ceil(Math.max(...sizes) / lanes));
       pages = Math.ceil(labels.length / per);
       plain = Array(pages * m).fill(0n);
@@ -533,11 +642,12 @@ export class BrowserClient {
         }
       });
       Object.assign(meta, { slotBits: bits, lanes, pages, slots: per * (lanes + 1) });
-      body = { slots: meta.slots, count: meta.slots * m };  // every ciphertext whole
+      meta.count = meta.slots * m;  // count of each server column: every ciphertext whole
+      body = { slots: meta.slots, count: meta.count };
     } else {
       rows.sort((x, y) => cmp(x[0], y[0]) || cmp(x[1], y[1]));
       const index = new Map(labels.map((l, i) => [l, i]));
-      const [bits, lanes, per] = groupLayout(this.pub, top + 1n, labels.map(() => rows.length), 3);  // product + <=2 edges
+      const [bits, lanes, per] = groupLayout(this.pub, top + 1n, labels.map(() => rows.length), 3, RESERVE);  // product + <=2 edges
       m = Math.ceil(rows.length / lanes);
       pages = Math.ceil(labels.length / per);
       plain = Array(pages * m).fill(0n);
@@ -546,16 +656,20 @@ export class BrowserClient {
         plain[Math.floor(gi / per) * m + Math.floor(r / lanes)] +=
           ((v - offset + 1n) << BigInt((base + r % lanes) * bits)) + (1n << BigInt((base + lanes) * bits));
       });
-      const { tags, ...ope } = await this.opeTags(rows.map(r => r[0]));
+      const opeTags = await this.opeTags(rows.map(r => r[0]));
+      const { tags: t, ...ope } = opeTags;
+      tags = t;
       Object.assign(meta, { slotBits: bits, lanes, pages, slots: per * (lanes + 1), ...ope });
       if (fscale !== scale) meta.fscale = fscale;
       body = { slots: lanes, count: rows.length, ope_tags: tags };  // the server cuts each page like a sorted column
     }
     const name = `${column}#${by}` + (where !== undefined ? `|${where}` : '');
+    const tagged = await mac.tag(plain, pages);
     let r: Record<string, unknown> = {};
     for (let p = 0; p < pages; p++) {
       r = await this.post('/api/v2/columns', { dataset: this.dataset, column: name + (p ? `@${p}` : ''), n: hex(this.pub.n),
-        ...body, ciphertexts: plain.slice(p * m, (p + 1) * m).map(x => hex(encrypt(this.pub, this.priv, x))) });
+        ...body, ...(tags && { tag_macs: await mac.tagMacs(p, tags, meta.lanes!) }),
+        ciphertexts: tagged.slice(p * m, (p + 1) * m).map(x => hex(encrypt(this.pub, this.priv, x))) });
     }
     this.columns.set(name, meta);
     return { ...r, ciphertexts: plain.length, pages };
@@ -568,13 +682,17 @@ export class BrowserClient {
     const name = `${column}#${by}` + (where ? `|${where}` : ''), m = this.columns.get(name);
     if (!m?.labels || !m.lanes) throw new Error(`No GROUP BY copy of ${column} by ${by}` + (where ? ` filtered by ${where}` : ''));
     const body: Record<string, unknown> = { dataset: this.dataset, column: name };
+    let rng: Record<string, string> | null = null;
     if (where) {
-      const tags = await this.rangeTags(m, lo, hi);
-      if (!tags) return { groups: [], ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0, pages: m.pages ?? 1 };
-      Object.assign(body, tags);
+      rng = await this.rangeTags(m, lo, hi);
+      if (!rng) return { groups: [], ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0, pages: m.pages ?? 1, verified: !!m.macKey };
+      Object.assign(body, rng);
     }
     const rs = await Promise.all(Array.from({ length: m.pages ?? 1 }, (_, p) =>
       this.post('/api/v2/aggregate', { ...body, column: name + (p ? `@${p}` : '') }) as unknown as Promise<AggregateResponse>));
+    const plain = new Map<bigint, bigint>();
+    for (let p = 0; p < rs.length; p++) for (const [c, x] of await this.answer(m, name, rs[p], p, rng)) plain.set(c, x);
+    if (where && new Set(rs.map(r => String(r.rows))).size > 1) throw new Error(`Integrity check failed: the pages of ${name} were cut at different rows`);
     const bits = BigInt(m.slotBits), mask = (1n << bits) - 1n, lanes = m.lanes, per = Math.floor(m.slots / (lanes + 1));
     const slot = (p: bigint, s: number) => (p >> (BigInt(s) * bits)) & mask;
     const sums = m.labels.map(() => 0n), counts = m.labels.map(() => 0n), decrypted: bigint[] = [];
@@ -583,7 +701,7 @@ export class BrowserClient {
       const at = (gi: number) => (gi % per) * (lanes + 1);  // first slot of gi's block
       if (r.product) {
         decrypted.push(unhex(r.product));
-        const p = decrypt(this.priv, unhex(r.product));
+        const p = plain.get(unhex(r.product))!;
         for (const gi of own) {
           const c = slot(p, at(gi) + lanes);
           let s = 0n;
@@ -593,7 +711,7 @@ export class BrowserClient {
         }
       }
       for (const e of r.edges) {  // only filtered copies have edges
-        const ct = unhex(e.ciphertext), p = decrypt(this.priv, ct);
+        const ct = unhex(e.ciphertext), p = plain.get(ct)!;
         decrypted.push(ct);
         for (const gi of own) {
           for (let k = Math.max(0, e.first_slot); k < Math.min(e.end_slot, lanes); k++) {
@@ -608,7 +726,33 @@ export class BrowserClient {
       return { group, sum, count: n, avg: n ? sum / n : 0 };
     }).filter(g => g.count > 0);
     return { groups, ciphertextsUsed: rs.reduce((n, r) => n + r.ciphertexts_used, 0), pages: rs.length,
-             serverMs: rs.reduce((t, r) => t + r.time_ms, 0), ciphertextBits: decrypted.map(bitLength) };
+             serverMs: rs.reduce((t, r) => t + r.time_ms, 0), ciphertextBits: decrypted.map(bitLength), verified: !!m.macKey };
+  }
+
+  /** ciphertext -> plaintext for one /api/v2/aggregate answer (page `page` of column `name`), after checking it
+   *  is the product and edges of the stored ciphertexts for the rows the range selects (as AgniyaClient._answer). */
+  private async answer(m: ColumnMeta, name: string, r: AggregateResponse, page: number,
+                       rng: Record<string, string> | null): Promise<Map<bigint, bigint>> {
+    const product = r.product ? unhex(r.product) : null, edges = r.edges.map(e => unhex(e.ciphertext));
+    const plain = new Map<bigint, bigint>();
+    for (const c of product !== null ? [product, ...edges] : edges) plain.set(c, decrypt(this.priv, c));
+    if (!m.macKey) return plain;  // uploaded before integrity tags: not checked
+    const mac = new ColumnMac(this.pub.n, m.macKey);
+    const s = m.lanes && m.ope ? m.lanes : m.slots;  // values per ciphertext on the server
+    let ok = false;
+    try {
+      const [i, j] = rng ? [Number(r.rows![0]), Number(r.rows![1])] : [0, m.count];
+      const [full, cuts] = rangeCuts(s, m.count, i, j);
+      ok = r.count === j - i && (product === null) === !full.length && cuts.length === edges.length
+        && cuts.every(([, lo, hi], k) => r.edges[k].first_slot === lo && r.edges[k].end_slot === hi)
+        && (!full.length || await mac.check(plain.get(product!)!, page, full[0], full.length));
+      for (let k = 0; ok && k < cuts.length; k++) ok = await mac.check(plain.get(edges[k])!, page, cuts[k][0], 1);
+      if (ok && rng) ok = await mac.checkCut(page, s, m.count, i, j, r.witnesses!, BigInt(rng.lo_tag), BigInt(rng.hi_tag));
+    } catch {
+      ok = false;
+    }
+    if (!ok) throw new Error(`Integrity check failed: the server's answer for ${name} does not match the uploaded data`);
+    return plain;
   }
 
   /** OPE tags (decimal strings) for sorted `keys` under a fresh key, and what is needed to make more. */
@@ -634,25 +778,31 @@ export class BrowserClient {
   /** Pack `ints` (already in row order); `keys` (sorted, same length) become OPE tags when given. */
   private async put(column: string, ints: bigint[], scale: number, keys: bigint[] | null,
                     fscale: number): Promise<{ ciphertexts: number }> {
-    const meta: ColumnMeta = { scale, slotBits: 0, slots: 0, offset: 0n, count: ints.length };
+    const mac = new ColumnMac(this.pub.n);
+    const meta: ColumnMeta = { scale, slotBits: 0, slots: 0, offset: 0n, count: ints.length, macKey: mac.key };
     if (fscale !== scale) meta.fscale = fscale;
     const body: Record<string, unknown> = { dataset: this.dataset, column, n: hex(this.pub.n) };
+    let tags: string[] | null = null;
     if (keys && keys.length) {
-      const { tags, ...ope } = await this.opeTags(keys);
+      const opeTags = await this.opeTags(keys);
+      const { tags: t, ...ope } = opeTags;
+      tags = t;
       Object.assign(meta, ope);
       body.ope_tags = tags;
     }
     const offset = ints.reduce((m, v) => (v < m ? v : m), 0n);
     const shifted = ints.map(v => v - offset);
-    const [bits, slots] = layout(this.pub, shifted.reduce((m, v) => (v > m ? v : m), 0n), shifted.length);
-    const cts: string[] = [];
+    const [bits, slots] = layout(this.pub, shifted.reduce((m, v) => (v > m ? v : m), 0n), shifted.length, RESERVE);
+    const plain: bigint[] = [];
     for (let i = 0; i < shifted.length; i += slots) {
       let acc = 0n;
       shifted.slice(i, i + slots).forEach((v, j) => { acc |= v << BigInt(j * bits); });
-      cts.push(hex(encrypt(this.pub, this.priv, acc)));
+      plain.push(acc);
     }
+    const cts = (await mac.tag(plain)).map(x => hex(encrypt(this.pub, this.priv, x)));
     Object.assign(meta, { slotBits: bits, slots, offset });
     Object.assign(body, { ciphertexts: cts, slots, count: ints.length });
+    if (tags) body.tag_macs = await mac.tagMacs(0, tags, slots);
     const r = await this.post('/api/v2/columns', body);
     this.columns.set(column, meta);
     return r as { ciphertexts: number };
@@ -665,23 +815,25 @@ export class BrowserClient {
     if (!m) throw new Error(cross ? `Filtering ${column} by ${by} needs ${by} encrypted as OPE+Paillier` : `${column} is not encrypted`);
     if (cross) column = `${column}|${by}`;
     const body: Record<string, unknown> = { dataset: this.dataset, column };
-    const empty: QueryAnswer = { sum: 0, count: 0, avg: 0, ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0 };
+    const empty: QueryAnswer = { sum: 0, count: 0, avg: 0, ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0, verified: !!m.macKey };
+    let rng: Record<string, string> | null = null;
     if (lo !== undefined || hi !== undefined) {
       if (!m.ope) throw new Error(`Range filters need ${column} encrypted as OPE+Paillier`);
-      const tags = await this.rangeTags(m, lo, hi);
-      if (!tags) return empty;
-      Object.assign(body, tags);
+      rng = await this.rangeTags(m, lo, hi);
+      if (!rng) return empty;
+      Object.assign(body, rng);
     }
     const r = await this.post('/api/v2/aggregate', body) as unknown as AggregateResponse;
+    const plain = await this.answer(m, column, r, 0, rng);
     const product = r.product ? unhex(r.product) : null;
     const edges = r.edges.map(
       e => [unhex(e.ciphertext), Math.max(0, e.first_slot), Math.min(e.end_slot, m.slots)] as [bigint, number, number]);
-    const total = decryptRange(this.priv, product, edges, m.slotBits, m.slots) + m.offset * BigInt(r.count);
+    const total = decryptRange(this.priv, product, edges, m.slotBits, m.slots, c => plain.get(c)!) + m.offset * BigInt(r.count);
     const sum = Number(total) / m.scale;  // ponytail: exact while |total| < 2^53; BigInt division if columns get bigger
     return {
       sum, count: r.count, avg: r.count ? sum / r.count : 0, ciphertextsUsed: r.ciphertexts_used,
       ciphertextBits: [product, ...edges.map(e => e[0])].filter((x): x is bigint => x !== null).map(bitLength),
-      serverMs: r.time_ms,
+      serverMs: r.time_ms, verified: !!m.macKey,
     };
   }
 
@@ -696,6 +848,7 @@ export class BrowserClient {
       if (m.fscale !== undefined) c.fscale = m.fscale;
       if (m.labels) Object.assign(c, { lanes: m.lanes, labels: m.labels, pages: m.pages ?? 1 });
       if (m.ope) Object.assign(c, { ope_key: b64(m.ope.key), ope_offset: safeNum(m.opeOffset!), ope_top: safeNum(m.opeTop!) });
+      if (m.macKey) c.mac_key = b64(m.macKey);
       columns[name] = c;
     }
     const secret = JSON.stringify({ dataset: this.dataset, p: hex(this.priv.p), q: hex(this.priv.q), columns });
@@ -734,6 +887,7 @@ export class BrowserClient {
         meta.labels = c.labels as unknown as Array<string | number>;
         meta.pages = (c.pages as number | undefined) ?? 1;  // files from before pages: one
       }
+      if (c.mac_key !== undefined) meta.macKey = unb64(c.mac_key as string);
       if (c.ope_key !== undefined) {
         meta.ope = new OPE(unb64(c.ope_key as string), BigInt(c.ope_top));
         meta.opeOffset = BigInt(c.ope_offset);

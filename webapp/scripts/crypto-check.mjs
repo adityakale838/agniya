@@ -44,6 +44,19 @@ if (job.client) {  // end to end against a running server
   for (const [col, by, lo, hi, where] of job.client.group_queries ?? []) {
     out.groups.push(await c.queryGroups(col, by, lo ?? undefined, hi ?? undefined, where));
   }
+  for (const [mode, kind, ...args] of job.client.tamper ?? []) {  // a server that changes its answers
+    const post = c.post;
+    c.post = async (path, body) => {
+      const r = await post(path, body);
+      if (path !== '/api/v2/aggregate') return r;
+      if (mode === 'double' && r.product) r.product = (BigInt('0x' + r.product) ** 2n % c.pub.nSquared).toString(16);
+      if (mode === 'no-witnesses') r.witnesses = [];
+      return r;
+    };
+    (out.tampered ??= []).push(await (kind === 'groups' ? c.queryGroups(...args.map(x => x ?? undefined))
+      : c.query(...args.map(x => x ?? undefined))).then(() => 'accepted', e => e.message));
+    c.post = post;
+  }
   out.p = c.priv.p.toString();
   if (job.client.save_password) out.keyfile = await c.saveKeyFile(job.client.save_password);
 }

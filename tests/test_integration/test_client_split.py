@@ -9,6 +9,8 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "api"))
 import server_optimized as srv  # noqa: E402
 from agniya.client import AgniyaClient  # noqa: E402
+from agniya.core.integrity import IntegrityError  # noqa: E402
+from agniya.core.paillier import sum_ciphertexts  # noqa: E402
 
 SENT = []  # every request body the server received
 
@@ -135,7 +137,88 @@ def test_server_never_sees_private_key_or_plaintext(setup):
         assert str(secret) not in sent and format(secret, "x") not in sent
     stored = srv.owner_datasets["split"]
     assert set(stored) == {"pub", "columns"} and not hasattr(stored["pub"], "p")
-    assert set(stored["columns"]["amount"]) == {"cts", "slots", "count", "tags"}
+    assert set(stored["columns"]["amount"]) == {"cts", "slots", "count", "tags", "macs"}
+
+
+def _stored(body):
+    return srv.owner_datasets["split"]["columns"][body["column"]]["cts"]
+
+
+def _times(r, c, k):  # the answer's product times ciphertext k (an honest server never does this)
+    return {**r, "product": format(int(r["product"], 16) * k % c.pub.n_squared, "x")}
+
+
+def _later_cut(r, body):  # answer as if lo were above the first row in range: drops rows at the low end
+    tags = srv.owner_datasets["split"]["columns"][body["column"]]["tags"]
+    return transport("/api/v2/aggregate", {**body, "lo_tag": tags[r["rows"][0]] + 1})
+
+
+def _wit(r, f):
+    w = [dict(x, tags=list(x["tags"])) for x in r["witnesses"]]
+    f(w)
+    return {**r, "witnesses": w}
+
+
+SUM_ALL = lambda c: c.query("amount")  # noqa: E731
+RANGE = lambda c: c.query("score", -40, 300)  # noqa: E731  edge, whole ciphertext, edge
+PAGES = lambda c: c.query_groups("score", "age")  # noqa: E731
+PAGES_RANGE = lambda c: c.query_groups("amount", "age", 0, 99.5, where="score")  # noqa: E731
+
+
+@pytest.mark.parametrize("query,change", [
+    (SUM_ALL, lambda c, b, r: _times(r, c, _stored(b)[0])),  # one row counted twice
+    (SUM_ALL, lambda c, b, r: _times(r, c, int(r["product"], 16))),  # every row doubled
+    (SUM_ALL, lambda c, b, r: _times(r, c, 1 + 5 * c.pub.n)),  # + a constant the server encrypted
+    (SUM_ALL, lambda c, b, r: {**r, "product": format(sum_ciphertexts(c.pub, _stored(b)[1:]), "x")}),  # rows left out
+    (SUM_ALL, lambda c, b, r: {**r, "count": r["count"] - 1}),
+    (RANGE, lambda c, b, r: _times(r, c, _stored(b)[0])),
+    (RANGE, lambda c, b, r: {**r, "edges": [{**r["edges"][0], "ciphertext": format(_stored(b)[1], "x")}] + r["edges"][1:]}),
+    (RANGE, lambda c, b, r: {**r, "edges": [{**r["edges"][0], "first_slot": r["edges"][0]["first_slot"] + 1}] + r["edges"][1:]}),
+    (RANGE, lambda c, b, r: _later_cut(r, b)),  # a consistent answer for fewer rows
+    (RANGE, lambda c, b, r: {**r, "witnesses": []}),
+    (RANGE, lambda c, b, r: _wit(r, lambda w: w[0]["tags"].__setitem__(0, str(int(w[0]["tags"][0]) - 1)))),
+    (RANGE, lambda c, b, r: _wit(r, lambda w: w[0].__setitem__("index", w[0]["index"] + 1))),
+    (PAGES, lambda c, b, r: transport("/api/v2/aggregate", {**b, "column": "score#age@1"})
+     if b["column"] == "score#age" else r),  # another page's answer
+    (PAGES, lambda c, b, r: _times(r, c, _stored(b)[-1]) if b["column"] == "score#age@1" else r),
+    (PAGES_RANGE, lambda c, b, r: _later_cut(r, b) if b["column"] == "amount#age|score@1" else r),
+    (PAGES_RANGE, lambda c, b, r: _times(r, c, _stored(b)[0]) if b["column"] == "amount#age|score" else r),
+])
+def test_wrong_answers_are_caught(setup, query, change):
+    c, _ = setup
+    honest = query(c)
+
+    def post(path, body):
+        r = transport(path, body)
+        return change(c, body, r) if path == "/api/v2/aggregate" else r
+    c.post = post
+    try:
+        with pytest.raises(IntegrityError):
+            query(c)
+    finally:
+        c.post = transport
+    assert query(c) == honest
+
+
+def test_store_from_before_tag_macs_is_upgraded(tmp_path, monkeypatch):
+    import sqlite3
+    from contextlib import closing
+    path = str(tmp_path / "old.sqlite3")
+    with closing(sqlite3.connect(path)) as con, con:
+        con.execute("CREATE TABLE columns (dataset TEXT, name TEXT, n TEXT, slots INTEGER, count INTEGER, "
+                    "cts BLOB, tags BLOB, PRIMARY KEY (dataset, name))")
+    monkeypatch.setattr(srv, "STORE_PATH", path)
+    with closing(srv._store()) as con:
+        assert "macs" in [r[1] for r in con.execute("PRAGMA table_info(columns)")]
+
+
+def test_key_files_without_mac_keys_still_load(setup, tmp_path):
+    c, _ = setup
+    old = {k: {f: v for f, v in m.items() if f != "mac_key"} for k, m in c.columns.items()}
+    c2 = AgniyaClient(transport, "split", _keys=(c.pub, c.priv))
+    c2.columns = old  # as loaded from a key file written before integrity tags: answers are not checked
+    assert c2.query("score", -10.5, 120.25) == c.query("score", -10.5, 120.25)
+    assert c2.query_groups("score", "age") == c.query_groups("score", "age")
 
 
 def test_range_needs_ope_column(setup):
@@ -148,7 +231,9 @@ def test_range_needs_ope_column(setup):
 
 @pytest.mark.parametrize("patch,code", [({"n": "ff"}, 400), ({"ciphertexts": ["zz"]}, 400),
                                         ({"count": 10**6}, 400), ({"ope_tags": [5, 1, 2], "count": 3}, 400),
-                                        ({"ciphertexts": ["0"]}, 400)])
+                                        ({"ciphertexts": ["0"]}, 400), ({"tag_macs": ["00" * 16] * 2}, 400),
+                                        ({"ope_tags": [1, 2, 3], "count": 3, "tag_macs": ["00" * 16]}, 400),
+                                        ({"ope_tags": [1, 2, 3], "count": 3, "tag_macs": ["ff" * 17] * 2}, 400)])
 def test_upload_validation(setup, patch, code):
     c, _ = setup
     ok = {"dataset": "v", "column": "x", "n": format(c.pub.n, "x"), "ciphertexts": ["2", "3"], "slots": 2, "count": 3}

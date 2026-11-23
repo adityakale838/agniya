@@ -308,7 +308,8 @@ export default function Dashboard() {
         + (filtered ? '. ' : ': every group sum and count comes out of its own slots. ') + 'The server never saw the labels.',
       encryption_proof: {
         ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits, modulus_n_bit_length: 2048,
-        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`,
+        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`
+          + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
         computation_type: 'Paillier homomorphic addition',
       },
     };
@@ -330,7 +331,8 @@ export default function Dashboard() {
       security_note: 'The server compared OPE tags (it learns their order) and multiplied ciphertexts; the edge ciphertexts were decrypted in this browser.',
       encryption_proof: {
         ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits.slice(0, 3), modulus_n_bit_length: 2048,
-        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`,
+        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`
+          + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
         computation_type: 'Paillier homomorphic addition',
       },
     };
