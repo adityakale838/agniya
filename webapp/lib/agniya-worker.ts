@@ -23,15 +23,16 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; args: Record<s
       throw new Error('Worker not initialised');
     } else if (op === 'upload') {
       result = await client.upload(args.column as string, args.values as number[], args.decimals as number,
-                                   args.rangeFilter as boolean);
+                                   args.rangeFilter as boolean, args.squares as boolean);
     } else if (op === 'uploadBy') {
       result = await client.uploadBy(args.column as string, args.values as Array<number | null>, args.by as string,
-                                     args.byValues as Array<number | null>, args.decimals as number, args.byDecimals as number);
+                                     args.byValues as Array<number | null>, args.decimals as number, args.byDecimals as number,
+                                     args.squares as boolean);
     } else if (op === 'uploadGrouped') {
       result = await client.uploadGrouped(args.column as string, args.values as Array<number | null>, args.by as string,
                                           args.byValues as Array<string | null>, args.decimals as number,
                                           args.where as string | undefined, args.whereValues as Array<number | null> | undefined,
-                                          args.whereDecimals as number | undefined);
+                                          args.whereDecimals as number | undefined, args.squares as boolean);
     } else if (op === 'queryGroups') {
       const where = args.where as string | undefined, name = `${args.column}#${args.by}` + (where ? `|${where}` : '');
       const answer = await client.queryGroups(args.column as string, args.by as string, args.lo as number | undefined,

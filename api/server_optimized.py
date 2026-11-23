@@ -7,7 +7,8 @@ What it does, precisely:
                   values per ciphertext). 'OPE+Paillier' columns are packed in sorted
                   order and get one OPE tag per row, so a range is a run of slots
 - /api/query    : SUM / AVG / COUNT computed by multiplying ciphertexts, then ONE decryption;
-                  MIN / MAX / MEDIAN on OPE+Paillier columns (sorted: one ciphertext each)
+                  MIN / MAX / MEDIAN on OPE+Paillier columns (sorted: one ciphertext each);
+                  VARIANCE / STDDEV from SUM(x) and SUM((x - c)^2) of a squared copy made on first use
 
 Two trust models:
 - /api/upload, /api/encrypt, /api/query (dashboard demo): this process receives the plaintext
@@ -42,13 +43,15 @@ from pyope.ope import ValueRange
 
 from agniya.core.ultimate_system import UltimateOptimizedDatabase
 from agniya.core.paillier import MIN_KEY_BITS, PaillierPublicKey, decrypt_crt, generate_keypair
-from agniya.core.batch_packing import decrypt_sorted_groups, group_pages, quantile_rows, range_plan, slot_value
+from agniya.core.batch_packing import (decrypt_sorted_groups, group_pages, quantile_rows, range_plan, sample_variance,
+                                       slot_value, squares)
 from agniya.hybrid.fast_ope import FastOPE
 
 FIXED_POINT_DECIMALS = 4
 PAILLIER_TYPES = {'Paillier-2048', 'OPE+Paillier'}
 GROUP_MAX_VALUES = 64  # GROUP BY copies are built for columns with at most this many distinct values
 ORDER_STATS = {'MIN': 0.0, 'MEDIAN': 0.5, 'MAX': 1.0}  # quantiles of a sorted (OPE+Paillier) column
+SPREAD = ('VARIANCE', 'STDDEV')  # sample (ddof=1), as pandas and SQL
 
 app = Flask(__name__)
 CORS(app, origins=os.environ.get('AGNIYA_CORS_ORIGINS', 'http://localhost:3000').split(','))
@@ -247,10 +250,41 @@ def _filtered_groups(ds, field, by, fc):
         keys = [w for w, _, _ in trip]
         offset, top = keys[0], max(keys[-1] - keys[0], 1)
         ope = FastOPE(secrets.token_bytes(32), in_range=ValueRange(0, top), out_range=ValueRange(0, 2 ** 64 - 1))
-        packed.update(ope=ope, ope_max=top, ope_offset=offset, fscale=fscale,
+        packed.update(ope=ope, ope_max=top, ope_offset=offset, fscale=fscale, rows=trip,
                       ope_tags=ope.encrypt_list([k - offset for k in keys]))
         cache[(by, fc)] = packed
     return cache[(by, fc)]
+
+
+def _squares(ds, field, how):
+    """(copy of `field` holding (x - c)^2, c) packed like the copy `how` names, for VARIANCE and STDDEV:
+    ('all',) the column itself, ('by', fc) its copy in fc order, ('group', g) and ('fgroup', g, fc) its
+    GROUP BY copies. Built on first use and kept, like _filtered_groups."""
+    col, df, db = ds['columns'][field], ds['df'], ds['db']
+    cache = col.setdefault('squares', {})
+    if how not in cache:
+        fx = lambda xs: [int(round(float(x) * col['scale'])) for x in xs]  # noqa: E731
+        labels = None
+        if how[0] == 'all':
+            xs = fx(df[field].dropna())
+            if 'ope' in col:
+                xs.sort()
+        elif how[0] == 'by':
+            rows, fs = df[[field, how[1]]].dropna(), ds['columns'][how[1]]['scale']
+            xs = [x for _, x in sorted((int(round(float(y) * fs)), int(round(float(x) * col['scale'])))
+                                       for x, y in zip(rows[field], rows[how[1]]))]  # as encrypt_dataset's pairs
+        elif how[0] == 'group':
+            rows = df[[field, how[1]]].dropna()
+            xs, labels = fx(rows[field]), list(rows[how[1]])
+        else:
+            trip = _filtered_groups(ds, field, how[1], how[2])['rows']
+            xs, labels = [a for _, a, _ in trip], [g for _, _, g in trip]
+        sq, c = squares(xs)
+        packed = (db.encrypt_column(sq) if labels is None else db.packer.encrypt_groups(sq, labels) if how[0] == 'group'
+                  else db.packer.encrypt_sorted_groups(sq, labels))
+        db.pool.close()
+        cache[how] = (packed, c)
+    return cache[how]
 
 
 @app.route('/api/query', methods=['POST'])
@@ -265,7 +299,7 @@ def execute_query():
 
     if not operation or not field or not filename:
         return jsonify({'error': 'Missing parameters'}), 400
-    if operation not in ('SUM', 'AVG', 'COUNT') and operation not in ORDER_STATS:
+    if operation not in ('SUM', 'AVG', 'COUNT') + SPREAD and operation not in ORDER_STATS:
         return jsonify({'error': f'Unsupported operation: {operation}'}), 400
     ds = encrypted_datasets.get(filename)
     if ds is None:
@@ -278,7 +312,12 @@ def execute_query():
     start = time.perf_counter()
     filtered = range_min not in (None, '') or range_max not in (None, '')
     group_by = data.get('group_by') or data.get('groupBy')
+    spread = operation in SPREAD
     response = {}
+
+    def finish(n, s1, s2, c):  # VARIANCE / STDDEV from SUM(x) and SUM((x - c)^2), fixed point
+        v = sample_variance(n, s1, s2, c, col['scale'])
+        return v if v is None or operation == 'VARIANCE' else v ** 0.5
 
     if operation in ORDER_STATS:
         if group_by or 'ope' not in col or fc != field:
@@ -331,17 +370,26 @@ def execute_query():
             plans = [range_plan(db.pub, p, lanes, packed['count'], i, j) if i < j else (None, []) for p in pages]
             sums = decrypt_sorted_groups(db.pub, db.priv, plans, packed)
             cts = [c for p in pages for c in p[i // lanes:(j - 1) // lanes + 1]] if i < j else []
+            if spread:
+                sq, shift = _squares(ds, field, ('fgroup', group_by, fc))
+                sums2 = decrypt_sorted_groups(db.pub, db.priv, [
+                    range_plan(db.pub, p, sq['lanes'], sq['count'], i, j) if i < j else (None, []) for p in group_pages(sq)], sq)
             response.update(filter_applied=True, filter_column=fc, range={'min': range_min, 'max': range_max},
                             records_before_filter=packed['count'], filter_selectivity=(j - i) / packed['count'])
         else:
             sums = db.packer.sum_groups(packed)
             cts = packed['ciphertexts']
+            if spread:
+                sq, shift = _squares(ds, field, ('group', group_by))
+                sums2 = db.packer.sum_groups(sq)
         sc = col['scale']
         groups = [{'group': g, 'sum': s / sc, 'count': c, 'avg': s / sc / c if c else 0} for g, (s, c) in sums.items()]
         for x in groups:
-            x['result'] = {'SUM': x['sum'], 'AVG': x['avg'], 'COUNT': x['count']}[operation]
+            x['result'] = (finish(x['count'], sums[x['group']][0], sums2[x['group']][0], shift) if spread
+                           else {'SUM': x['sum'], 'AVG': x['avg'], 'COUNT': x['count']}[operation])
         count = sum(c for _, c in sums.values())
         total_scaled = sum(s for s, _ in sums.values())
+        total2 = sum(s for s, _ in sums2.values()) if spread else 0
         pages = packed.get('pages', 1)
         per_page = f' per page of groups ({pages} pages)' if pages > 1 else ''
         response.update(group_by=group_by, groups=groups, pages=pages, security_note=(
@@ -364,6 +412,9 @@ def execute_query():
         count, s = j - i, packed['slots']
         cts = packed['ciphertexts'][i // s:(j - 1) // s + 1] if count else []
         total_scaled = db.packer.sum_range(packed, i, j) if operation != 'COUNT' else 0
+        if spread:
+            sq, shift = _squares(ds, field, ('all',) if fc == field else ('by', fc))
+            total2 = db.packer.sum_range(sq, i, j)
         response.update(filter_applied=True, filter_column=fc, range={'min': range_min, 'max': range_max},
                         records_before_filter=packed['count'],
                         filter_selectivity=count / max(packed['count'], 1),
@@ -373,14 +424,17 @@ def execute_query():
         cts = col['packed']['ciphertexts']
         count = col['packed']['count']
         total_scaled = db.sum_column(col['packed']) if operation != 'COUNT' else 0
+        if spread:
+            sq, shift = _squares(ds, field, ('all',))
+            total2 = db.sum_column(sq)
 
     total = total_scaled / col['scale'] if col['scale'] != 1 else total_scaled
-    result = {'SUM': total, 'AVG': (total / count) if count else 0, 'COUNT': count}[operation]
+    result = (finish(count, total_scaled, total2, shift) if spread else {'SUM': total, 'AVG': (total / count) if count else 0, 'COUNT': count}[operation])
     elapsed_ms = (time.perf_counter() - start) * 1000
 
     response.update({
         'success': True, 'operation': operation, 'field': field, 'column': field,
-        'result': float(result), 'time_ms': round(elapsed_ms, 2), 'query_time_ms': round(elapsed_ms, 2),
+        'result': None if result is None else float(result), 'time_ms': round(elapsed_ms, 2), 'query_time_ms': round(elapsed_ms, 2),
         'records_processed': count, 'ciphertexts_aggregated': len(cts) if operation != 'COUNT' or group_by else 0,
         'encrypted_computation': operation != 'COUNT' or bool(group_by),
         'encryption_proof': {

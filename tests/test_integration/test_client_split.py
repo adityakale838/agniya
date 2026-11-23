@@ -429,3 +429,79 @@ def test_wrong_quantile_answers_are_caught(setup, query, change):
     finally:
         c.post = transport
     assert query(c) == honest
+
+
+@pytest.fixture(scope="module")
+def spread(setup):
+    c, df = setup
+    c.upload("v_amount", df["amount"], decimals=4, squares=True)
+    c.upload("v_score", df["score"], decimals=2, range_filter=True, squares=True)
+    c.upload_by("v_amount", df["amount"], by="age", by_values=df["age"], decimals=4, squares=True)
+    c.upload_grouped("v_amount", df["amount"], by="region", by_values=df["region"], decimals=4, squares=True)
+    assert c.upload_grouped("v_amount", df["amount"], by="age", by_values=df["age"], decimals=4, where="score",
+                            where_values=df["score"], where_decimals=2, squares=True)["pages"] > 1
+    return c, df
+
+
+def _var_std(x):  # pandas, ddof=1; None where it gives NaN (fewer than 2 rows)
+    return [None if pd.isna(v) else pytest.approx(v, rel=1e-9, abs=1e-9) for v in (x.var(), x.std())]
+
+
+@pytest.mark.parametrize("col,lo,hi,by", [("v_amount", None, None, None), ("v_score", None, None, None),
+                                          ("v_score", -10.5, 120.25, None), ("v_score", 12.34, 12.34, None),
+                                          ("v_score", 400, 500, None), ("v_amount", 30, 40, "age"),
+                                          ("v_amount", None, 20, "age")])
+def test_variance_and_stddev_match_pandas(spread, col, lo, hi, by):
+    c, df = spread
+    x, f = df[col[2:]], df[by or col[2:]]
+    sel = x[(f >= (lo if lo is not None else -1e9)) & (f <= (hi if hi is not None else 1e9))]
+    r = c.query(col, lo, hi, by=by)
+    assert r["count"] == len(sel) and [r["var"], r["std"]] == _var_std(sel)
+    assert "var" not in c.query("amount")  # columns without squares: as before
+
+
+@pytest.mark.parametrize("by,lo,hi,where", [("region", None, None, None), ("age", 0, 99.5, "score"),
+                                            ("age", None, None, "score")])
+def test_group_variance_matches_pandas(spread, by, lo, hi, where):
+    c, df = spread
+    rows = df[list(dict.fromkeys(["amount", by] + ([where] if where else [])))].dropna()
+    if where:
+        w = rows[where]
+        rows = rows[(w >= (lo if lo is not None else -1e9)) & (w <= (hi if hi is not None else 1e9))]
+    want = rows.groupby(by)["amount"]
+    got = c.query_groups("v_amount", by, lo, hi, where=where)
+    assert set(got) == set(want.groups)
+    for label, x in want:
+        assert [got[label]["var"], got[label]["std"]] == _var_std(x)
+
+
+SQ = lambda c: c.query("v_score", -40, 300)  # noqa: E731
+
+
+@pytest.mark.parametrize("change", [
+    lambda c, b, r: transport("/api/v2/aggregate", {**b, "column": "v_score"}) if b["column"] == "v_score^2" else r,
+    lambda c, b, r: _times(r, c, _stored(b)[0]) if b["column"] == "v_score^2" else r,
+    lambda c, b, r: _later_cut(r, b) if b["column"] == "v_score^2" else r,
+])
+def test_wrong_square_answers_are_caught(spread, change):
+    c, _ = spread
+    honest = SQ(c)
+
+    def post(path, body):
+        r = transport(path, body)
+        return change(c, body, r) if path == "/api/v2/aggregate" else r
+    c.post = post
+    try:
+        with pytest.raises(IntegrityError):
+            SQ(c)
+    finally:
+        c.post = transport
+    assert SQ(c) == honest
+
+
+def test_variance_survives_the_key_file(spread, tmp_path):
+    c, _ = spread
+    c.save(str(tmp_path / "k"), "pw")
+    c2 = AgniyaClient.load(str(tmp_path / "k"), "pw", transport)
+    assert c2.query("v_score", -10.5, 120.25) == c.query("v_score", -10.5, 120.25)
+    assert c2.query_groups("v_amount", "age", 0, 99.5, where="score") == c.query_groups("v_amount", "age", 0, 99.5, where="score")

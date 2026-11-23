@@ -31,21 +31,22 @@ export class CryptoWorker {
 
   init(baseUrl: string, dataset: string) { return this.call<{ modulusBits: number }>('init', { baseUrl, dataset }); }
 
-  upload(column: string, values: number[], decimals: number, rangeFilter: boolean) {
-    return this.call<{ ciphertexts: number }>('upload', { column, values, decimals, rangeFilter });
+  /** squares: also a "column^2" copy, so query gives variance and std (likewise for the copies below). */
+  upload(column: string, values: number[], decimals: number, rangeFilter: boolean, squares = false) {
+    return this.call<{ ciphertexts: number }>('upload', { column, values, decimals, rangeFilter, squares });
   }
 
   /** Copy of `column` in `by` order for SUM(column) WHERE by in range; values[i], byValues[i] are one row. */
   uploadBy(column: string, values: Array<number | null>, by: string, byValues: Array<number | null>,
-           decimals: number, byDecimals: number) {
-    return this.call<{ ciphertexts: number }>('uploadBy', { column, values, by, byValues, decimals, byDecimals });
+           decimals: number, byDecimals: number, squares = false) {
+    return this.call<{ ciphertexts: number }>('uploadBy', { column, values, by, byValues, decimals, byDecimals, squares });
   }
 
   /** Copy of `column` packed by the labels in byValues (one per row) for GROUP BY `by`; with `where`,
    *  packed in whereValues order so queryGroups can also filter lo <= where <= hi. */
   uploadGrouped(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>, decimals: number,
-                where?: string, whereValues?: Array<number | null>, whereDecimals?: number) {
-    return this.call<{ ciphertexts: number; pages: number }>('uploadGrouped', { column, values, by, byValues, decimals, where, whereValues, whereDecimals });
+                where?: string, whereValues?: Array<number | null>, whereDecimals?: number, squares = false) {
+    return this.call<{ ciphertexts: number; pages: number }>('uploadGrouped', { column, values, by, byValues, decimals, where, whereValues, whereDecimals, squares });
   }
 
   queryGroups(column: string, by: string, lo?: number, hi?: number, where?: string) {

@@ -25,13 +25,14 @@ import {
 } from '@/components/ui/table';
 import Link from 'next/link';
 import { apiService, API_BASE_URL } from '@/lib/api';
-import { parseCsv } from '@/lib/agniya-browser';
+import { parseCsv, type Spread } from '@/lib/agniya-browser';
 import { CryptoWorker } from '@/lib/agniya-worker-client';
 
 const PAILLIER: string[] = ['Paillier-2048', 'OPE+Paillier'];
 type Aggregate = 'SUM' | 'AVG' | 'COUNT';  // GROUP BY and SUM paths: order statistics are routed before them
-type Operation = Aggregate | 'MIN' | 'MAX' | 'MEDIAN';
+type Operation = Aggregate | 'MIN' | 'MAX' | 'MEDIAN' | 'VARIANCE' | 'STDDEV';
 const ORDER_STATS: Partial<Record<Operation, number>> = { MIN: 0, MEDIAN: 0.5, MAX: 1 };  // quantile q
+const SPREAD: Operation[] = ['VARIANCE', 'STDDEV'];  // need a "^2" copy (sum of squares), built on first use
 const GROUP_MAX_VALUES = 64;  // as api/server_optimized.py: GROUP BY copies for columns with 2-64 distinct values
 
 /** {field: [group columns]} from stored column names, where "a#g" is a packed by g ("a#g|w" also filters on w). */
@@ -39,7 +40,7 @@ const groupsFromNames = (names: string[]): Record<string, string[]> => {
   const out: Record<string, string[]> = {};
   for (const n of names) {
     const i = n.indexOf('#');
-    if (i > 0 && !/[|@]/.test(n.slice(i))) (out[n.slice(0, i)] ??= []).push(n.slice(i + 1));  // "@p": later pages
+    if (i > 0 && !/[|@^]/.test(n.slice(i))) (out[n.slice(0, i)] ??= []).push(n.slice(i + 1));  // "@p": later pages, "^2": squares
   }
   return out;
 };
@@ -81,7 +82,7 @@ interface QueryResult {
   filter_applied?: boolean;
   filter_column?: string;
   group_by?: string;
-  groups?: Array<{ group: string | number; sum: number; count: number; avg: number; result: number }>;
+  groups?: Array<{ group: string | number; sum: number; count: number; avg: number; result: number | null }>;
   range?: { min: number | null; max: number | null };
   records_before_filter?: number;
   filter_selectivity?: number;
@@ -134,6 +135,7 @@ export default function Dashboard() {
   const csvRef = useRef<{ header: string[]; rows: string[][] } | null>(null);
   const workerRef = useRef<CryptoWorker | null>(null);
   const filteredCopies = useRef(new Set<string>());  // "a#g|w" copies the worker has (GROUP BY g WHERE w in range)
+  const squareCopies = useRef(new Set<string>());  // copies that also have "^2" (VARIANCE / STDDEV)
 
   const dropWorker = () => { workerRef.current?.terminate(); workerRef.current = null; };  // drops the key
   useEffect(() => () => workerRef.current?.terminate(), []);  // leaving the page drops the key too
@@ -171,7 +173,7 @@ export default function Dashboard() {
       dropWorker();
       workerRef.current = worker;
       // "a|b" = copy of a in b order, "a#g" = a packed by group g (Python client): not fields of their own
-      const restored: Field[] = info.columns.filter(c => !/[|#]/.test(c.name)).map(c => ({
+      const restored: Field[] = info.columns.filter(c => !/[|#^]/.test(c.name)).map(c => ({
         name: c.name, type: c.scale === 1 ? 'int' : 'float', encryption: c.rangeFilter ? 'OPE+Paillier' : 'Paillier-2048' }));
       // GROUP BY copies "a#g" count whole ciphertexts (padding included), not rows
       const records = Math.max(0, ...info.columns.filter(c => !/#[^|]*$/.test(c.name)).map(c => c.count));
@@ -181,7 +183,8 @@ export default function Dashboard() {
       setQueries([]);
       setSelectedField(restored[0]?.name ?? ''); setFilterBy(''); setGroupBy('');
       setGroupable(groupsFromNames(info.columns.map(c => c.name)));
-      filteredCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#.*\|/.test(n)));
+      filteredCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#.*\|/.test(n) && !n.endsWith('^2')));
+      squareCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.endsWith('^2')).map(n => n.slice(0, -2)));
       setKeyPassword(''); setRestoreFile(null);
       setActiveTab('query');
     } catch (err) {
@@ -201,6 +204,7 @@ export default function Dashboard() {
     setActiveTab('upload');
   };
 
+  const decimalsOf = (name: string) => (columnValues(name).every(Number.isInteger) ? 0 : 4);  // as encryptLocally
   const columnValues = (name: string): number[] => {
     const { header, rows } = csvRef.current!;
     const i = header.indexOf(name);
@@ -244,6 +248,7 @@ export default function Dashboard() {
     const worker = new CryptoWorker();
     workerRef.current = worker;
     filteredCopies.current = new Set();
+    squareCopies.current = new Set();
     await worker.init(API_BASE_URL, `${uploadData!.filename}-${crypto.randomUUID().slice(0, 8)}`);
     let ciphertexts = 0;
     const decimals: Record<string, number> = {};
@@ -285,23 +290,26 @@ export default function Dashboard() {
   const queryGroupsLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
     const worker = workerRef.current!, fc = filterBy || selectedField;
     const filtered = minVal !== undefined || maxVal !== undefined;
-    const copy = `${selectedField}#${activeGroupBy}|${fc}`;
-    if (filtered && !filteredCopies.current.has(copy)) {
-      // A copy packed in fc order, built on first use: one per field x group x filter up front would be too many.
-      if (!csvRef.current) throw new Error(`GROUP BY ${activeGroupBy} with a range on ${fc} needs the CSV: upload it and encrypt again`);
-      const dec = (n: string) => (columnValues(n).every(Number.isInteger) ? 0 : 4);
-      await worker.uploadGrouped(selectedField, rowValues(selectedField), activeGroupBy, rowLabels(activeGroupBy),
-                                 dec(selectedField), fc, rowValues(fc), dec(fc));
-      filteredCopies.current.add(copy);
+    const spread = SPREAD.includes(selectedOperation);
+    const copy = `${selectedField}#${activeGroupBy}` + (filtered ? `|${fc}` : '');
+    if (filtered ? !filteredCopies.current.has(copy) || (spread && !squareCopies.current.has(copy))
+                 : spread && !squareCopies.current.has(copy)) {
+      // A copy packed in fc order (and/or with squares), built on first use: one per field x group x filter up front would be too many.
+      if (!csvRef.current) throw new Error(`${filtered ? `GROUP BY ${activeGroupBy} with a range on ${fc}` : selectedOperation} needs the CSV: upload it and encrypt again`);
+      await worker.uploadGrouped(selectedField, rowValues(selectedField), activeGroupBy, rowLabels(activeGroupBy), decimalsOf(selectedField),
+                                 filtered ? fc : undefined, filtered ? rowValues(fc) : undefined, filtered ? decimalsOf(fc) : 0, spread);
+      if (filtered) filteredCopies.current.add(copy);
+      if (spread) squareCopies.current.add(copy);
     }
     const t0 = performance.now();
     const a = await worker.queryGroups(selectedField, activeGroupBy, minVal, maxVal, filtered ? fc : undefined);
-    const pick = (g: { sum: number; count: number; avg: number }) => ({ SUM: g.sum, AVG: g.avg, COUNT: g.count })[selectedOperation as Aggregate];
+    const pick = (g: Spread & { sum: number; count: number; avg: number }) =>
+      ({ SUM: g.sum, AVG: g.avg, COUNT: g.count, VARIANCE: g.variance ?? null, STDDEV: g.std ?? null })[selectedOperation as Aggregate | 'VARIANCE' | 'STDDEV'];
     const sum = a.groups.reduce((s, g) => s + g.sum, 0), count = a.groups.reduce((s, g) => s + g.count, 0);
     return {
       operation: selectedOperation, field: selectedField, column: selectedField, group_by: activeGroupBy,
       groups: a.groups.map(g => ({ ...g, result: pick(g) })),
-      result: pick({ sum, count, avg: count ? sum / count : 0 }),
+      result: spread ? null : pick({ sum, count, avg: count ? sum / count : 0 }),  // per group only
       time_ms: performance.now() - t0, records_processed: count, ciphertexts_aggregated: a.ciphertextsUsed,
       ...(filtered && { filter_applied: true, filter_column: fc, range: { min: minVal ?? null, max: maxVal ?? null },
                         records_before_filter: a.total, filter_selectivity: a.total ? count / a.total : 0 }),
@@ -340,15 +348,27 @@ export default function Dashboard() {
   };
 
   const queryLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
+    const fc = filterBy || selectedField, worker = workerRef.current!;
+    const copy = fc === selectedField ? selectedField : `${selectedField}|${fc}`;
+    if (SPREAD.includes(selectedOperation) && !squareCopies.current.has(copy)) {  // re-upload the copy with its "^2" copy
+      if (!csvRef.current) throw new Error(`${selectedOperation} needs the CSV: upload it and encrypt again`);
+      if (fc === selectedField) {
+        await worker.upload(selectedField, columnValues(selectedField), decimalsOf(selectedField),
+                            schema.find(f => f.name === selectedField)?.encryption === 'OPE+Paillier', true);
+      } else {
+        await worker.uploadBy(selectedField, rowValues(selectedField), fc, rowValues(fc), decimalsOf(selectedField), decimalsOf(fc), true);
+      }
+      squareCopies.current.add(copy);
+    }
     const t0 = performance.now();
-    const fc = filterBy || selectedField;
-    const a = await workerRef.current!.query(selectedField, minVal, maxVal, fc);
+    const a = await worker.query(selectedField, minVal, maxVal, fc);
     const time_ms = performance.now() - t0;
     const total = a.total;
     const filtered = minVal !== undefined || maxVal !== undefined;
     return {
       operation: selectedOperation, field: selectedField, column: selectedField, filter_column: fc,
-      result: { SUM: a.sum, AVG: a.avg, COUNT: a.count }[selectedOperation as Aggregate],
+      result: { SUM: a.sum, AVG: a.avg, COUNT: a.count, VARIANCE: a.variance ?? null, STDDEV: a.std ?? null }[
+        selectedOperation as Aggregate | 'VARIANCE' | 'STDDEV'],
       time_ms, records_processed: a.count, ciphertexts_aggregated: a.ciphertextsUsed,
       filter_applied: filtered, range: { min: minVal ?? null, max: maxVal ?? null },
       records_before_filter: total, filter_selectivity: total ? a.count / total : 0,
@@ -947,6 +967,12 @@ export default function Dashboard() {
                           <DropdownMenuItem onClick={() => setSelectedOperation('MEDIAN')}>
                             MEDIAN - Middle value (OPE+Paillier fields)
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSelectedOperation('VARIANCE')}>
+                            VARIANCE - Sample variance
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSelectedOperation('STDDEV')}>
+                            STDDEV - Sample standard deviation
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -1100,7 +1126,7 @@ export default function Dashboard() {
                                 {[...query.groups].sort((x, y) => String(x.group).localeCompare(String(y.group), undefined, { numeric: true })).map(g => (
                                   <tr key={String(g.group)} className="border-b border-primary/10 last:border-0">
                                     <td className="py-1 font-mono">{String(g.group)}</td>
-                                    <td className="py-1 text-right font-bold text-primary">{g.result.toLocaleString()}</td>
+                                    <td className="py-1 text-right font-bold text-primary">{g.result == null ? '—' : g.result.toLocaleString()}</td>
                                     <td className="py-1 text-right text-xs text-muted-foreground">{g.count} rows</td>
                                   </tr>
                                 ))}

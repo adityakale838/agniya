@@ -33,10 +33,10 @@ if (job.ope) {
 if (job.fixed) out.fixed = job.fixed.values.map(v => A.fixedPoint(v, job.fixed.scale).toString());
 if (job.client) {  // end to end against a running server
   const c = new A.BrowserClient(A.httpPost(job.client.url), job.client.dataset);
-  for (const col of job.client.columns) await c.upload(col.name, col.values, col.decimals, col.range);
-  for (const x of job.client.by ?? []) await c.uploadBy(x.column, x.values, x.by, x.by_values, x.decimals, x.by_decimals);
+  for (const col of job.client.columns) await c.upload(col.name, col.values, col.decimals, col.range, col.squares);
+  for (const x of job.client.by ?? []) await c.uploadBy(x.column, x.values, x.by, x.by_values, x.decimals, x.by_decimals, x.squares);
   for (const x of job.client.grouped ?? []) {
-    await c.uploadGrouped(x.column, x.values, x.by, x.by_values, x.decimals, x.where, x.where_values, x.where_decimals);
+    await c.uploadGrouped(x.column, x.values, x.by, x.by_values, x.decimals, x.where, x.where_values, x.where_decimals, x.squares);
   }
   out.answers = [];
   for (const [col, lo, hi, by] of job.client.queries) out.answers.push(await c.query(col, lo ?? undefined, hi ?? undefined, by));
@@ -52,6 +52,7 @@ if (job.client) {  // end to end against a running server
       const r = await post(path, body);
       if (mode === 'drop-cell' && path === '/api/v2/quantiles') r.cells.pop();
       if (path !== '/api/v2/aggregate') return r;
+      if (mode === 'squares-of-main' && body.column.endsWith('^2')) return post(path, { ...body, column: body.column.slice(0, -2) });
       if (mode === 'double' && r.product) r.product = (BigInt('0x' + r.product) ** 2n % c.pub.nSquared).toString(16);
       if (mode === 'no-witnesses') r.witnesses = [];
       if (mode === 'malformed') r.product = 'zz';

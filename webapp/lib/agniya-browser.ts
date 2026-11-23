@@ -562,16 +562,35 @@ interface ColumnMeta {
   lanes?: number; labels?: Array<string | number>;  // GROUP BY copies "a#g" (Python upload_grouped)
   pages?: number;  // ... stored as server columns "a#g", "a#g@1", ... when the groups need several plaintexts
   macKey?: Uint8Array;  // integrity tags (absent in key files from before them: answers are not checked)
+  shift?: bigint;  // "name^2" copies: they hold (x - shift)^2
 }
 
-export interface QueryAnswer {
+/** Sample variance (ddof=1, as pandas and SQL VARIANCE) of n fixed-point values from their sum s1 and
+ *  s2 = sum((x - c)^2), as agniya.core.batch_packing.sample_variance; null for fewer than 2 values. */
+export function sampleVariance(n: bigint, s1: bigint, s2: bigint, c: bigint, scale: number): number | null {
+  if (n < 2n) return null;
+  const d = s1 - n * c, num = n * s2 - d * d;
+  if (num < 0n) throw new Error('Integrity check failed: the sum of squares is below the square of the sum');
+  return Number(num) / Number(n * (n - 1n) * BigInt(scale) ** 2n);  // ponytail: two roundings, ~1e-16 relative
+}
+
+/** (x - c)^2 for each fixed-point x, and c (about the mean), as agniya.core.batch_packing.squares. */
+function squares(ints: bigint[]): [bigint[], bigint] {
+  const n = BigInt(Math.max(ints.length, 1)), t = ints.reduce((a, b) => a + b, 0n);
+  const c = t / n - (t % n < 0n ? 1n : 0n);  // floor, as Python //
+  return [ints.map(x => (x - c) ** 2n), c];
+}
+
+export interface Spread { variance?: number | null; std?: number | null }  // with a "^2" copy (squares)
+
+export interface QueryAnswer extends Spread {
   sum: number; count: number; avg: number;
   ciphertextsUsed: number; ciphertextBits: number[]; serverMs: number;
   verified: boolean;  // checked against the integrity tags of the uploaded data
 }
 
 export interface GroupAnswer {
-  groups: Array<{ group: string | number; sum: number; count: number; avg: number }>;
+  groups: Array<{ group: string | number; sum: number; count: number; avg: number } & Spread>;
   ciphertextsUsed: number; ciphertextBits: number[]; serverMs: number; pages: number;
   verified: boolean;
 }
@@ -613,18 +632,19 @@ export class BrowserClient {
     return this.post(path, { ...body, dataset: this.dataset, token: await (this.tokenP ??= datasetToken(this.priv, this.dataset)) });
   }
 
-  /** Encrypt here; the server receives n, packed ciphertexts, slots, count and (optionally) sorted OPE tags. */
-  async upload(column: string, values: number[], decimals: number, rangeFilter: boolean): Promise<{ ciphertexts: number }> {
+  /** Encrypt here; the server receives n, packed ciphertexts, slots, count and (optionally) sorted OPE tags.
+   *  With squares, also "column^2" for VARIANCE / STDDEV (as AgniyaClient.upload(..., squares=True)). */
+  async upload(column: string, values: number[], decimals: number, rangeFilter: boolean, squares = false): Promise<{ ciphertexts: number }> {
     const scale = 10 ** decimals;
     const ints = values.map(v => fixedPoint(v, scale));
     if (rangeFilter) ints.sort(cmp);  // sorted packing: a range is a run of slots
-    return this.put(column, ints, scale, rangeFilter ? ints : null, scale);
+    return this.put(column, ints, scale, rangeFilter ? ints : null, scale, squares);
   }
 
   /** For SUM(column) WHERE by in range: a copy of `column` packed in `by` order, stored as "column|by"
    *  (as AgniyaClient.upload_by). values[i] and byValues[i] are one row; rows missing either are skipped. */
   async uploadBy(column: string, values: Array<number | null>, by: string, byValues: Array<number | null>,
-                 decimals: number, byDecimals: number): Promise<{ ciphertexts: number }> {
+                 decimals: number, byDecimals: number, squares = false): Promise<{ ciphertexts: number }> {
     const scale = 10 ** decimals, fscale = 10 ** byDecimals;
     const rows: Array<[bigint, bigint]> = [];
     values.forEach((a, i) => {
@@ -632,7 +652,7 @@ export class BrowserClient {
       if (a !== null && b !== null && Number.isFinite(a) && Number.isFinite(b)) rows.push([fixedPoint(b, fscale), fixedPoint(a, scale)]);
     });
     rows.sort((x, y) => cmp(x[0], y[0]) || cmp(x[1], y[1]));
-    return this.put(`${column}|${by}`, rows.map(r => r[1]), scale, rows.map(r => r[0]), fscale);
+    return this.put(`${column}|${by}`, rows.map(r => r[1]), scale, rows.map(r => r[0]), fscale, squares);
   }
 
   /** For SUM / COUNT / AVG(column) GROUP BY by: `column` packed by label, stored as "column#by" (as
@@ -644,7 +664,7 @@ export class BrowserClient {
    *  queryGroups(..., lo, hi, where) groups only rows with lo <= where <= hi (as encrypt_sorted_groups). */
   async uploadGrouped(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>,
                       decimals: number, where?: string, whereValues?: Array<number | null>,
-                      whereDecimals = 0): Promise<{ ciphertexts: number; pages: number }> {
+                      whereDecimals = 0, sq = false): Promise<{ ciphertexts: number; pages: number }> {
     const scale = 10 ** decimals, fscale = 10 ** whereDecimals;
     const rows: Array<[bigint, bigint, string]> = [];  // [where key (0 without where), value, label]
     values.forEach((a, i) => {
@@ -655,82 +675,104 @@ export class BrowserClient {
     });
     if (!rows.length) throw new Error(where !== undefined ? `No rows have ${column}, ${by} and ${where}` : `No rows have both ${column} and ${by}`);
     const labels = [...new Set(rows.map(r => r[2]))].sort();
-    const offset = rows.reduce((m, r) => (r[1] < m ? r[1] : m), 0n);
-    const top = rows.reduce((m, r) => (r[1] > m ? r[1] : m), rows[0][1]) - offset;
-    const mac = new ColumnMac(this.pub.n);
-    const meta: ColumnMeta = { scale, slotBits: 0, slots: 0, offset, count: rows.length, labels, macKey: mac.key };
-    let plain: bigint[], body: Record<string, unknown>, m: number, pages: number;  // m = ciphertexts per page
-    let tags: string[] | null = null;
-    if (where === undefined) {
-      const byLabel = new Map(labels.map(l => [l, [] as bigint[]]));
-      for (const [, v, g] of rows) byLabel.get(g)!.push(v - offset);
-      const sizes = labels.map(l => byLabel.get(l)!.length);
-      const [bits, lanes, per] = groupLayout(this.pub, top, sizes, 1, RESERVE);
-      m = Math.max(1, Math.ceil(Math.max(...sizes) / lanes));
-      pages = Math.ceil(labels.length / per);
-      plain = Array(pages * m).fill(0n);
-      labels.forEach((l, gi) => {
-        const first = Math.floor(gi / per) * m, base = (gi % per) * (lanes + 1), vs = byLabel.get(l)!;
-        vs.forEach((v, r) => { plain[first + Math.floor(r / lanes)] |= v << BigInt((base + r % lanes) * bits); });
-        for (let c = 0; c < m; c++) {
-          plain[first + c] |= BigInt(Math.min(lanes, Math.max(0, vs.length - c * lanes))) << BigInt((base + lanes) * bits);
-        }
-      });
-      Object.assign(meta, { slotBits: bits, lanes, pages, slots: per * (lanes + 1) });
-      meta.count = meta.slots * m;  // count of each server column: every ciphertext whole
-      body = { slots: meta.slots, count: meta.count };
-    } else {
-      rows.sort((x, y) => cmp(x[0], y[0]) || cmp(x[1], y[1]));
-      const index = new Map(labels.map((l, i) => [l, i]));
-      const [bits, lanes, per] = groupLayout(this.pub, top + 1n, labels.map(() => rows.length), 3, RESERVE);  // product + <=2 edges
-      m = Math.ceil(rows.length / lanes);
-      pages = Math.ceil(labels.length / per);
-      plain = Array(pages * m).fill(0n);
-      rows.forEach(([, v, g], r) => {  // lane holds value - offset + 1, so 0 marks a lane of another group
-        const gi = index.get(g)!, base = (gi % per) * (lanes + 1);
-        plain[Math.floor(gi / per) * m + Math.floor(r / lanes)] +=
-          ((v - offset + 1n) << BigInt((base + r % lanes) * bits)) + (1n << BigInt((base + lanes) * bits));
-      });
-      const opeTags = await this.opeTags(rows.map(r => r[0]));
-      const { tags: t, ...ope } = opeTags;
-      tags = t;
-      Object.assign(meta, { slotBits: bits, lanes, pages, slots: per * (lanes + 1), ...ope });
-      if (fscale !== scale) meta.fscale = fscale;
-      body = { slots: lanes, count: rows.length, ope_tags: tags };  // the server cuts each page like a sorted column
-    }
     const name = `${column}#${by}` + (where !== undefined ? `|${where}` : '');
-    const tagged = await mac.tag(plain, pages);
-    let r: Record<string, unknown> = {};
-    for (let p = 0; p < pages; p++) {
-      r = await this.v2('/api/v2/columns', { dataset: this.dataset, column: name + (p ? `@${p}` : ''), n: hex(this.pub.n),
-        ...body, ...(tags && { tag_macs: await mac.tagMacs(p, tags, meta.lanes!) }),
-        ciphertexts: tagged.slice(p * m, (p + 1) * m).map(x => hex(encrypt(this.pub, this.priv, x))) });
+    let tags: string[] | null = null, ope = {};
+    if (where !== undefined) {
+      rows.sort((x, y) => cmp(x[0], y[0]) || cmp(x[1], y[1]));
+      ({ tags, ...ope } = await this.opeTags(rows.map(r => r[0])));
     }
-    this.columns.set(name, meta);
-    return { ...r, ciphertexts: plain.length, pages };
+    const jobs: Array<[string, bigint[], number, Partial<ColumnMeta>]> = [[name, rows.map(r => r[1]), scale, {}]];
+    if (sq) {
+      const [sqs, shift] = squares(jobs[0][1]);
+      jobs.push([`${name}^2`, sqs, scale * scale, { shift }]);
+    }
+    let out: { ciphertexts: number; pages: number } | null = null;
+    for (const [col, vals, sc, extra] of jobs) {
+      const offset = vals.reduce((m, v) => (v < m ? v : m), 0n);
+      const top = vals.reduce((m, v) => (v > m ? v : m), vals[0]) - offset;
+      const mac = new ColumnMac(this.pub.n);
+      const meta: ColumnMeta = { scale: sc, slotBits: 0, slots: 0, offset, count: rows.length, labels, macKey: mac.key, ...extra };
+      let plain: bigint[], body: Record<string, unknown>, m: number, pages: number;  // m = ciphertexts per page
+      if (where === undefined) {
+        const byLabel = new Map(labels.map(l => [l, [] as bigint[]]));
+        rows.forEach(([, , g], r) => byLabel.get(g)!.push(vals[r] - offset));
+        const sizes = labels.map(l => byLabel.get(l)!.length);
+        const [bits, lanes, per] = groupLayout(this.pub, top, sizes, 1, RESERVE);
+        m = Math.max(1, Math.ceil(Math.max(...sizes) / lanes));
+        pages = Math.ceil(labels.length / per);
+        plain = Array(pages * m).fill(0n);
+        labels.forEach((l, gi) => {
+          const first = Math.floor(gi / per) * m, base = (gi % per) * (lanes + 1), vs = byLabel.get(l)!;
+          vs.forEach((v, r) => { plain[first + Math.floor(r / lanes)] |= v << BigInt((base + r % lanes) * bits); });
+          for (let c = 0; c < m; c++) {
+            plain[first + c] |= BigInt(Math.min(lanes, Math.max(0, vs.length - c * lanes))) << BigInt((base + lanes) * bits);
+          }
+        });
+        Object.assign(meta, { slotBits: bits, lanes, pages, slots: per * (lanes + 1) });
+        meta.count = meta.slots * m;  // count of each server column: every ciphertext whole
+        body = { slots: meta.slots, count: meta.count };
+      } else {
+        const index = new Map(labels.map((l, i) => [l, i]));
+        const [bits, lanes, per] = groupLayout(this.pub, top + 1n, labels.map(() => rows.length), 3, RESERVE);  // product + <=2 edges
+        m = Math.ceil(rows.length / lanes);
+        pages = Math.ceil(labels.length / per);
+        plain = Array(pages * m).fill(0n);
+        rows.forEach(([, , g], r) => {  // lane holds value - offset + 1, so 0 marks a lane of another group
+          const gi = index.get(g)!, base = (gi % per) * (lanes + 1);
+          plain[Math.floor(gi / per) * m + Math.floor(r / lanes)] +=
+            ((vals[r] - offset + 1n) << BigInt((base + r % lanes) * bits)) + (1n << BigInt((base + lanes) * bits));
+        });
+        Object.assign(meta, { slotBits: bits, lanes, pages, slots: per * (lanes + 1), ...ope });
+        if (fscale !== sc) meta.fscale = fscale;
+        body = { slots: lanes, count: rows.length, ope_tags: tags };  // the server cuts each page like a sorted column
+      }
+      const tagged = await mac.tag(plain, pages);
+      for (let p = 0; p < pages; p++) {
+        await this.v2('/api/v2/columns', { column: col + (p ? `@${p}` : ''), n: hex(this.pub.n),
+          ...body, ...(tags && { tag_macs: await mac.tagMacs(p, tags, meta.lanes!) }),
+          ciphertexts: tagged.slice(p * m, (p + 1) * m).map(x => hex(encrypt(this.pub, this.priv, x))) });
+      }
+      this.columns.set(col, meta);
+      out ??= { ciphertexts: plain.length, pages };
+    }
+    return out!;
   }
 
   /** Every group's SUM, COUNT and AVG of `column` by `by` (needs uploadGrouped): one decryption here per page
    *  of groups. With `where`, only rows with lo <= where <= hi (plus up to two edge ciphertexts per page);
-   *  empty groups are left out. */
+   *  empty groups are left out. Copies uploaded with squares also give each group's variance and std. */
   async queryGroups(column: string, by: string, lo?: number, hi?: number, where?: string): Promise<GroupAnswer> {
     const name = `${column}#${by}` + (where ? `|${where}` : ''), m = this.columns.get(name);
     if (!m?.labels || !m.lanes) throw new Error(`No GROUP BY copy of ${column} by ${by}` + (where ? ` filtered by ${where}` : ''));
-    const body: Record<string, unknown> = { dataset: this.dataset, column: name };
     let rng: Record<string, string> | null = null;
     if (where) {
       rng = await this.rangeTags(m, lo, hi);
       if (!rng) return { groups: [], ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0, pages: m.pages ?? 1, verified: !!m.macKey };
-      Object.assign(body, rng);
     }
+    const parts = [await this.groupSums(name, rng)];
+    if (this.columns.has(`${name}^2`)) parts.push(await this.groupSums(`${name}^2`, rng));
+    const [a, sq] = parts;
+    const groups = m.labels.map((group, gi) => {
+      const n = Number(a.counts[gi]), sum = Number(a.totals[gi]) / m.scale;
+      const g = { group, sum, count: n, avg: n ? sum / n : 0 };
+      return sq && n ? { ...g, ...this.spread(name, a.counts[gi], a.totals[gi], sq.totals[gi], sq.counts[gi]) } : g;
+    }).filter(g => g.count > 0);
+    return { groups, ciphertextsUsed: parts.reduce((t, x) => t + x.ciphertextsUsed, 0), pages: a.pages,
+             serverMs: parts.reduce((t, x) => t + x.serverMs, 0), ciphertextBits: parts.flatMap(x => x.ciphertextBits),
+             verified: !!m.macKey };
+  }
+
+  /** Each group's fixed-point total and count in server column(s) `name` (one per page), checked. */
+  private async groupSums(name: string, rng: Record<string, string> | null) {
+    const m = this.columns.get(name)!;
     const rs = await Promise.all(Array.from({ length: m.pages ?? 1 }, (_, p) =>
-      this.v2('/api/v2/aggregate', { ...body, column: name + (p ? `@${p}` : '') }) as unknown as Promise<AggregateResponse>));
+      this.v2('/api/v2/aggregate', { ...(rng ?? {}), column: name + (p ? `@${p}` : '') }) as unknown as Promise<AggregateResponse>));
     const plain = new Map<bigint, bigint>();
     for (let p = 0; p < rs.length; p++) for (const [c, x] of await this.answer(m, name, rs[p], p, rng)) plain.set(c, x);
-    if (where && new Set(rs.map(r => String(r.rows))).size > 1) throw new Error(`Integrity check failed: the pages of ${name} were cut at different rows`);
-    const bits = BigInt(m.slotBits), mask = (1n << bits) - 1n, lanes = m.lanes, per = Math.floor(m.slots / (lanes + 1));
+    if (rng && new Set(rs.map(r => String(r.rows))).size > 1) throw new Error(`Integrity check failed: the pages of ${name} were cut at different rows`);
+    const bits = BigInt(m.slotBits), mask = (1n << bits) - 1n, lanes = m.lanes!, per = Math.floor(m.slots / (lanes + 1));
     const slot = (p: bigint, s: number) => (p >> (BigInt(s) * bits)) & mask;
-    const sums = m.labels.map(() => 0n), counts = m.labels.map(() => 0n), decrypted: bigint[] = [];
+    const sums = m.labels!.map(() => 0n), counts = m.labels!.map(() => 0n), decrypted: bigint[] = [];
     rs.forEach((r, page) => {
       const own = m.labels!.map((_, gi) => gi).filter(gi => Math.floor(gi / per) === page);
       const at = (gi: number) => (gi % per) * (lanes + 1);  // first slot of gi's block
@@ -741,7 +783,7 @@ export class BrowserClient {
           const c = slot(p, at(gi) + lanes);
           let s = 0n;
           for (let k = 0; k < lanes; k++) s += slot(p, at(gi) + k);
-          sums[gi] += where ? s - c : s;  // filtered copies hold value - offset + 1
+          sums[gi] += rng ? s - c : s;  // filtered copies hold value - offset + 1
           counts[gi] += c;
         }
       }
@@ -756,12 +798,16 @@ export class BrowserClient {
         }
       }
     });
-    const groups = m.labels.map((group, gi) => {
-      const sum = Number(sums[gi] + m.offset * counts[gi]) / m.scale, n = Number(counts[gi]);
-      return { group, sum, count: n, avg: n ? sum / n : 0 };
-    }).filter(g => g.count > 0);
-    return { groups, ciphertextsUsed: rs.reduce((n, r) => n + r.ciphertexts_used, 0), pages: rs.length,
-             serverMs: rs.reduce((t, r) => t + r.time_ms, 0), ciphertextBits: decrypted.map(bitLength), verified: !!m.macKey };
+    return { totals: sums.map((x, gi) => x + m.offset * counts[gi]), counts, pages: rs.length,
+             ciphertextsUsed: rs.reduce((n, r) => n + r.ciphertexts_used, 0), serverMs: rs.reduce((t, r) => t + r.time_ms, 0),
+             ciphertextBits: decrypted.map(bitLength) };
+  }
+
+  /** variance and std from the fixed-point sum of `name` and (sum, count) of its "name^2" copy. */
+  private spread(name: string, n: bigint, s1: bigint, s2: bigint, n2: bigint): Spread {
+    if (n2 !== n) throw new Error(`Integrity check failed: ${name} and ${name}^2 were summed over different rows`);
+    const m = this.columns.get(name)!, v = sampleVariance(n, s1, s2, this.columns.get(`${name}^2`)!.shift!, m.scale);
+    return { variance: v, std: v === null ? null : Math.sqrt(v) };
   }
 
   /** ciphertext -> plaintext for one /api/v2/aggregate answer (page `page` of column `name`), after checking it
@@ -813,65 +859,79 @@ export class BrowserClient {
     return { lo_tag: tags.get(a)!.toString(), hi_tag: tags.get(b)!.toString() };
   }
 
-  /** Pack `ints` (already in row order); `keys` (sorted, same length) become OPE tags when given. */
+  /** Pack `ints` (already in row order); `keys` (sorted, same length) become OPE tags when given. With sq,
+   *  also "column^2" holding (x - c)^2 in the same order with the same tags (as AgniyaClient._upload). */
   private async put(column: string, ints: bigint[], scale: number, keys: bigint[] | null,
-                    fscale: number): Promise<{ ciphertexts: number }> {
-    const mac = new ColumnMac(this.pub.n);
-    const meta: ColumnMeta = { scale, slotBits: 0, slots: 0, offset: 0n, count: ints.length, macKey: mac.key };
-    if (fscale !== scale) meta.fscale = fscale;
-    const body: Record<string, unknown> = { dataset: this.dataset, column, n: hex(this.pub.n) };
-    let tags: string[] | null = null;
-    if (keys && keys.length) {
-      const opeTags = await this.opeTags(keys);
-      const { tags: t, ...ope } = opeTags;
-      tags = t;
-      Object.assign(meta, ope);
-      body.ope_tags = tags;
+                    fscale: number, sq = false): Promise<{ ciphertexts: number }> {
+    let tags: string[] | null = null, ope = {};
+    if (keys && keys.length) ({ tags, ...ope } = await this.opeTags(keys));
+    const jobs: Array<[string, bigint[], number, Partial<ColumnMeta>]> = [[column, ints, scale, {}]];
+    if (sq && ints.length) {
+      const [sqs, shift] = squares(ints);
+      jobs.push([`${column}^2`, sqs, scale * scale, { shift }]);
     }
-    const offset = ints.reduce((m, v) => (v < m ? v : m), 0n);
-    const shifted = ints.map(v => v - offset);
-    const [bits, slots] = layout(this.pub, shifted.reduce((m, v) => (v > m ? v : m), 0n), shifted.length, RESERVE);
-    const plain: bigint[] = [];
-    for (let i = 0; i < shifted.length; i += slots) {
-      let acc = 0n;
-      shifted.slice(i, i + slots).forEach((v, j) => { acc |= v << BigInt(j * bits); });
-      plain.push(acc);
+    let ciphertexts = 0;
+    for (const [name, vals, sc, extra] of jobs) {
+      const mac = new ColumnMac(this.pub.n);
+      const offset = vals.reduce((m, v) => (v < m ? v : m), 0n);
+      const shifted = vals.map(v => v - offset);
+      const [bits, slots] = layout(this.pub, shifted.reduce((m, v) => (v > m ? v : m), 0n), shifted.length, RESERVE);
+      const plain: bigint[] = [];
+      for (let i = 0; i < shifted.length; i += slots) {
+        let acc = 0n;
+        shifted.slice(i, i + slots).forEach((v, j) => { acc |= v << BigInt(j * bits); });
+        plain.push(acc);
+      }
+      const cts = (await mac.tag(plain)).map(x => hex(encrypt(this.pub, this.priv, x)));
+      await this.v2('/api/v2/columns', { column: name, n: hex(this.pub.n), ciphertexts: cts, slots, count: vals.length,
+        ...(tags && { ope_tags: tags, tag_macs: await mac.tagMacs(0, tags, slots) }) });
+      this.columns.set(name, { scale: sc, slotBits: bits, slots, offset, count: vals.length, macKey: mac.key, ...ope, ...extra,
+                               ...(fscale !== sc && { fscale }) });
+      ciphertexts ||= cts.length;
     }
-    const cts = (await mac.tag(plain)).map(x => hex(encrypt(this.pub, this.priv, x)));
-    Object.assign(meta, { slotBits: bits, slots, offset });
-    Object.assign(body, { ciphertexts: cts, slots, count: ints.length });
-    if (tags) body.tag_macs = await mac.tagMacs(0, tags, slots);
-    const r = await this.v2('/api/v2/columns', body);
-    this.columns.set(column, meta);
-    return r as { ciphertexts: number };
+    return { ciphertexts };
   }
 
-  /** SUM / COUNT / AVG, optionally only rows with lo <= value <= hi (of `by`, default `column`); decrypted here. */
+  /** SUM / COUNT / AVG, optionally only rows with lo <= value <= hi (of `by`, default `column`); decrypted here.
+   *  Columns uploaded with squares also give variance and std (ddof=1, as pandas; null for fewer than 2 rows). */
   async query(column: string, lo?: number, hi?: number, by?: string): Promise<QueryAnswer> {
     const cross = by && by !== column;
     const m = this.columns.get(cross ? `${column}|${by}` : column);
     if (!m) throw new Error(cross ? `Filtering ${column} by ${by} needs ${by} encrypted as OPE+Paillier` : `${column} is not encrypted`);
     if (cross) column = `${column}|${by}`;
-    const body: Record<string, unknown> = { dataset: this.dataset, column };
-    const empty: QueryAnswer = { sum: 0, count: 0, avg: 0, ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0, verified: !!m.macKey };
+    const sq = this.columns.has(`${column}^2`);
+    const empty: QueryAnswer = { sum: 0, count: 0, avg: 0, ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0, verified: !!m.macKey,
+                                 ...(sq && { variance: null, std: null }) };
     let rng: Record<string, string> | null = null;
     if (lo !== undefined || hi !== undefined) {
       if (!m.ope) throw new Error(`Range filters need ${column} encrypted as OPE+Paillier`);
       rng = await this.rangeTags(m, lo, hi);
       if (!rng) return empty;
-      Object.assign(body, rng);
     }
-    const r = await this.v2('/api/v2/aggregate', body) as unknown as AggregateResponse;
-    const plain = await this.answer(m, column, r, 0, rng);
+    const parts = [await this.sum(column, rng)];
+    if (sq) parts.push(await this.sum(`${column}^2`, rng));
+    const [a, b] = parts;
+    const sum = Number(a.total) / m.scale;  // ponytail: exact while |total| < 2^53; BigInt division if columns get bigger
+    return {
+      sum, count: a.count, avg: a.count ? sum / a.count : 0,
+      ...(b && this.spread(column, BigInt(a.count), a.total, b.total, BigInt(b.count))),
+      ciphertextsUsed: parts.reduce((t, x) => t + x.ciphertextsUsed, 0), ciphertextBits: parts.flatMap(x => x.ciphertextBits),
+      serverMs: parts.reduce((t, x) => t + x.serverMs, 0), verified: !!m.macKey,
+    };
+  }
+
+  /** Fixed-point total and count of server column `name` over the rows `rng` selects (all without), checked. */
+  private async sum(name: string, rng: Record<string, string> | null) {
+    const m = this.columns.get(name)!;
+    const r = await this.v2('/api/v2/aggregate', { column: name, ...(rng ?? {}) }) as unknown as AggregateResponse;
+    const plain = await this.answer(m, name, r, 0, rng);
     const product = r.product ? unhex(r.product) : null;
     const edges = r.edges.map(
       e => [unhex(e.ciphertext), Math.max(0, e.first_slot), Math.min(e.end_slot, m.slots)] as [bigint, number, number]);
-    const total = decryptRange(this.priv, product, edges, m.slotBits, m.slots, c => plain.get(c)!) + m.offset * BigInt(r.count);
-    const sum = Number(total) / m.scale;  // ponytail: exact while |total| < 2^53; BigInt division if columns get bigger
     return {
-      sum, count: r.count, avg: r.count ? sum / r.count : 0, ciphertextsUsed: r.ciphertexts_used,
+      total: decryptRange(this.priv, product, edges, m.slotBits, m.slots, c => plain.get(c)!) + m.offset * BigInt(r.count),
+      count: r.count, ciphertextsUsed: r.ciphertexts_used, serverMs: r.time_ms,
       ciphertextBits: [product, ...edges.map(e => e[0])].filter((x): x is bigint => x !== null).map(bitLength),
-      serverMs: r.time_ms, verified: !!m.macKey,
     };
   }
 
@@ -932,6 +992,7 @@ export class BrowserClient {
       if (m.labels) Object.assign(c, { lanes: m.lanes, labels: m.labels, pages: m.pages ?? 1 });
       if (m.ope) Object.assign(c, { ope_key: b64(m.ope.key), ope_offset: safeNum(m.opeOffset!), ope_top: safeNum(m.opeTop!) });
       if (m.macKey) c.mac_key = b64(m.macKey);
+      if (m.shift !== undefined) c.shift = safeNum(m.shift);
       columns[name] = c;
     }
     const secret = JSON.stringify({ dataset: this.dataset, p: hex(this.priv.p), q: hex(this.priv.q), columns });
@@ -971,6 +1032,7 @@ export class BrowserClient {
         meta.pages = (c.pages as number | undefined) ?? 1;  // files from before pages: one
       }
       if (c.mac_key !== undefined) meta.macKey = unb64(c.mac_key as string);
+      if (c.shift !== undefined) meta.shift = BigInt(c.shift);
       if (c.ope_key !== undefined) {
         meta.ope = new OPE(unb64(c.ope_key as string), BigInt(c.ope_top));
         meta.opeOffset = BigInt(c.ope_offset);

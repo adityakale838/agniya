@@ -268,3 +268,44 @@ def test_key_file_python_to_browser(tmp_path, live_server):
     d["kdf"]["r"] = 4  # header is authenticated
     tampered = run_ts({"load": {"keyfile": json.dumps(d), "password": "pw", "url": live_server, "queries": []}}, tmp_path)
     assert tampered["error"] == "Wrong password or modified key file"
+
+
+def test_variance_browser_and_python_agree_with_pandas(tmp_path, live_server):
+    from agniya.client import AgniyaClient
+    df = pd.read_csv(os.path.join(ROOT, "data", "insurance_real.csv"))
+    df["charges"] = df["charges"].map(lambda v: int(round(v * 10**4)) / 10**4)  # as both clients store it
+    vals, ages, regions = df["charges"].tolist(), df["age"].tolist(), df["region"].tolist()
+    a = run_ts({"client": {"url": live_server, "dataset": "var-b2p", "save_password": "pw", "columns": [
+        {"name": "charges", "values": vals, "decimals": 4, "range": True, "squares": True}],
+        "by": [{"column": "charges", "values": vals, "by": "age", "by_values": ages, "decimals": 4, "by_decimals": 0,
+                "squares": True}],
+        "grouped": [{"column": "charges", "values": vals, "by": "region", "by_values": regions, "decimals": 4, "squares": True},
+                    {"column": "charges", "values": vals, "by": "age", "by_values": ages, "decimals": 4,  # pages
+                     "where": "bmi", "where_values": df["bmi"].tolist(), "where_decimals": 4, "squares": True}],
+        "queries": [["charges", None, None], ["charges", 5000, 20000.5], ["charges", 30, 45, "age"]],
+        "group_queries": [["charges", "region"], ["charges", "age", 25.5, 30.07, "bmi"]],
+        "tamper": [["squares-of-main", "query", "charges", 5000, 20000.5],
+                   ["squares-of-main", "groups", "charges", "region"]]}}, tmp_path)
+    c = df["charges"]
+    wants = [c, c[(c >= 5000) & (c <= 20000.5)], c[(df["age"] >= 30) & (df["age"] <= 45)]]
+    for ans, sel in zip(a["answers"], wants):
+        assert ans["count"] == len(sel)
+        assert ans["variance"] == pytest.approx(sel.var(), rel=1e-12) and ans["std"] == pytest.approx(sel.std(), rel=1e-12)
+    rows = df[(df["bmi"] >= 25.5) & (df["bmi"] <= 30.07)]
+    for got, want in [(a["groups"][0], df.groupby("region")["charges"]), (a["groups"][1], rows.groupby("age")["charges"])]:
+        g = {x["group"]: x for x in got["groups"]}
+        assert g.keys() == set(want.groups)
+        for label, x in want:
+            assert (g[label]["variance"] is None) if len(x) < 2 else g[label]["variance"] == pytest.approx(x.var(), rel=1e-12)
+    assert all(t.startswith("Integrity check failed") for t in a["tampered"]), a["tampered"]
+    path = tmp_path / "k"
+    path.write_text(a["keyfile"])
+    py = AgniyaClient.load(str(path), "pw", live_server)  # the browser's "^2" copies, read by Python
+    for ans, args in zip(a["answers"], [(None, None), (5000, 20000.5), (30, 45, "age")]):
+        r = py.query("charges", *args)
+        assert r["count"] == ans["count"] and r["var"] == pytest.approx(ans["variance"], rel=1e-12)
+    py.upload("bmi", df["bmi"], decimals=4, squares=True)  # and Python's, read by the browser
+    py.save(str(path), "pw")
+    b = run_ts({"load": {"keyfile": path.read_text(), "password": "pw", "url": live_server, "queries": [["bmi", None, None]]}},
+               tmp_path)
+    assert b["answers"][0]["std"] == pytest.approx(df["bmi"].std(), rel=1e-12)

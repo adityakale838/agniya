@@ -18,6 +18,8 @@ ciphertexts and are decrypted here.
                      where="age", where_values=ages)
     c.query_groups("charges", "region", lo=30, hi=45, where="age")  # ... WHERE 30 <= age <= 45 GROUP BY region
     c.quantiles("charges", [0, 0.5, 1])     # MIN, MEDIAN, MAX (range_filter=True columns; lo=, hi= too)
+    c.upload("charges", charges, decimals=4, range_filter=True, squares=True)
+    c.query("charges", lo=5000)              # ... plus 'var' and 'std' (VARIANCE / STDDEV, as pandas)
 
     c.save("claims.agniya-key", password)    # scrypt + AES-256-GCM; losing it loses the data
     c = AgniyaClient.load("claims.agniya-key", password, "http://127.0.0.1:5000")
@@ -32,6 +34,7 @@ this key's holder can upload to, query or delete the dataset.
 import base64
 import hashlib
 import json
+import math
 import os
 import secrets
 import urllib.error
@@ -43,7 +46,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pyope.ope import ValueRange
 
 from agniya.core.batch_packing import (BatchedAggregator, decrypt_groups, decrypt_range, decrypt_sorted_groups,
-                                       group_pages, quantile_rows, slot_value)
+                                       group_pages, quantile_rows, sample_variance, slot_value)
+from agniya.core.batch_packing import squares as _squares
 from agniya.core.integrity import ColumnMac, IntegrityError, range_cuts
 from agniya.core.paillier import decrypt_crt, generate_keypair, is_djn_admissible, keypair_from_primes
 from agniya.core.precomputation import RandomnessPool
@@ -93,7 +97,7 @@ class AgniyaClient:
         cols = {}
         for name, m in self.columns.items():
             c = {k: m[k] for k in ('scale', 'fscale', 'slot_bits', 'slots', 'offset', 'count', 'lanes', 'labels', 'pages',
-                                   'mac_key') if k in m}
+                                   'mac_key', 'shift') if k in m}
             if 'ope' in m:
                 c.update(ope_key=base64.b64encode(m['ope'].key).decode(), ope_offset=m['ope_offset'], ope_top=m['ope_top'])
             cols[name] = c
@@ -132,27 +136,30 @@ class AgniyaClient:
         return c
 
     def upload(self, column: str, values: Iterable[float], decimals: int = 0,
-               range_filter: bool = False) -> dict:
-        """Encrypt a numeric column here and store only ciphertexts (and OPE tags) on the server."""
+               range_filter: bool = False, squares: bool = False) -> dict:
+        """Encrypt a numeric column here and store only ciphertexts (and OPE tags) on the server.
+        squares=True also stores "column^2": (x - c)^2 per row (c, about the mean, stays here) with the
+        same OPE tags, so query() also returns VARIANCE and STDDEV. It costs a second upload of the column,
+        and its ciphertext count shows the server roughly how wide the spread is (the squares' bit length)."""
         scale = 10 ** decimals
         ints = [int(round(v * scale)) for v in values]  # fixed point; NaN raises
         if range_filter:
             ints.sort()  # sorted packing: a value range is a contiguous run of slots
-        return self._upload(column, ints, scale, ints if range_filter else None, scale)
+        return self._upload(column, ints, scale, ints if range_filter else None, scale, squares)
 
     def upload_by(self, column: str, values: Iterable[float], by: str, by_values: Iterable[float],
-                  decimals: int = 0, by_decimals: int = 0) -> dict:
+                  decimals: int = 0, by_decimals: int = 0, squares: bool = False) -> dict:
         """Store `column` packed in the order of `by` (one row each, same order), so that
         query(column, lo, hi, by=by) sums `column` over rows with lo <= by <= hi. Rows where either
         value is missing (None/NaN) are left out. The server gets OPE tags of `by` under a fresh key."""
         s, fs = 10 ** decimals, 10 ** by_decimals
         rows = sorted((int(round(b * fs)), int(round(a * s))) for a, b in zip(values, by_values, strict=True)
                       if a is not None and b is not None and a == a and b == b)  # x == x is False for NaN
-        return self._upload(f'{column}|{by}', [a for _, a in rows], s, [b for b, _ in rows], fs)
+        return self._upload(f'{column}|{by}', [a for _, a in rows], s, [b for b, _ in rows], fs, squares)
 
     def upload_grouped(self, column: str, values: Iterable[float], by: str, by_values: Iterable,
                        decimals: int = 0, where: Optional[str] = None, where_values: Optional[Iterable[float]] = None,
-                       where_decimals: int = 0) -> dict:
+                       where_decimals: int = 0, squares: bool = False) -> dict:
         """Store `column` packed by the labels in `by_values` (one per row, same order), so that
         query_groups(column, by) returns every group's sum and count from one decryption. Rows where
         either is missing are left out. The labels stay here; the server sees the number of slots
@@ -177,35 +184,44 @@ class AgniyaClient:
                           key=lambda r: r[:2])
             if not rows:
                 raise ValueError(f'No rows have {column}, {by} and {where}')
-        pool = RandomnessPool(self.pub, method=None if self._djn_ok else 'standard')
-        mac = ColumnMac(self.pub.n)
-        agg = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch, mac=mac)
-        tags = None
         if where is None:
-            packed = agg.encrypt_groups([a for a, _ in rows], [b for _, b in rows])
-            name = f'{column}#{by}'
-            body = {'slots': packed['slots'], 'count': packed['slots'] * (len(packed['ciphertexts']) // packed['pages'])}
-            meta = {'scale': s}
+            vals, labels, name, tags, base = [a for a, _ in rows], [b for _, b in rows], f'{column}#{by}', None, {}
         else:
-            packed = agg.encrypt_sorted_groups([a for _, a, _ in rows], [b for _, _, b in rows])
-            name = f'{column}#{by}|{where}'
-            tags, meta = self._ope_tags([w for w, _, _ in rows])
-            body = {'slots': packed['lanes'], 'count': len(rows), 'ope_tags': tags}  # cut like a sorted column
-            meta.update(fscale=fs)
+            vals, labels, name = [a for _, a, _ in rows], [b for _, _, b in rows], f'{column}#{by}|{where}'
+            tags, base = self._ope_tags([w for w, _, _ in rows])
+            base['fscale'] = fs
+        jobs = [(name, vals, s, {})]
+        if squares:
+            sq_ints, c = _squares(vals)
+            jobs.append((f'{name}^2', sq_ints, s * s, {'shift': c}))
+        pool = RandomnessPool(self.pub, method=None if self._djn_ok else 'standard')
+        out = None
+        for col, vs, sc, extra in jobs:
+            mac = ColumnMac(self.pub.n)
+            agg = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch, mac=mac)
+            if where is None:
+                packed = agg.encrypt_groups(vs, labels)
+                body = {'slots': packed['slots'], 'count': packed['slots'] * (len(packed['ciphertexts']) // packed['pages'])}
+            else:
+                packed = agg.encrypt_sorted_groups(vs, labels)
+                body = {'slots': packed['lanes'], 'count': len(rows), 'ope_tags': tags}  # cut like a sorted column
+            for p, cts in enumerate(group_pages(packed)):
+                r = self._v2('/api/v2/columns', {'dataset': self.dataset, 'column': col + (f'@{p}' if p else ''),
+                                                  'n': format(self.pub.n, 'x'), 'ciphertexts': [format(c, 'x') for c in cts],
+                                                  **body, **({'tag_macs': mac.tag_macs(p, tags, packed['lanes'])} if tags else {})})
+            self.columns[col] = {**base, **extra, 'scale': sc, 'count': body['count'],  # count: per server column
+                                 'mac_key': base64.b64encode(mac.key).decode(),
+                                 **{k: packed[k] for k in ('slot_bits', 'slots', 'lanes', 'labels', 'offset', 'pages')}}
+            out = out or {**r, 'column': name, 'ciphertexts': len(packed['ciphertexts']), 'pages': packed['pages']}
         pool.close()
-        meta.update(scale=s, count=body['count'], mac_key=base64.b64encode(mac.key).decode())  # count: per server column
-        for p, cts in enumerate(group_pages(packed)):
-            r = self._v2('/api/v2/columns', {'dataset': self.dataset, 'column': name + (f'@{p}' if p else ''),
-                                              'n': format(self.pub.n, 'x'), 'ciphertexts': [format(c, 'x') for c in cts],
-                                              **body, **({'tag_macs': mac.tag_macs(p, tags, packed['lanes'])} if tags else {})})
-        self.columns[name] = {**meta, **{k: packed[k] for k in ('slot_bits', 'slots', 'lanes', 'labels', 'offset', 'pages')}}
-        return {**r, 'column': name, 'ciphertexts': len(packed['ciphertexts']), 'pages': packed['pages']}
+        return out
 
     def query_groups(self, column: str, by: str, lo: Optional[float] = None, hi: Optional[float] = None,
                      where: Optional[str] = None) -> dict:
         """{label: {'sum', 'count', 'avg'}} for SUM / COUNT / AVG(column) GROUP BY by (needs upload_grouped).
         With where=, only rows with lo <= where <= hi (needs upload_grouped(..., where=where)); groups
-        with no such rows are left out, as in SQL."""
+        with no such rows are left out, as in SQL. Copies uploaded with squares=True also give each
+        group's 'var' and 'std' (None for a group of one row)."""
         name = f'{column}#{by}' + (f'|{where}' if where else '')
         if name not in self.columns:
             raise ValueError(f'Call upload_grouped({column!r}, ..., by={by!r}' + (f', where={where!r}' if where else '')
@@ -216,25 +232,43 @@ class AgniyaClient:
             rng = self._range_tags(m, lo, hi)
             if rng is None:
                 return {}
-        rs = [self._v2('/api/v2/aggregate', {**(rng or {}), 'dataset': self.dataset, 'column': name + (f'@{p}' if p else '')})
+        sums = self._group_sums(name, rng)
+        sq = self._group_sums(f'{name}^2', rng) if f'{name}^2' in self.columns else None
+        out = {}
+        for label, (total, count) in sums.items():
+            g = {'sum': total / m['scale'] if m['scale'] != 1 else total, 'count': count}
+            g['avg'] = g['sum'] / count if count else 0
+            if sq is not None:
+                g.update(self._spread(name, m, count, total, sq.get(label, (0, 0))))
+            out[label] = g
+        return out
+
+    def _group_sums(self, name: str, rng: Optional[dict]) -> Dict:
+        """{label: (sum, count)} in fixed point from server column(s) `name` (one per page), checked."""
+        m = self.columns[name]
+        rs = [self._v2('/api/v2/aggregate', {**(rng or {}), 'column': name + (f'@{p}' if p else '')})
               for p in range(m.get('pages', 1))]
         plain = {}
         for p, r in enumerate(rs):
             plain.update(self._answer(m, name, r, p, rng))
-        if where:
-            if len({tuple(r.get('rows', ())) for r in rs}) > 1:
-                raise IntegrityError(f'The pages of {name} were cut at different rows')
-            sums = decrypt_sorted_groups(self.pub, self.priv, [
-                (int(r['product'], 16) if r['product'] else None,
-                 [(int(e['ciphertext'], 16), max(0, e['first_slot']), min(e['end_slot'], m['lanes'])) for e in r['edges']])
-                for r in rs], m, dec=plain.__getitem__)
-        else:
-            sums = decrypt_groups(self.pub, self.priv, [int(r['product'], 16) for r in rs], m, dec=plain.__getitem__)
-        out = {}
-        for label, (total, count) in sums.items():
-            total = total / m['scale'] if m['scale'] != 1 else total
-            out[label] = {'sum': total, 'count': count, 'avg': total / count if count else 0}
-        return out
+        if not rng:
+            return decrypt_groups(self.pub, self.priv, [int(r['product'], 16) for r in rs], m, dec=plain.__getitem__)
+        if len({tuple(r.get('rows', ())) for r in rs}) > 1:
+            raise IntegrityError(f'The pages of {name} were cut at different rows')
+        return decrypt_sorted_groups(self.pub, self.priv, [
+            (int(r['product'], 16) if r['product'] else None,
+             [(int(e['ciphertext'], 16), max(0, e['first_slot']), min(e['end_slot'], m['lanes'])) for e in r['edges']])
+            for r in rs], m, dec=plain.__getitem__)
+
+    def _spread(self, name: str, m: dict, count: int, total: int, sq: tuple) -> dict:
+        """{'var', 'std'} from the fixed-point sum of `name` and (sum, count) of its "name^2" copy."""
+        if sq[1] != count:
+            raise IntegrityError(f'{name} and {name}^2 were summed over different rows')
+        try:
+            var = sample_variance(count, total, sq[0], self.columns[f'{name}^2']['shift'], m['scale'])
+        except ValueError:
+            raise IntegrityError(f"The server's answer for {name}^2 does not match {name}") from None
+        return {'var': var, 'std': None if var is None else math.sqrt(var)}
 
     def _ope_tags(self, keys: list):
         """OPE tags for sorted `keys` under a fresh key, and the column metadata to make more."""
@@ -251,26 +285,31 @@ class AgniyaClient:
             return None  # empty range: nothing to ask the server
         return {'lo_tag': m['ope'].encrypt(max(lo_s, 0)), 'hi_tag': m['ope'].encrypt(min(hi_s, m['ope_top']))}
 
-    def _upload(self, name: str, ints: list, scale: int, keys: Optional[list], fscale: int) -> dict:
-        """Pack and encrypt `ints`; `keys` (sorted, one per value) become the OPE tags."""
-        mac = ColumnMac(self.pub.n)
-        meta = {'scale': scale, 'fscale': fscale, 'mac_key': base64.b64encode(mac.key).decode()}
-        body = {'dataset': self.dataset, 'column': name, 'n': format(self.pub.n, 'x')}
-        if keys:
-            body['ope_tags'], ope_meta = self._ope_tags(keys)
-            meta.update(ope_meta)
+    def _upload(self, name: str, ints: list, scale: int, keys: Optional[list], fscale: int, sq: bool = False) -> dict:
+        """Pack and encrypt `ints`; `keys` (sorted, one per value) become the OPE tags. With sq, also
+        "name^2" holding (x - c)^2 in the same row order, with the same tags (so one range cuts both)."""
+        tags, ope_meta = self._ope_tags(keys) if keys else (None, {})
+        jobs = [(name, ints, scale, {})]
+        if sq and ints:
+            sq_ints, c = _squares(ints)
+            jobs.append((f'{name}^2', sq_ints, scale * scale, {'shift': c}))
         # DJN randomness only on admissible moduli (our keys); e.g. browser-made keys get textbook r^n
         pool = RandomnessPool(self.pub, method=None if self._djn_ok else 'standard')
-        packed = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch, mac=mac).encrypt_column(ints)
+        out = None
+        for col, vals, sc, extra in jobs:
+            mac = ColumnMac(self.pub.n)
+            packed = BatchedAggregator(self.pub, self.priv, encrypt_batch=pool.encrypt_batch, mac=mac).encrypt_column(vals)
+            body = {'dataset': self.dataset, 'column': col, 'n': format(self.pub.n, 'x'),
+                    'ciphertexts': [format(c, 'x') for c in packed['ciphertexts']],
+                    'slots': packed['slots'], 'count': packed['count']}
+            if tags:
+                body.update(ope_tags=tags, tag_macs=mac.tag_macs(0, tags, packed['slots']))
+            r = self._v2('/api/v2/columns', body)
+            out = out or r
+            self.columns[col] = {'scale': sc, 'fscale': fscale, 'mac_key': base64.b64encode(mac.key).decode(), **ope_meta,
+                                 **extra, **{k: packed[k] for k in ('slot_bits', 'slots', 'offset', 'count')}}
         pool.close()  # ponytail: new pool per column; keep one open if many big columns are uploaded
-        meta.update(slot_bits=packed['slot_bits'], slots=packed['slots'], offset=packed['offset'], count=packed['count'])
-        body.update(ciphertexts=[format(c, 'x') for c in packed['ciphertexts']],
-                    slots=packed['slots'], count=packed['count'])
-        if keys:
-            body['tag_macs'] = mac.tag_macs(0, body['ope_tags'], packed['slots'])
-        r = self._v2('/api/v2/columns', body)
-        self.columns[name] = meta
-        return r
+        return out
 
     def _answer(self, m: dict, name: str, r: dict, page: int, rng: Optional[dict]) -> Dict[int, int]:
         """{ciphertext: plaintext} for one /api/v2/aggregate answer (page `page` of column `name`), after
@@ -353,26 +392,36 @@ class AgniyaClient:
     def query(self, column: str, lo: Optional[float] = None, hi: Optional[float] = None,
               by: Optional[str] = None) -> dict:
         """SUM / COUNT / AVG over the column, optionally only rows with lo <= value <= hi, where
-        value is the column itself or, with by=, the column `by` (needs upload_by first)."""
+        value is the column itself or, with by=, the column `by` (needs upload_by first). Columns
+        uploaded with squares=True also give 'var' and 'std' (VARIANCE / STDDEV with ddof=1, as pandas;
+        None for fewer than 2 rows)."""
         name = f'{column}|{by}' if by and by != column else column
         if name not in self.columns:
             raise ValueError(f'Call upload_by({column!r}, ..., by={by!r}) first' if name != column
                              else f'Unknown column {column!r}')
         m = self.columns[name]
-        body, tags = {'dataset': self.dataset, 'column': name}, None
+        sq = self.columns.get(f'{name}^2')
+        tags = None
         if lo is not None or hi is not None:
             if 'ope' not in m:
                 raise ValueError(f'{column} was uploaded without range_filter=True')
             tags = self._range_tags(m, lo, hi)
             if tags is None:
-                return {'sum': 0, 'count': 0, 'avg': 0}
-            body.update(tags)
-        r = self._v2('/api/v2/aggregate', body)
+                return {'sum': 0, 'count': 0, 'avg': 0, **({'var': None, 'std': None} if sq else {})}
+        total, count = self._sum(name, tags)
+        s = total / m['scale'] if m['scale'] != 1 else total
+        out = {'sum': s, 'count': count, 'avg': s / count if count else 0}
+        if sq:
+            out.update(self._spread(name, m, count, total, self._sum(f'{name}^2', tags)))
+        return out
+
+    def _sum(self, name: str, tags: Optional[dict]) -> tuple:
+        """(fixed-point sum, count) of server column `name` over the rows `tags` selects (all without), checked."""
+        m = self.columns[name]
+        r = self._v2('/api/v2/aggregate', {'column': name, **(tags or {})})
         plain = self._answer(m, name, r, 0, tags)
         slots = m['slots']
         product = int(r['product'], 16) if r['product'] else None
         edges = [(int(e['ciphertext'], 16), max(0, e['first_slot']), min(e['end_slot'], slots)) for e in r['edges']]
-        total = decrypt_range(self.pub, self.priv, product, edges, m['slot_bits'], slots, dec=plain.__getitem__) \
-            + m['offset'] * r['count']
-        total = total / m['scale'] if m['scale'] != 1 else total
-        return {'sum': total, 'count': r['count'], 'avg': total / r['count'] if r['count'] else 0}
+        total = decrypt_range(self.pub, self.priv, product, edges, m['slot_bits'], slots, dec=plain.__getitem__)
+        return total + m['offset'] * r['count'], r['count']

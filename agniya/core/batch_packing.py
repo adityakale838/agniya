@@ -246,6 +246,25 @@ def slot_value(plaintext: int, k: int, slot_bits: int) -> int:
     return (plaintext >> (k * slot_bits)) & ((1 << slot_bits) - 1)
 
 
+def squares(ints: List[int]) -> Tuple[List[int], int]:
+    """(x - c)^2 for each fixed-point x, and c (about the mean, so the squares stay small). Their sum next
+    to SUM(x) gives VARIANCE and STDDEV (sample_variance); for any c, var(x) = var(x - c)."""
+    c = sum(ints) // max(len(ints), 1)
+    return [(x - c) ** 2 for x in ints], c
+
+
+def sample_variance(n: int, s1: int, s2: int, c: int, scale: int) -> Optional[float]:
+    """Sample variance (ddof=1, as pandas .var() and SQL VARIANCE) of n fixed-point values from their sum s1
+    and s2 = sum((x - c)^2), computed exactly; None for fewer than 2 values."""
+    if n < 2:
+        return None
+    d = s1 - n * c  # sum(x - c)
+    num = n * s2 - d * d
+    if num < 0:
+        raise ValueError('sum of squares below the square of the sum: not sums of the same values')
+    return num / (n * (n - 1) * scale * scale)  # int / int: correctly rounded
+
+
 def range_plan(public_key: PaillierPublicKey, ciphertexts: List[int], slots: int, count: int,
                i: int, j: int) -> Tuple[Optional[int], List[Tuple[int, int, int]]]:
     """Public-key half of a range SUM over packed values i..j-1 (0 <= i < j <= count).

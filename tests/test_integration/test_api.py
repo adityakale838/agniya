@@ -148,3 +148,28 @@ def test_min_max_median_need_a_sorted_column(client):
     assert "OPE+Paillier" in q(c, type="MIN", column="amount")["error"]  # packed unsorted
     assert "OPE+Paillier" in q(c, type="MAX", column="age", group_by="region")["error"]
     assert "OPE+Paillier" in q(c, type="MEDIAN", column="amount", filter_column="age", rangeMin=30)["error"]
+
+
+def _close(got, want):  # pandas gives NaN for fewer than 2 rows; we give None
+    return got is None if pd.isna(want) else got == pytest.approx(want, rel=1e-9, abs=1e-9)
+
+
+@pytest.mark.parametrize("field,by,fc,lo,hi", [("amount", None, None, None, None), ("visits", None, None, None, None),
+                                               ("score", None, "score", -10.5, 120.25), ("age", None, "age", 18, 18),
+                                               ("amount", None, "age", 30, 40), ("score", None, "age", 200, 300),
+                                               ("amount", "region", None, None, None), ("score", "age", None, None, None),
+                                               ("amount", "region", "age", 30, 40), ("amount", "age", "score", -10.5, 120.25)])
+def test_variance_and_stddev_match_pandas(client, field, by, fc, lo, hi):
+    c, df = client
+    rows = df[list(dict.fromkeys([field] + [x for x in (by, fc) if x]))].dropna()
+    if fc:
+        w = rows[fc]
+        rows = rows[(w >= (lo if lo is not None else -1e9)) & (w <= (hi if hi is not None else 1e9))]
+    for op, agg in [("VARIANCE", "var"), ("STDDEV", "std")]:
+        r = q(c, type=op, column=field, group_by=by, filter_column=fc, rangeMin=lo, rangeMax=hi)
+        assert _close(r["result"], getattr(rows[field], agg)()), (op, r)
+        assert r["records_processed"] == len(rows)
+        if by:
+            want = getattr(rows.groupby(by)[field], agg)()
+            got = {g["group"]: g["result"] for g in r["groups"]}
+            assert set(got) == set(want.index) and all(_close(got[k], v) for k, v in want.items()), (op, r)
