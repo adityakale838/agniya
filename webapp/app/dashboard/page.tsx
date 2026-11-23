@@ -29,6 +29,9 @@ import { parseCsv } from '@/lib/agniya-browser';
 import { CryptoWorker } from '@/lib/agniya-worker-client';
 
 const PAILLIER: string[] = ['Paillier-2048', 'OPE+Paillier'];
+type Aggregate = 'SUM' | 'AVG' | 'COUNT';  // GROUP BY and SUM paths: order statistics are routed before them
+type Operation = Aggregate | 'MIN' | 'MAX' | 'MEDIAN';
+const ORDER_STATS: Partial<Record<Operation, number>> = { MIN: 0, MEDIAN: 0.5, MAX: 1 };  // quantile q
 const GROUP_MAX_VALUES = 64;  // as api/server_optimized.py: GROUP BY copies for columns with 2-64 distinct values
 
 /** {field: [group columns]} from stored column names, where "a#g" is a packed by g ("a#g|w" also filters on w). */
@@ -67,7 +70,7 @@ interface EncryptionResult {
 interface QueryResult {
   operation?: string;
   field?: string;
-  result?: number;
+  result?: number | null;  // null: MIN / MAX / MEDIAN of no rows
   time_ms?: number;
   records_processed?: number;
   // New fields from advanced server
@@ -115,7 +118,7 @@ export default function Dashboard() {
   const [queries, setQueries] = useState<QueryResult[]>([]);
   const [isQuerying, setIsQuerying] = useState(false);
   const [selectedField, setSelectedField] = useState('');
-  const [selectedOperation, setSelectedOperation] = useState<'SUM' | 'AVG' | 'COUNT'>('SUM');
+  const [selectedOperation, setSelectedOperation] = useState<Operation>('SUM');
   const [rangeMin, setRangeMin] = useState('');
   const [rangeMax, setRangeMax] = useState('');
   const [filterBy, setFilterBy] = useState('');  // '' = filter on the queried field itself
@@ -293,7 +296,7 @@ export default function Dashboard() {
     }
     const t0 = performance.now();
     const a = await worker.queryGroups(selectedField, activeGroupBy, minVal, maxVal, filtered ? fc : undefined);
-    const pick = (g: { sum: number; count: number; avg: number }) => ({ SUM: g.sum, AVG: g.avg, COUNT: g.count })[selectedOperation];
+    const pick = (g: { sum: number; count: number; avg: number }) => ({ SUM: g.sum, AVG: g.avg, COUNT: g.count })[selectedOperation as Aggregate];
     const sum = a.groups.reduce((s, g) => s + g.sum, 0), count = a.groups.reduce((s, g) => s + g.count, 0);
     return {
       operation: selectedOperation, field: selectedField, column: selectedField, group_by: activeGroupBy,
@@ -316,6 +319,26 @@ export default function Dashboard() {
     };
   };
 
+  const queryOrderLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
+    const t0 = performance.now();
+    const a = await workerRef.current!.quantiles(selectedField, [ORDER_STATS[selectedOperation]!], minVal, maxVal);
+    const filtered = minVal !== undefined || maxVal !== undefined;
+    return {
+      operation: selectedOperation, field: selectedField, column: selectedField, filter_column: selectedField,
+      result: a.values[0], time_ms: performance.now() - t0, records_processed: a.count, ciphertexts_aggregated: a.ciphertextsUsed,
+      filter_applied: filtered, range: { min: minVal ?? null, max: maxVal ?? null },
+      records_before_filter: a.total, filter_selectivity: a.total ? a.count / a.total : 0,
+      security_note: `${selectedField} is packed in sorted order, so the server sent the ciphertext holding that row`
+        + ' (two for an interpolated median) and this browser decrypted it, which also shows the other values in it. OPE tags reveal the order of values.',
+      encryption_proof: {
+        ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits, modulus_n_bit_length: 2048,
+        verification: `Server picked ${a.ciphertextsUsed} ciphertext(s) by sorted position in ${a.serverMs} ms without any key; decrypted in this browser`
+          + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
+        computation_type: 'Order statistic on a sorted packed column',
+      },
+    };
+  };
+
   const queryLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
     const t0 = performance.now();
     const fc = filterBy || selectedField;
@@ -325,7 +348,7 @@ export default function Dashboard() {
     const filtered = minVal !== undefined || maxVal !== undefined;
     return {
       operation: selectedOperation, field: selectedField, column: selectedField, filter_column: fc,
-      result: { SUM: a.sum, AVG: a.avg, COUNT: a.count }[selectedOperation],
+      result: { SUM: a.sum, AVG: a.avg, COUNT: a.count }[selectedOperation as Aggregate],
       time_ms, records_processed: a.count, ciphertexts_aggregated: a.ciphertextsUsed,
       filter_applied: filtered, range: { min: minVal ?? null, max: maxVal ?? null },
       records_before_filter: total, filter_selectivity: total ? a.count / total : 0,
@@ -434,7 +457,15 @@ export default function Dashboard() {
         return;
       }
       
-      const response = activeGroupBy
+      const order = ORDER_STATS[selectedOperation] !== undefined;
+      if (order && (activeGroupBy || (filterBy && filterBy !== selectedField)
+                    || schema.find(f => f.name === selectedField)?.encryption !== 'OPE+Paillier')) {
+        setError(`${selectedOperation} needs an OPE+Paillier field, filtered by itself, without GROUP BY`);
+        setIsQuerying(false);
+        return;
+      }
+      const response = order && browserMode ? await queryOrderLocally(minVal, maxVal)
+        : activeGroupBy
         ? (browserMode ? await queryGroupsLocally(minVal, maxVal)
                        : await apiService.executeQuery(selectedOperation, selectedField, uploadData.filename,
                                                        minVal, maxVal, filterBy || undefined, activeGroupBy))
@@ -907,6 +938,15 @@ export default function Dashboard() {
                           <DropdownMenuItem onClick={() => setSelectedOperation('COUNT')}>
                             COUNT - Number of records
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSelectedOperation('MIN')}>
+                            MIN - Smallest value (OPE+Paillier fields)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSelectedOperation('MAX')}>
+                            MAX - Largest value (OPE+Paillier fields)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSelectedOperation('MEDIAN')}>
+                            MEDIAN - Middle value (OPE+Paillier fields)
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -1069,7 +1109,7 @@ export default function Dashboard() {
                             {query.security_note && <div className="text-xs text-muted-foreground mb-1">🔐 {query.security_note}</div>}
                           </>) : (
                           <div className="text-2xl font-bold text-primary">
-                            {(query.result || 0).toLocaleString()}
+                            {query.result == null ? '—' : query.result.toLocaleString()}
                           </div>
                           )}
                           <div className="text-xs text-muted-foreground mt-1">
@@ -1147,7 +1187,7 @@ export default function Dashboard() {
                         </TableCell>
                         <TableCell className="font-mono">{query.field || query.column}{query.group_by && ` by ${query.group_by}`}</TableCell>
                         <TableCell className="text-right font-bold text-primary text-lg">
-                          {(query.result || 0).toLocaleString()}
+                          {query.result == null ? '—' : query.result.toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right font-mono">{(query.time_ms || query.query_time_ms || 0).toFixed(2)}</TableCell>
                         <TableCell className="text-right">{query.records_processed || 0}</TableCell>

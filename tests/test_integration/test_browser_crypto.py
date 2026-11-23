@@ -19,6 +19,7 @@ from agniya.core.batch_packing import BatchedAggregator, group_layout
 from agniya.core.paillier import keypair_from_primes, decrypt_crt, encrypt
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
+QS = [0, 0.1, 0.5, 0.9, 1]  # MIN, deciles, MEDIAN, MAX
 sys.path.insert(0, os.path.join(ROOT, "api"))
 import server_optimized as srv  # noqa: E402
 
@@ -84,7 +85,9 @@ def test_browser_client_end_to_end(tmp_path):
                          "decimals": 4}],
             "queries": queries, "tamper": [["double", "query", "charges", None, None], ["double", "query", "age", 30, 45],
                                            ["no-witnesses", "query", "charges", 5000, 20000.5],
-                                           ["double", "groups", "charges", "age"], ["malformed", "query", "charges", None, None]]}},
+                                           ["double", "groups", "charges", "age"], ["malformed", "query", "charges", None, None],
+                                           ["drop-cell", "quantiles", "charges", [0.5], 5000, 20000.5]],
+            "quantiles": [[col, QS, lo, hi] for col, lo, hi in queries if col != "bmi"]}},
            tmp_path)
     finally:
         httpd.shutdown()
@@ -96,7 +99,13 @@ def test_browser_client_end_to_end(tmp_path):
         assert ans["count"] == len(sel), (col, lo, hi)
         assert ans["sum"] == pytest.approx(exact, abs=1e-9), (col, lo, hi)
         assert ans["verified"] is True
-    assert len(a["tampered"]) == 5 and all(m.startswith("Integrity check failed") for m in a["tampered"]), a["tampered"]
+    for (col, lo, hi), ans in zip([x for x in queries if x[0] != "bmi"], a["quantiles"]):
+        x = df[col].map(lambda v: int(round(float(v) * scale[col])) / scale[col])  # what the browser stores
+        sel = x[(x >= (lo if lo is not None else -1e18)) & (x <= (hi if hi is not None else 1e18))]
+        want = [None] * len(QS) if sel.empty else [sel.quantile(q) for q in QS]
+        assert ans["values"] == pytest.approx(want, abs=1e-9), (col, lo, hi)
+        assert ans["count"] == len(sel) and ans["verified"] is True
+    assert len(a["tampered"]) == 6 and all(m.startswith("Integrity check failed") for m in a["tampered"]), a["tampered"]
     stored = json.dumps({k: str(v) for k, v in srv.owner_datasets["browser-e2e"]["columns"]["charges"].items()})
     assert a["p"] not in stored and format(int(a["p"]), "x") not in stored
 

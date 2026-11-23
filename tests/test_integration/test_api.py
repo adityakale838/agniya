@@ -128,3 +128,23 @@ def test_ope_range_filter_floats(client, lo, hi):
     for op, want in [("SUM", sel.sum()), ("COUNT", len(sel))]:
         r = q(c, type=op, column="score", rangeMin=lo, rangeMax=hi)
         assert r["result"] == pytest.approx(want, abs=1e-6) and r["records_processed"] == len(sel)
+
+
+@pytest.mark.parametrize("col,lo,hi", [("age", None, None), ("score", None, None), ("age", 30, 40),
+                                       ("score", -10.5, 120.25), ("score", 12.34, 12.34), ("score", 400, 500)])
+def test_min_max_median_match_pandas(client, col, lo, hi):
+    c, df = client
+    x = df[col]
+    sel = x[(x >= (lo if lo is not None else -1e9)) & (x <= (hi if hi is not None else 1e9))]
+    for op, want in [("MIN", sel.min()), ("MAX", sel.max()), ("MEDIAN", sel.median())]:
+        r = q(c, type=op, column=col, rangeMin=lo, rangeMax=hi)
+        assert r["records_processed"] == len(sel), r
+        assert (r["result"] is None) if sel.empty else r["result"] == pytest.approx(want, abs=1e-9), (op, r)
+        assert len(r["encryption_proof"]["ciphertext_bit_lengths"]) <= 2
+
+
+def test_min_max_median_need_a_sorted_column(client):
+    c, _ = client
+    assert "OPE+Paillier" in q(c, type="MIN", column="amount")["error"]  # packed unsorted
+    assert "OPE+Paillier" in q(c, type="MAX", column="age", group_by="region")["error"]
+    assert "OPE+Paillier" in q(c, type="MEDIAN", column="amount", filter_column="age", rangeMin=30)["error"]

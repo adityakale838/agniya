@@ -1,5 +1,5 @@
 // Page-side handle to lib/agniya-worker.ts: one worker = one key pair. terminate() drops the key.
-import type { GroupAnswer, QueryAnswer } from './agniya-browser';
+import type { GroupAnswer, QuantileAnswer, QueryAnswer } from './agniya-browser';
 
 export type WorkerAnswer = QueryAnswer & { total: number };
 
@@ -54,6 +54,11 @@ export class CryptoWorker {
 
   query(column: string, lo?: number, hi?: number, by?: string) {
     return this.call<WorkerAnswer>('query', { column, lo, hi, by });
+  }
+
+  /** Quantiles (0 = MIN, 0.5 = MEDIAN, 1 = MAX) of an OPE+Paillier column, optionally lo <= value <= hi. */
+  quantiles(column: string, qs: number[], lo?: number, hi?: number) {
+    return this.call<QuantileAnswer & { total: number }>('quantiles', { column, qs, lo, hi });
   }
 
   /** Encrypted key file text (scrypt + AES-256-GCM, same format as the Python client). */

@@ -44,18 +44,21 @@ if (job.client) {  // end to end against a running server
   for (const [col, by, lo, hi, where] of job.client.group_queries ?? []) {
     out.groups.push(await c.queryGroups(col, by, lo ?? undefined, hi ?? undefined, where));
   }
+  out.quantiles = [];
+  for (const [col, qs, lo, hi] of job.client.quantiles ?? []) out.quantiles.push(await c.quantiles(col, qs, lo ?? undefined, hi ?? undefined));
   for (const [mode, kind, ...args] of job.client.tamper ?? []) {  // a server that changes its answers
     const post = c.post;
     c.post = async (path, body) => {
       const r = await post(path, body);
+      if (mode === 'drop-cell' && path === '/api/v2/quantiles') r.cells.pop();
       if (path !== '/api/v2/aggregate') return r;
       if (mode === 'double' && r.product) r.product = (BigInt('0x' + r.product) ** 2n % c.pub.nSquared).toString(16);
       if (mode === 'no-witnesses') r.witnesses = [];
       if (mode === 'malformed') r.product = 'zz';
       return r;
     };
-    (out.tampered ??= []).push(await (kind === 'groups' ? c.queryGroups(...args.map(x => x ?? undefined))
-      : c.query(...args.map(x => x ?? undefined))).then(() => 'accepted', e => e.message));
+    const run = { groups: c.queryGroups, quantiles: c.quantiles, query: c.query }[kind].bind(c);
+    (out.tampered ??= []).push(await run(...args.map(x => x ?? undefined)).then(() => 'accepted', e => e.message));
     c.post = post;
   }
   out.p = c.priv.p.toString();

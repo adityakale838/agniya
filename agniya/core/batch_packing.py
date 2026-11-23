@@ -8,6 +8,7 @@ Correctness requires headroom: each slot must hold the SUM of everything that
 lands in it, which BatchedAggregator.layout() guarantees.
 """
 
+import math
 from typing import Callable, Dict, List, Optional, Tuple
 from agniya.core.integrity import RESERVE, ColumnMac, range_cuts
 from agniya.core.paillier import (PaillierPublicKey, PaillierPrivateKey, encrypt, decrypt,
@@ -232,6 +233,17 @@ class BatchOperations:
             result = self.batch_add(result, ct)
         
         return result
+
+
+def quantile_rows(i: int, j: int, q: float) -> Tuple[int, int, float]:
+    """Quantile q of sorted rows i..j-1 (i < j) as pandas computes it (linear interpolation):
+    rows a <= b and frac, value = v[a] + (v[b] - v[a]) * frac. q = 0 is MIN, 0.5 MEDIAN, 1 MAX."""
+    pos = q * (j - i - 1)
+    return i + math.floor(pos), i + math.ceil(pos), pos - math.floor(pos)
+
+
+def slot_value(plaintext: int, k: int, slot_bits: int) -> int:
+    return (plaintext >> (k * slot_bits)) & ((1 << slot_bits) - 1)
 
 
 def range_plan(public_key: PaillierPublicKey, ciphertexts: List[int], slots: int, count: int,

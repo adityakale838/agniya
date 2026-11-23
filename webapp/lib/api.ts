@@ -29,7 +29,7 @@ export interface QueryResponse {
   success: boolean;
   operation: string;
   column: string;
-  result: number;
+  result: number | null;  // null: MIN / MAX / MEDIAN of no rows
   query_time_ms: number;
   records_processed: number;
   filter_applied?: boolean;

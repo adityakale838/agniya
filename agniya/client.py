@@ -17,6 +17,7 @@ ciphertexts and are decrypted here.
     c.upload_grouped("charges", charges, by="region", by_values=regions, decimals=4,
                      where="age", where_values=ages)
     c.query_groups("charges", "region", lo=30, hi=45, where="age")  # ... WHERE 30 <= age <= 45 GROUP BY region
+    c.quantiles("charges", [0, 0.5, 1])     # MIN, MEDIAN, MAX (range_filter=True columns; lo=, hi= too)
 
     c.save("claims.agniya-key", password)    # scrypt + AES-256-GCM; losing it loses the data
     c = AgniyaClient.load("claims.agniya-key", password, "http://127.0.0.1:5000")
@@ -24,7 +25,8 @@ ciphertexts and are decrypted here.
 The server is not trusted to see data, nor to compute correctly: every answer is checked here
 against integrity tags in the ciphertexts (agniya/core/integrity.py) and IntegrityError is raised
 when it is not the honest result over the uploaded data. Columns from key files made before
-integrity tags are not checked.
+integrity tags are not checked. Every call carries the dataset's token (dataset_token), so only
+this key's holder can upload to, query or delete the dataset.
 """
 
 import base64
@@ -34,13 +36,14 @@ import os
 import secrets
 import urllib.error
 import urllib.request
-from typing import Callable, Dict, Iterable, Optional, Union
+from typing import Callable, Dict, Iterable, List, Optional, Sequence, Union
 
 from cryptography.exceptions import InvalidTag
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from pyope.ope import ValueRange
 
-from agniya.core.batch_packing import BatchedAggregator, decrypt_groups, decrypt_range, decrypt_sorted_groups, group_pages
+from agniya.core.batch_packing import (BatchedAggregator, decrypt_groups, decrypt_range, decrypt_sorted_groups,
+                                       group_pages, quantile_rows, slot_value)
 from agniya.core.integrity import ColumnMac, IntegrityError, range_cuts
 from agniya.core.paillier import decrypt_crt, generate_keypair, is_djn_admissible, keypair_from_primes
 from agniya.core.precomputation import RandomnessPool
@@ -54,6 +57,12 @@ SCRYPT = {'n': 2 ** 17, 'r': 8, 'p': 1}  # 128 MiB, ~0.3-0.5 s per save/load: sl
 def _file_key(password: str, salt: bytes, kdf: dict) -> bytes:
     return hashlib.scrypt(password.encode(), salt=salt, n=kdf['n'], r=kdf['r'], p=kdf['p'],
                           maxmem=256 * 1024 * 1024, dklen=32)
+
+
+def dataset_token(priv, dataset: str) -> str:
+    """Access token for `dataset` on /api/v2. Only the private key's holder can compute it, so key files
+    need nothing new; the server stores its SHA-256. The browser client computes the same token."""
+    return hashlib.sha256(f'agniya/v2 dataset token\0{min(priv.p, priv.q)}\0{dataset}'.encode()).hexdigest()
 
 
 def http_transport(base_url: str) -> Transport:
@@ -186,7 +195,7 @@ class AgniyaClient:
         pool.close()
         meta.update(scale=s, count=body['count'], mac_key=base64.b64encode(mac.key).decode())  # count: per server column
         for p, cts in enumerate(group_pages(packed)):
-            r = self.post('/api/v2/columns', {'dataset': self.dataset, 'column': name + (f'@{p}' if p else ''),
+            r = self._v2('/api/v2/columns', {'dataset': self.dataset, 'column': name + (f'@{p}' if p else ''),
                                               'n': format(self.pub.n, 'x'), 'ciphertexts': [format(c, 'x') for c in cts],
                                               **body, **({'tag_macs': mac.tag_macs(p, tags, packed['lanes'])} if tags else {})})
         self.columns[name] = {**meta, **{k: packed[k] for k in ('slot_bits', 'slots', 'lanes', 'labels', 'offset', 'pages')}}
@@ -207,7 +216,7 @@ class AgniyaClient:
             rng = self._range_tags(m, lo, hi)
             if rng is None:
                 return {}
-        rs = [self.post('/api/v2/aggregate', {**(rng or {}), 'dataset': self.dataset, 'column': name + (f'@{p}' if p else '')})
+        rs = [self._v2('/api/v2/aggregate', {**(rng or {}), 'dataset': self.dataset, 'column': name + (f'@{p}' if p else '')})
               for p in range(m.get('pages', 1))]
         plain = {}
         for p, r in enumerate(rs):
@@ -259,7 +268,7 @@ class AgniyaClient:
                     slots=packed['slots'], count=packed['count'])
         if keys:
             body['tag_macs'] = mac.tag_macs(0, body['ope_tags'], packed['slots'])
-        r = self.post('/api/v2/columns', body)
+        r = self._v2('/api/v2/columns', body)
         self.columns[name] = meta
         return r
 
@@ -290,11 +299,56 @@ class AgniyaClient:
             raise IntegrityError(f"The server's answer for {name} does not match the uploaded data")
         return plain
 
+    def _v2(self, path: str, body: dict) -> dict:
+        """POST to /api/v2 with this dataset's name and token."""
+        return self.post(path, {**body, 'dataset': self.dataset, 'token': dataset_token(self.priv, self.dataset)})
+
     def delete(self) -> dict:
         """Delete this dataset from the server (all columns). The key stays usable for new uploads."""
-        r = self.post('/api/v2/delete', {'dataset': self.dataset, 'n': format(self.pub.n, 'x')})
+        r = self._v2('/api/v2/delete', {})
         self.columns.clear()
         return r
+
+    def quantiles(self, column: str, qs: Sequence[float], lo: Optional[float] = None,
+                  hi: Optional[float] = None) -> List[Optional[float]]:
+        """Quantiles of a column uploaded with range_filter=True, as pandas computes them (linear
+        interpolation): q = 0 is MIN, 0.5 MEDIAN, 1 MAX. Optionally only rows with lo <= value <= hi;
+        None for each q when no row is. The column is packed sorted, so each quantile reads one or two
+        rows: their ciphertexts are decrypted here (which shows this client the other values in them)."""
+        m = self.columns.get(column)
+        if m is None or 'ope' not in m or '|' in column or '#' in column:
+            raise ValueError(f'{column} was not uploaded with range_filter=True')
+        qs, rng = [float(q) for q in qs], None
+        if lo is not None or hi is not None:
+            rng = self._range_tags(m, lo, hi)
+            if rng is None:
+                return [None] * len(qs)
+        r = self._v2('/api/v2/quantiles', {'column': column, 'q': qs, **(rng or {})})
+        if rng and 'mac_key' in m and 'rows' not in r:
+            raise IntegrityError(f'The server sent no rows to check {column} against: update the server')
+        s = m['slots']
+        try:  # the cells must be exactly the rows these quantiles need, from the stored ciphertexts
+            i, j = (int(r['rows'][0]), int(r['rows'][1])) if rng else (0, m['count'])
+            want = sorted({x for q in qs for x in quantile_rows(i, j, q)[:2]}) if i < j else []
+            cells = {int(c['row']): int(c['ciphertext'], 16) for c in r['cells']}
+            plain = {ct: decrypt_crt(self.pub, self.priv, ct) for ct in set(cells.values())}
+            ok = r['count'] == j - i and sorted(cells) == want and 0 <= i <= j <= m['count']
+            if ok and 'mac_key' in m:
+                mac = ColumnMac(self.pub.n, base64.b64decode(m['mac_key']))
+                ok = (all(mac.check(plain[cells[x]], 0, x // s, 1) for x in want)
+                      and (not rng or mac.check_cut(0, s, m['count'], i, j, r['witnesses'], rng['lo_tag'], rng['hi_tag'])))
+        except (KeyError, TypeError, ValueError, IndexError):
+            ok = False
+        if not ok:
+            raise IntegrityError(f"The server's answer for {column} does not match the uploaded data")
+        if i == j:
+            return [None] * len(qs)
+        value = {x: slot_value(plain[cells[x]], x % s, m['slot_bits']) + m['offset'] for x in want}
+        out = []
+        for q in qs:
+            a, b, frac = quantile_rows(i, j, q)
+            out.append((value[a] + (value[b] - value[a]) * frac) / m['scale'])
+        return out
 
     def query(self, column: str, lo: Optional[float] = None, hi: Optional[float] = None,
               by: Optional[str] = None) -> dict:
@@ -313,7 +367,7 @@ class AgniyaClient:
             if tags is None:
                 return {'sum': 0, 'count': 0, 'avg': 0}
             body.update(tags)
-        r = self.post('/api/v2/aggregate', body)
+        r = self._v2('/api/v2/aggregate', body)
         plain = self._answer(m, name, r, 0, tags)
         slots = m['slots']
         product = int(r['product'], 16) if r['product'] else None

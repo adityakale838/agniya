@@ -2,7 +2,7 @@
  * Web Worker that owns the BrowserClient: key generation, encryption, OPE tagging, the
  * /api/v2 calls and decryption all run here, off the page's main thread. The private key
  * and OPE keys exist only in this worker; the page sees query answers.
- * Message protocol: { id, op: 'init' | 'load' | 'upload' | 'uploadBy' | 'uploadGrouped' | 'save' | 'query' | 'queryGroups', args } -> { id, result } | { id, error }.
+ * Message protocol: { id, op: 'init' | 'load' | 'upload' | 'uploadBy' | 'uploadGrouped' | 'save' | 'query' | 'queryGroups' | 'quantiles', args } -> { id, result } | { id, error }.
  */
 import { BrowserClient, httpPost } from './agniya-browser';
 
@@ -37,6 +37,10 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; args: Record<s
       const answer = await client.queryGroups(args.column as string, args.by as string, args.lo as number | undefined,
                                               args.hi as number | undefined, where);
       result = { ...answer, total: client.columns.get(name)?.count ?? 0 };
+    } else if (op === 'quantiles') {
+      const column = args.column as string;
+      const answer = await client.quantiles(column, args.qs as number[], args.lo as number | undefined, args.hi as number | undefined);
+      result = { ...answer, total: client.columns.get(column)!.count };
     } else if (op === 'save') {
       result = { text: await client.saveKeyFile(args.password as string), dataset: client.dataset };
     } else if (op === 'query') {

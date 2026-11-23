@@ -284,6 +284,13 @@ export function rangeCuts(slots: number, count: number, i: number, j: number): [
   return [full, edges];
 }
 
+/** Quantile q of sorted rows i..j-1 (i < j) as pandas computes it (as Python quantile_rows): rows a <= b and
+ *  frac, value = v[a] + (v[b] - v[a]) * frac. q = 0 is MIN, 0.5 MEDIAN, 1 MAX. */
+export function quantileRows(i: number, j: number, q: number): [number, number, number] {
+  const pos = q * (j - i - 1);
+  return [i + Math.floor(pos), i + Math.ceil(pos), pos - Math.floor(pos)];
+}
+
 // ---------------------------------------------------------------- OPE (port of pyope 0.2.2)
 class NeedMoreCoins extends Error {}
 
@@ -524,6 +531,18 @@ interface AggregateResponse {
   edges: Array<{ ciphertext: string; first_slot: number; end_slot: number }>;
   rows?: [number, number]; witnesses?: Witness[];
 }
+interface QuantilesResponse {
+  count: number; time_ms: number; cells: Array<{ row: number; ciphertext: string }>;
+  rows?: [number, number]; witnesses?: Witness[];
+}
+
+/** Access token for a dataset on /api/v2 (as agniya.client.dataset_token): only the private key's holder
+ *  can compute it; the server keeps its SHA-256. */
+export async function datasetToken(priv: PrivateKey, dataset: string): Promise<string> {
+  const p = priv.p < priv.q ? priv.p : priv.q;
+  const d = await webcrypto.subtle.digest('SHA-256', new TextEncoder().encode(`agniya/v2 dataset token\0${p}\0${dataset}`));
+  return [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
 
 export function httpPost(baseUrl: string): Post {
   return async (path, body) => {
@@ -557,6 +576,11 @@ export interface GroupAnswer {
   verified: boolean;
 }
 
+export interface QuantileAnswer {
+  values: Array<number | null>;  // one per q; null when no row is in range
+  count: number; ciphertextsUsed: number; ciphertextBits: number[]; serverMs: number; verified: boolean;
+}
+
 /** int(round(v * scale)) exactly as Python: round half to even. Data with one more decimal than the
  *  scale (e.g. 12268.63225 at 4 decimals) hits exact .5 often, where Math.round would round up. */
 export function fixedPoint(v: number, scale: number): bigint {
@@ -580,6 +604,13 @@ export class BrowserClient {
     this.dataset = dataset;
     this.pub = keys.pub;
     this.priv = keys.priv;
+  }
+
+  private tokenP?: Promise<string>;
+
+  /** POST to /api/v2 with this dataset's name and token (as AgniyaClient._v2). */
+  private async v2(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.post(path, { ...body, dataset: this.dataset, token: await (this.tokenP ??= datasetToken(this.priv, this.dataset)) });
   }
 
   /** Encrypt here; the server receives n, packed ciphertexts, slots, count and (optionally) sorted OPE tags. */
@@ -671,7 +702,7 @@ export class BrowserClient {
     const tagged = await mac.tag(plain, pages);
     let r: Record<string, unknown> = {};
     for (let p = 0; p < pages; p++) {
-      r = await this.post('/api/v2/columns', { dataset: this.dataset, column: name + (p ? `@${p}` : ''), n: hex(this.pub.n),
+      r = await this.v2('/api/v2/columns', { dataset: this.dataset, column: name + (p ? `@${p}` : ''), n: hex(this.pub.n),
         ...body, ...(tags && { tag_macs: await mac.tagMacs(p, tags, meta.lanes!) }),
         ciphertexts: tagged.slice(p * m, (p + 1) * m).map(x => hex(encrypt(this.pub, this.priv, x))) });
     }
@@ -693,7 +724,7 @@ export class BrowserClient {
       Object.assign(body, rng);
     }
     const rs = await Promise.all(Array.from({ length: m.pages ?? 1 }, (_, p) =>
-      this.post('/api/v2/aggregate', { ...body, column: name + (p ? `@${p}` : '') }) as unknown as Promise<AggregateResponse>));
+      this.v2('/api/v2/aggregate', { ...body, column: name + (p ? `@${p}` : '') }) as unknown as Promise<AggregateResponse>));
     const plain = new Map<bigint, bigint>();
     for (let p = 0; p < rs.length; p++) for (const [c, x] of await this.answer(m, name, rs[p], p, rng)) plain.set(c, x);
     if (where && new Set(rs.map(r => String(r.rows))).size > 1) throw new Error(`Integrity check failed: the pages of ${name} were cut at different rows`);
@@ -810,7 +841,7 @@ export class BrowserClient {
     Object.assign(meta, { slotBits: bits, slots, offset });
     Object.assign(body, { ciphertexts: cts, slots, count: ints.length });
     if (tags) body.tag_macs = await mac.tagMacs(0, tags, slots);
-    const r = await this.post('/api/v2/columns', body);
+    const r = await this.v2('/api/v2/columns', body);
     this.columns.set(column, meta);
     return r as { ciphertexts: number };
   }
@@ -830,7 +861,7 @@ export class BrowserClient {
       if (!rng) return empty;
       Object.assign(body, rng);
     }
-    const r = await this.post('/api/v2/aggregate', body) as unknown as AggregateResponse;
+    const r = await this.v2('/api/v2/aggregate', body) as unknown as AggregateResponse;
     const plain = await this.answer(m, column, r, 0, rng);
     const product = r.product ? unhex(r.product) : null;
     const edges = r.edges.map(
@@ -841,6 +872,51 @@ export class BrowserClient {
       sum, count: r.count, avg: r.count ? sum / r.count : 0, ciphertextsUsed: r.ciphertexts_used,
       ciphertextBits: [product, ...edges.map(e => e[0])].filter((x): x is bigint => x !== null).map(bitLength),
       serverMs: r.time_ms, verified: !!m.macKey,
+    };
+  }
+
+  /** Quantiles of a column uploaded with rangeFilter, as pandas computes them (as AgniyaClient.quantiles):
+   *  q = 0 is MIN, 0.5 MEDIAN, 1 MAX; optionally only rows with lo <= value <= hi. The column is packed sorted,
+   *  so each quantile reads one or two rows, whose ciphertexts are decrypted and checked here. */
+  async quantiles(column: string, qs: number[], lo?: number, hi?: number): Promise<QuantileAnswer> {
+    const m = this.columns.get(column);
+    if (!m?.ope || m.lanes || /[|#]/.test(column)) throw new Error(`${column} is not encrypted as OPE+Paillier (sorted)`);
+    const none = (count: number): QuantileAnswer =>
+      ({ values: qs.map(() => null), count, ciphertextsUsed: 0, ciphertextBits: [], serverMs: 0, verified: !!m.macKey });
+    let rng: Record<string, string> | null = null;
+    if (lo !== undefined || hi !== undefined) {
+      rng = await this.rangeTags(m, lo, hi);
+      if (!rng) return none(0);
+    }
+    const r = await this.v2('/api/v2/quantiles', { column, q: qs, ...(rng ?? {}) }) as unknown as QuantilesResponse;
+    if (rng && m.macKey && !r.rows) {
+      throw new Error(`Integrity check failed: the server sent no rows to check ${column} against; update the server`);
+    }
+    const s = m.slots, plain = new Map<bigint, bigint>(), cells = new Map<number, bigint>();
+    let ok = false, i = 0, j = 0;
+    try {  // the cells must be exactly the rows these quantiles need, from the stored ciphertexts
+      [i, j] = rng ? [Number(r.rows![0]), Number(r.rows![1])] : [0, m.count];
+      const want = i < j ? [...new Set(qs.flatMap(q => quantileRows(i, j, q).slice(0, 2)))].sort((a, b) => a - b) : [];
+      for (const c of r.cells) cells.set(Number(c.row), unhex(c.ciphertext));
+      for (const ct of cells.values()) if (!plain.has(ct)) plain.set(ct, decrypt(this.priv, ct));
+      const got = [...cells.keys()].sort((a, b) => a - b);
+      ok = r.count === j - i && 0 <= i && i <= j && j <= m.count && got.length === want.length && got.every((x, k) => x === want[k]);
+      if (ok && m.macKey) {
+        const mac = new ColumnMac(this.pub.n, m.macKey);
+        for (const x of want) if (ok) ok = await mac.check(plain.get(cells.get(x)!)!, 0, Math.floor(x / s), 1);
+        if (ok && rng) ok = await mac.checkCut(0, s, m.count, i, j, r.witnesses!, BigInt(rng.lo_tag), BigInt(rng.hi_tag));
+      }
+    } catch {
+      ok = false;
+    }
+    if (!ok) throw new Error(`Integrity check failed: the server's answer for ${column} does not match the uploaded data`);
+    if (i === j) return none(0);
+    const bits = BigInt(m.slotBits), mask = (1n << bits) - 1n;
+    const value = (x: number) => Number(((plain.get(cells.get(x)!)! >> (BigInt(x % s) * bits)) & mask) + m.offset);
+    const cts = [...new Set(cells.values())];
+    return {
+      values: qs.map(q => { const [a, b, f] = quantileRows(i, j, q); return (value(a) + (value(b) - value(a)) * f) / m.scale; }),
+      count: j - i, ciphertextsUsed: cts.length, ciphertextBits: cts.map(bitLength), serverMs: r.time_ms, verified: !!m.macKey,
     };
   }
 

@@ -6,20 +6,24 @@ What it does, precisely:
 - /api/encrypt  : encrypts every Paillier column with fresh randomness (packed: many
                   values per ciphertext). 'OPE+Paillier' columns are packed in sorted
                   order and get one OPE tag per row, so a range is a run of slots
-- /api/query    : SUM / AVG / COUNT computed by multiplying ciphertexts, then ONE decryption
+- /api/query    : SUM / AVG / COUNT computed by multiplying ciphertexts, then ONE decryption;
+                  MIN / MAX / MEDIAN on OPE+Paillier columns (sorted: one ciphertext each)
 
 Two trust models:
 - /api/upload, /api/encrypt, /api/query (dashboard demo): this process receives the plaintext
   CSV and generates and holds the private key in memory. It is the data owner.
-- /api/v2/columns, /api/v2/aggregate (use agniya.client.AgniyaClient): the client keeps the
-  private key and the OPE keys. This process only ever sees the public modulus n, packed
+- /api/v2/columns, /aggregate, /quantiles, /delete (use agniya.client.AgniyaClient): the client
+  keeps the private key and the OPE keys. This process only ever sees the public modulus n, packed
   ciphertexts, values per ciphertext, row counts and sorted OPE tags, and returns ciphertexts.
-  It is honest-but-curious: nothing here protects the integrity of results.
+  The client checks every answer (agniya/core/integrity.py). Every call needs the dataset's
+  token (derived from the private key by the client); only its SHA-256 is stored here.
   Its columns persist in SQLite at AGNIYA_STORE (default api/agniya_store.sqlite3) and are
   reloaded at start-up. The demo datasets are NOT persisted: they include the private key.
 Decimal columns are stored as fixed-point integers with FIXED_POINT_DECIMALS digits.
 """
 
+import hashlib
+import hmac
 import os
 import sys
 import time
@@ -37,13 +41,14 @@ from werkzeug.utils import secure_filename
 from pyope.ope import ValueRange
 
 from agniya.core.ultimate_system import UltimateOptimizedDatabase
-from agniya.core.paillier import MIN_KEY_BITS, PaillierPublicKey, generate_keypair
-from agniya.core.batch_packing import decrypt_sorted_groups, group_pages, range_plan
+from agniya.core.paillier import MIN_KEY_BITS, PaillierPublicKey, decrypt_crt, generate_keypair
+from agniya.core.batch_packing import decrypt_sorted_groups, group_pages, quantile_rows, range_plan, slot_value
 from agniya.hybrid.fast_ope import FastOPE
 
 FIXED_POINT_DECIMALS = 4
 PAILLIER_TYPES = {'Paillier-2048', 'OPE+Paillier'}
 GROUP_MAX_VALUES = 64  # GROUP BY copies are built for columns with at most this many distinct values
+ORDER_STATS = {'MIN': 0.0, 'MEDIAN': 0.5, 'MAX': 1.0}  # quantiles of a sorted (OPE+Paillier) column
 
 app = Flask(__name__)
 CORS(app, origins=os.environ.get('AGNIYA_CORS_ORIGINS', 'http://localhost:3000').split(','))
@@ -260,7 +265,7 @@ def execute_query():
 
     if not operation or not field or not filename:
         return jsonify({'error': 'Missing parameters'}), 400
-    if operation not in ('SUM', 'AVG', 'COUNT'):
+    if operation not in ('SUM', 'AVG', 'COUNT') and operation not in ORDER_STATS:
         return jsonify({'error': f'Unsupported operation: {operation}'}), 400
     ds = encrypted_datasets.get(filename)
     if ds is None:
@@ -274,6 +279,41 @@ def execute_query():
     filtered = range_min not in (None, '') or range_max not in (None, '')
     group_by = data.get('group_by') or data.get('groupBy')
     response = {}
+
+    if operation in ORDER_STATS:
+        if group_by or 'ope' not in col or fc != field:
+            return jsonify({'error': f'{operation} needs an OPE+Paillier field (sorted), filtered by itself, '
+                                     'without GROUP BY'}), 400
+        packed, s = col['packed'], col['packed']['slots']
+        i, j = (_tag_range(col['ope_tags'], col['ope'], col['ope_max'], col['scale'], col['offset'], range_min, range_max)
+                if filtered else (0, packed['count']))
+        result, cts = None, []
+        if i < j:
+            a, b, frac = quantile_rows(i, j, ORDER_STATS[operation])
+            cts = list(dict.fromkeys(packed['ciphertexts'][r // s] for r in (a, b)))
+            plain = {c: decrypt_crt(db.pub, db.priv, c) for c in cts}
+            va, vb = (slot_value(plain[packed['ciphertexts'][r // s]], r % s, packed['slot_bits']) + packed['offset']
+                      for r in (a, b))
+            result = (va + (vb - va) * frac) / col['scale']
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+        return jsonify({
+            'success': True, 'operation': operation, 'field': field, 'column': field, 'result': result,
+            'time_ms': elapsed_ms, 'query_time_ms': elapsed_ms, 'records_processed': j - i,
+            'ciphertexts_aggregated': len(cts), 'encrypted_computation': True,
+            **({'filter_applied': True, 'filter_column': fc, 'range': {'min': range_min, 'max': range_max},
+                'records_before_filter': packed['count'], 'filter_selectivity': (j - i) / max(packed['count'], 1)}
+               if filtered else {}),
+            'security_note': 'The column is packed in sorted order, so this is one row (two for an interpolated '
+                             'median): its ciphertext was decrypted on its own, which shows the key holder the '
+                             'other values in that ciphertext. OPE tags reveal the order of values.',
+            'encryption_proof': {
+                'ciphertext_bit_lengths': [c.bit_length() for c in cts],
+                'modulus_n_bit_length': db.public_key.n.bit_length(),
+                'verification': f'{len(cts)} packed ciphertext(s) picked by sorted position and decrypted; no other '
+                                'ciphertext was decrypted',
+                'computation_type': 'Order statistic on a sorted packed column',
+            },
+        })
 
     if group_by:
         packed = col['groups'].get(group_by)
@@ -377,7 +417,28 @@ def _store():
                 'count INTEGER, cts BLOB, tags BLOB, macs BLOB, PRIMARY KEY (dataset, name))')
     if 'macs' not in [r[1] for r in con.execute('PRAGMA table_info(columns)')]:  # stores from before tag MACs
         con.execute('ALTER TABLE columns ADD COLUMN macs BLOB')
+    con.execute('CREATE TABLE IF NOT EXISTS owners (dataset TEXT PRIMARY KEY, token_hash TEXT)')
     return con
+
+
+def _token_hash(d):
+    t = d.get('token')
+    return hashlib.sha256(t.encode()).hexdigest() if isinstance(t, str) and len(t) >= 32 else None
+
+
+def _deny(name, d):
+    """None when request body d carries dataset name's token, else an error response. A dataset
+    stored before tokens existed is claimed by the first token sent for it."""
+    h, ds = _token_hash(d), owner_datasets[name]
+    if h is None:
+        return jsonify({'error': 'This dataset needs its token (sent by AgniyaClient and the dashboard)'}), 401
+    if ds.get('token_hash') is None:
+        with closing(_store()) as con, con:
+            con.execute('INSERT OR REPLACE INTO owners VALUES (?, ?)', (name, h))
+        ds['token_hash'] = h
+    elif not hmac.compare_digest(h, ds['token_hash']):
+        return jsonify({'error': 'Wrong token for this dataset'}), 403
+    return None
 
 
 def _pack(xs, width):
@@ -403,6 +464,9 @@ def load_store():
             ds['columns'][name] = {'cts': _unpack(cts, (pub.n_squared.bit_length() + 7) // 8), 'slots': slots,
                                    'count': count, 'tags': _unpack(tags, TAG_BYTES) if tags is not None else None,
                                    'macs': _unpack(macs, MAC_BYTES) if macs is not None else None}
+        for dataset, h in con.execute('SELECT dataset, token_hash FROM owners'):
+            if dataset in owner_datasets:
+                owner_datasets[dataset]['token_hash'] = h
 
 
 def _hex_ints(xs, bound, what):
@@ -436,9 +500,15 @@ def v2_store_column():
                 raise ValueError('tag_macs must be one 16-byte hex MAC per ciphertext, with ope_tags')
     except (KeyError, TypeError, ValueError) as e:
         return jsonify({'error': f'Bad column upload: {e}'}), 400
-    ds = owner_datasets.get(name)
-    if ds is not None and ds['pub'].n != n:
-        return jsonify({'error': f'Dataset {name} uses a different public key'}), 409
+    ds, h = owner_datasets.get(name), _token_hash(d)
+    if ds is None and h is None:
+        return jsonify({'error': 'A new dataset needs a token (sent by AgniyaClient and the dashboard)'}), 401
+    if ds is not None:
+        denied = _deny(name, d)
+        if denied:
+            return denied
+        if ds['pub'].n != n:
+            return jsonify({'error': f'Dataset {name} uses a different public key'}), 409
     pub = ds['pub'] if ds else _public_key(n)
     cts_blob = _pack(cts, (pub.n_squared.bit_length() + 7) // 8)
     tags_blob = _pack(tags, TAG_BYTES) if tags is not None else None
@@ -451,7 +521,9 @@ def v2_store_column():
                                      '(AGNIYA_STORE_MAX_MB); delete a dataset first'}), 507
         con.execute('INSERT OR REPLACE INTO columns (dataset, name, n, slots, count, cts, tags, macs) '
                     'VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (name, column, format(n, 'x'), slots, count, cts_blob, tags_blob, macs_blob))
-    ds = owner_datasets.setdefault(name, {'pub': pub, 'columns': {}})
+        if ds is None:
+            con.execute('INSERT OR REPLACE INTO owners VALUES (?, ?)', (name, h))
+    ds = owner_datasets.setdefault(name, {'pub': pub, 'columns': {}, 'token_hash': h})
     ds['columns'][column] = {'cts': cts, 'slots': slots, 'count': count, 'tags': tags, 'macs': macs}
     return jsonify({'success': True, 'dataset': name, 'column': column, 'ciphertexts': len(cts),
                     'count': count, 'range_filterable': tags is not None})
@@ -459,23 +531,80 @@ def v2_store_column():
 
 @app.route('/api/v2/delete', methods=['POST'])
 def v2_delete_dataset():
-    """Delete a dataset (all its columns) from memory and the store. The caller must send the
-    dataset's modulus n, the same ownership check as uploads (the API has no authentication)."""
+    """Delete a dataset (all its columns) from memory and the store; needs the dataset's token."""
     d = request.json or {}
     name = d.get('dataset')
     ds = owner_datasets.get(name)
     if ds is None:
         return jsonify({'error': 'Unknown dataset'}), 404
-    try:
-        n = int(str(d.get('n')), 16)
-    except ValueError:
-        return jsonify({'error': 'n must be hex'}), 400
-    if n != ds['pub'].n:
-        return jsonify({'error': 'n does not match this dataset'}), 403
+    denied = _deny(name, d)
+    if denied:
+        return denied
     with closing(_store()) as con, con:
         con.execute('DELETE FROM columns WHERE dataset = ?', (name,))
+        con.execute('DELETE FROM owners WHERE dataset = ?', (name,))
     del owner_datasets[name]
     return jsonify({'success': True, 'dataset': name, 'columns_deleted': len(ds['columns'])})
+
+
+def _v2_column(d):
+    """(dataset, column, error response) for body d, checking the dataset's token."""
+    ds = owner_datasets.get(d.get('dataset'))
+    col = ds['columns'].get(d.get('column')) if ds else None
+    if col is None:
+        return None, None, (jsonify({'error': 'Unknown dataset or column'}), 404)
+    return ds, col, _deny(d['dataset'], d)
+
+
+def _v2_rows(col, d):
+    """(i, j, witnesses, error response): rows i..j-1 have OPE tags in [lo_tag, hi_tag] (all rows without
+    them); witnesses are the ciphertexts around both ends with their tags and the client's MACs."""
+    i, j = 0, col['count']
+    ranged = d.get('lo_tag') is not None or d.get('hi_tag') is not None
+    if ranged:
+        if col['tags'] is None:
+            return 0, 0, [], (jsonify({'error': 'Column was uploaded without OPE tags'}), 400)
+        try:
+            if d.get('lo_tag') is not None:
+                i = bisect_left(col['tags'], int(d['lo_tag']))
+            if d.get('hi_tag') is not None:
+                j = max(i, bisect_right(col['tags'], int(d['hi_tag'])))
+        except (TypeError, ValueError):
+            return 0, 0, [], (jsonify({'error': 'Tags must be integers'}), 400)
+    s, witnesses = col['slots'], []
+    if ranged and col.get('macs'):
+        for c in sorted({r // s for r in (i - 1, i, j - 1, j) if 0 <= r < col['count']}):
+            witnesses.append({'index': c, 'tags': [str(t) for t in col['tags'][c * s:(c + 1) * s]],
+                              'mac': format(col['macs'][c], '032x')})
+    return i, j, witnesses, None
+
+
+@app.route('/api/v2/quantiles', methods=['POST'])
+def v2_quantiles():
+    """MIN / MAX / MEDIAN / any quantile of a sorted (OPE-tagged) column, optionally over rows with tags in
+    [lo_tag, hi_tag]: for each q in `q` the stored ciphertexts of rows a and b of quantile_rows (pandas'
+    linear interpolation). The client decrypts them, checks their integrity tags and reads one slot each."""
+    d = request.json or {}
+    _, col, err = _v2_column(d)
+    if err:
+        return err
+    if col['tags'] is None:
+        return jsonify({'error': 'Quantiles need a column uploaded with range_filter=True (sorted)'}), 400
+    try:
+        qs = [float(q) for q in d['q']]
+        if not 0 < len(qs) <= 101 or any(not 0 <= q <= 1 for q in qs):
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'error': 'q must be 1-101 numbers in [0, 1]'}), 400
+    start = time.perf_counter()
+    i, j, witnesses, err = _v2_rows(col, d)
+    if err:
+        return err
+    rows = sorted({r for q in qs for r in quantile_rows(i, j, q)[:2]}) if i < j else []
+    s = col['slots']
+    return jsonify({'count': j - i, 'rows': [i, j], 'witnesses': witnesses,
+                    'cells': [{'row': r, 'ciphertext': format(col['cts'][r // s], 'x')} for r in rows],
+                    'time_ms': round((time.perf_counter() - start) * 1000, 2)})
 
 
 @app.route('/api/v2/aggregate', methods=['POST'])
@@ -484,30 +613,15 @@ def v2_aggregate():
     the row range used; with a range on a column with tag MACs, `witnesses` are the ciphertexts around
     its ends with their rows' OPE tags and MACs, so the client can check where the range was cut."""
     d = request.json or {}
-    ds = owner_datasets.get(d.get('dataset'))
-    col = ds['columns'].get(d.get('column')) if ds else None
-    if col is None:
-        return jsonify({'error': 'Unknown dataset or column'}), 404
+    ds, col, err = _v2_column(d)
+    if err:
+        return err
     start = time.perf_counter()
-    i, j = 0, col['count']
-    if d.get('lo_tag') is not None or d.get('hi_tag') is not None:
-        if col['tags'] is None:
-            return jsonify({'error': 'Column was uploaded without OPE tags'}), 400
-        try:
-            if d.get('lo_tag') is not None:
-                i = bisect_left(col['tags'], int(d['lo_tag']))
-            if d.get('hi_tag') is not None:
-                j = bisect_right(col['tags'], int(d['hi_tag']))
-        except (TypeError, ValueError):
-            return jsonify({'error': 'Tags must be integers'}), 400
+    i, j, witnesses, err = _v2_rows(col, d)
+    if err:
+        return err
     product, edges = range_plan(ds['pub'], col['cts'], col['slots'], col['count'], i, j) if i < j else (None, [])
     s = col['slots']
-    j = max(i, j)
-    witnesses = []
-    if col.get('macs') and (d.get('lo_tag') is not None or d.get('hi_tag') is not None):
-        for c in sorted({r // s for r in (i - 1, i, j - 1, j) if 0 <= r < col['count']}):
-            witnesses.append({'index': c, 'tags': [str(t) for t in col['tags'][c * s:(c + 1) * s]],
-                              'mac': format(col['macs'][c], '032x')})
     return jsonify({
         'count': j - i, 'rows': [i, j], 'witnesses': witnesses,
         'product': format(product, 'x') if product is not None else None,

@@ -8,7 +8,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "api"))
 import server_optimized as srv  # noqa: E402
-from agniya.client import AgniyaClient  # noqa: E402
+from agniya.client import AgniyaClient, dataset_token  # noqa: E402
 from agniya.core.integrity import IntegrityError  # noqa: E402
 from agniya.core.paillier import sum_ciphertexts  # noqa: E402
 
@@ -136,7 +136,8 @@ def test_server_never_sees_private_key_or_plaintext(setup):
     for secret in (c.priv.p, c.priv.q, c.priv.lambda_n, c.priv.mu):
         assert str(secret) not in sent and format(secret, "x") not in sent
     stored = srv.owner_datasets["split"]
-    assert set(stored) == {"pub", "columns"} and not hasattr(stored["pub"], "p")
+    assert set(stored) == {"pub", "columns", "token_hash"} and not hasattr(stored["pub"], "p")
+    assert dataset_token(c.priv, "split") not in json.dumps(stored["token_hash"])  # only its hash
     assert set(stored["columns"]["amount"]) == {"cts", "slots", "count", "tags", "macs"}
 
 
@@ -229,7 +230,8 @@ def test_range_needs_ope_column(setup):
     with pytest.raises(ValueError):
         c.query("amount", lo=1)
     with pytest.raises(RuntimeError, match="400"):
-        transport("/api/v2/aggregate", {"dataset": "split", "column": "amount", "lo_tag": 1})
+        transport("/api/v2/aggregate", {"dataset": "split", "column": "amount", "lo_tag": 1,
+                                        "token": dataset_token(c.priv, "split")})
 
 
 @pytest.mark.parametrize("patch,code", [({"n": "ff"}, 400), ({"ciphertexts": ["zz"]}, 400),
@@ -239,16 +241,19 @@ def test_range_needs_ope_column(setup):
                                         ({"ope_tags": [1, 2, 3], "count": 3, "tag_macs": ["ff" * 17] * 2}, 400)])
 def test_upload_validation(setup, patch, code):
     c, _ = setup
-    ok = {"dataset": "v", "column": "x", "n": format(c.pub.n, "x"), "ciphertexts": ["2", "3"], "slots": 2, "count": 3}
+    ok = {"dataset": "v", "column": "x", "n": format(c.pub.n, "x"), "ciphertexts": ["2", "3"], "slots": 2, "count": 3,
+          "token": dataset_token(c.priv, "v")}
     assert srv.app.test_client().post("/api/v2/columns", json=ok).status_code == 200
-    body = {"dataset": "v", "column": "x", "n": format(c.pub.n, "x"), "ciphertexts": ["2", "3"],
-            "slots": 2, "count": 4, **patch}
+    body = {**ok, "count": 4, **patch}
     assert srv.app.test_client().post("/api/v2/columns", json=body).status_code == code
 
 
 def test_other_key_for_same_dataset_rejected(setup):
     c, _ = setup
     other = AgniyaClient(transport, dataset="split")
+    with pytest.raises(RuntimeError, match="403"):  # another key cannot make the token
+        other.upload("y", [1, 2, 3])
+    other.priv = c.priv  # the token, but another modulus
     with pytest.raises(RuntimeError, match="409"):
         other.upload("y", [1, 2, 3])
 
@@ -312,8 +317,8 @@ def test_delete_dataset(setup):
     c, df = setup
     other = AgniyaClient(transport, dataset="to-delete")
     other.upload("x", [1, 2, 3])
-    bad = srv.app.test_client().post("/api/v2/delete", json={"dataset": "to-delete", "n": format(c.pub.n, "x")})
-    assert bad.status_code == 403
+    for body, code in [({}, 401), ({"token": dataset_token(c.priv, "to-delete")}, 403)]:
+        assert srv.app.test_client().post("/api/v2/delete", json={"dataset": "to-delete", **body}).status_code == code
     assert other.delete()["columns_deleted"] == 1
     assert "to-delete" not in srv.owner_datasets
     srv.load_store()  # gone from disk too
@@ -337,3 +342,90 @@ def test_client_with_non_admissible_key_uses_standard_randomness(setup):
     assert c._djn_ok is False
     c.upload("x", [1.5, -2.25, 10], decimals=2)
     assert c.query("x")["sum"] == pytest.approx(9.25)
+
+
+def test_every_v2_call_needs_the_dataset_token(setup):
+    c, _ = setup
+    post = srv.app.test_client().post
+    wrong = dataset_token(c.priv, "elsewhere")
+    for path, body in [("/api/v2/aggregate", {"column": "amount"}), ("/api/v2/quantiles", {"column": "age", "q": [0.5]}),
+                       ("/api/v2/columns", {"column": "x", "n": format(c.pub.n, "x"), "ciphertexts": ["2"],
+                                            "slots": 1, "count": 1}), ("/api/v2/delete", {})]:
+        assert post(path, json={"dataset": "split", **body}).status_code == 401, path
+        assert post(path, json={"dataset": "split", **body, "token": wrong}).status_code == 403, path
+    assert post("/api/v2/columns", json={"dataset": "new-one", "column": "x", "n": format(c.pub.n, "x"),
+                                         "ciphertexts": ["2"], "slots": 1, "count": 1}).status_code == 401
+    assert c.query("amount")["count"] == 300  # the owner still gets in
+
+
+def test_dataset_from_before_tokens_is_claimed_by_the_first_token(setup):
+    c, _ = setup
+    ds = srv.owner_datasets["split"]
+    saved = ds.pop("token_hash")
+    try:
+        assert c.query("age")["count"] == 300  # claims it
+        other = AgniyaClient(transport, dataset="split")
+        with pytest.raises(RuntimeError, match="403"):
+            other._v2("/api/v2/aggregate", {"column": "age"})
+    finally:
+        ds["token_hash"] = saved
+
+
+QS = [0, 0.1, 0.25, 0.5, 0.75, 0.9, 1]
+
+
+@pytest.mark.parametrize("col,lo,hi", [("age", None, None), ("score", None, None), ("age", 30, 45),
+                                       ("score", -10.5, 120.25), ("score", 120, 120.5), ("age", 77, None)])
+def test_quantiles_match_pandas(setup, col, lo, hi):
+    c, df = setup
+    rows = df[col][(df[col] >= (lo if lo is not None else -1e18)) & (df[col] <= (hi if hi is not None else 1e18))]
+    got = c.quantiles(col, QS, lo, hi)
+    if rows.empty:
+        assert got == [None] * len(QS)
+    else:
+        assert got == pytest.approx([rows.quantile(q) for q in QS], abs=1e-9), (col, lo, hi)
+
+
+def test_quantiles_of_an_empty_range_and_unsorted_columns(setup):
+    c, _ = setup
+    assert c.quantiles("score", [0.5], 400, 500) == [None]  # above every value: not sent to the server
+    assert c.quantiles("score", [0.5], 100.001, 100.009) == [None]  # inside the range, between values
+    with pytest.raises(ValueError):
+        c.quantiles("amount", [0.5])  # not range_filter=True: not sorted
+
+
+def _cell(r, f):
+    cells = [dict(x) for x in r["cells"]]
+    f(cells)
+    return {**r, "cells": cells}
+
+
+MEDIAN = lambda c: c.quantiles("score", [0.5])  # noqa: E731
+MEDIAN_RANGE = lambda c: c.quantiles("score", [0, 0.5, 1], -10.5, 120.25)  # noqa: E731
+
+
+@pytest.mark.parametrize("query,change", [
+    (MEDIAN, lambda c, b, r: _cell(r, lambda x: x[0].__setitem__("ciphertext", format(_stored(b)[0], "x")))),
+    (MEDIAN, lambda c, b, r: _cell(r, lambda x: x.pop())),
+    (MEDIAN, lambda c, b, r: _cell(r, lambda x: x[0].__setitem__("row", x[0]["row"] + 1))),
+    (MEDIAN, lambda c, b, r: {**r, "count": r["count"] - 1}),
+    (MEDIAN_RANGE, lambda c, b, r: transport("/api/v2/quantiles", {  # a consistent answer for fewer rows
+        **b, "lo_tag": srv.owner_datasets["split"]["columns"]["score"]["tags"][r["rows"][0]] + 1})),
+    (MEDIAN_RANGE, lambda c, b, r: {**r, "witnesses": []}),
+    (MEDIAN_RANGE, lambda c, b, r: {k: v for k, v in r.items() if k != "rows"}),
+    (MEDIAN_RANGE, lambda c, b, r: {**r, "cells": "zz"}),
+])
+def test_wrong_quantile_answers_are_caught(setup, query, change):
+    c, _ = setup
+    honest = query(c)
+
+    def post(path, body):
+        r = transport(path, body)
+        return change(c, body, r) if path == "/api/v2/quantiles" else r
+    c.post = post
+    try:
+        with pytest.raises(IntegrityError):
+            query(c)
+    finally:
+        c.post = transport
+    assert query(c) == honest
