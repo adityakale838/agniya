@@ -136,7 +136,7 @@ export default function Dashboard() {
   const workerRef = useRef<CryptoWorker | null>(null);
   const filteredCopies = useRef(new Set<string>());  // "a#g|w" copies the worker has (GROUP BY g WHERE w in range)
   const squareCopies = useRef(new Set<string>());  // copies that also have "^2" (VARIANCE / STDDEV)
-  const sortedCopies = useRef(new Set<string>());  // "a#g" with a "a#g^sorted" copy (MIN / MAX / MEDIAN GROUP BY g)
+  const sortedCopies = useRef(new Set<string>());  // "a#g^sorted" (and "...|w") copies: MIN / MAX / MEDIAN GROUP BY g
 
   const dropWorker = () => { workerRef.current?.terminate(); workerRef.current = null; };  // drops the key
   useEffect(() => () => workerRef.current?.terminate(), []);  // leaving the page drops the key too
@@ -186,7 +186,7 @@ export default function Dashboard() {
       setGroupable(groupsFromNames(info.columns.map(c => c.name)));
       filteredCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#.*\|/.test(n) && !n.endsWith('^2')));
       squareCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.endsWith('^2')).map(n => n.slice(0, -2)));
-      sortedCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.endsWith('^sorted')).map(n => n.slice(0, -7)));
+      sortedCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.includes('^sorted')));
       setKeyPassword(''); setRestoreFile(null);
       setActiveTab('query');
     } catch (err) {
@@ -350,20 +350,26 @@ export default function Dashboard() {
     };
   };
 
-  const queryOrderGroupsLocally = async (): Promise<QueryResult> => {
-    const worker = workerRef.current!, copy = `${selectedField}#${activeGroupBy}`;
-    if (!sortedCopies.current.has(copy)) {  // a copy sorted within each group, built on first use
+  const queryOrderGroupsLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
+    const worker = workerRef.current!, fc = filterBy || selectedField;
+    const filtered = minVal !== undefined || maxVal !== undefined;
+    const copy = `${selectedField}#${activeGroupBy}^sorted` + (filtered ? `|${fc}` : '');
+    if (!sortedCopies.current.has(copy)) {  // a copy sorted within each group (by fc with a range), built on first use
       if (!csvRef.current) throw new Error(`${selectedOperation} GROUP BY ${activeGroupBy} needs the CSV: upload it and encrypt again`);
-      await worker.uploadSortedGroups(selectedField, rowValues(selectedField), activeGroupBy, rowLabels(activeGroupBy), decimalsOf(selectedField));
+      await worker.uploadSortedGroups(selectedField, rowValues(selectedField), activeGroupBy, rowLabels(activeGroupBy), decimalsOf(selectedField),
+                                      filtered ? fc : undefined, filtered ? rowValues(fc) : undefined, filtered ? decimalsOf(fc) : 0);
       sortedCopies.current.add(copy);
     }
     const t0 = performance.now();
-    const a = await worker.groupQuantiles(selectedField, activeGroupBy, [ORDER_STATS[selectedOperation]!]);
+    const a = await worker.groupQuantiles(selectedField, activeGroupBy, [ORDER_STATS[selectedOperation]!], minVal, maxVal,
+                                          filtered ? fc : undefined);
     return {
       operation: selectedOperation, field: selectedField, column: selectedField, group_by: activeGroupBy,
       groups: a.groups.map(g => ({ group: g.group, count: g.count, result: g.values[0] })), result: null,
-      time_ms: performance.now() - t0, records_processed: a.total, ciphertexts_aggregated: a.ciphertextsUsed,
-      security_note: `A copy of ${selectedField} sorted within each group: the server sent the ciphertexts holding each group's answer`
+      time_ms: performance.now() - t0, records_processed: a.groups.reduce((n, g) => n + g.count, 0), ciphertexts_aggregated: a.ciphertextsUsed,
+      ...(filtered && { filter_applied: true, filter_column: fc, range: { min: minVal ?? null, max: maxVal ?? null },
+                        records_before_filter: a.total, filter_selectivity: a.total ? a.groups.reduce((n, g) => n + g.count, 0) / a.total : 0 }),
+      security_note: `A copy of ${selectedField} sorted within each group` + (filtered ? ` (by ${fc}, with OPE tags of group and ${fc})` : '') + `: the server sent the ciphertexts holding each group's answer`
         + ' and this browser decrypted them. The labels and group sizes stay here, but the server sees which ciphertexts were read, so roughly where groups start and end.',
       encryption_proof: {
         ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits.slice(0, 3), modulus_n_bit_length: 2048,
@@ -505,14 +511,13 @@ export default function Dashboard() {
       }
       
       const order = ORDER_STATS[selectedOperation] !== undefined;
-      if (order && (activeGroupBy ? minVal !== undefined || maxVal !== undefined
-                    : (filterBy && filterBy !== selectedField) || schema.find(f => f.name === selectedField)?.encryption !== 'OPE+Paillier')) {
-        setError(activeGroupBy ? `${selectedOperation} GROUP BY takes no range`
-                 : `${selectedOperation} needs an OPE+Paillier field filtered by itself, or a GROUP BY`);
+      if (order && !activeGroupBy && ((filterBy && filterBy !== selectedField)
+                                       || schema.find(f => f.name === selectedField)?.encryption !== 'OPE+Paillier')) {
+        setError(`${selectedOperation} needs an OPE+Paillier field filtered by itself, or a GROUP BY`);
         setIsQuerying(false);
         return;
       }
-      const response = order && browserMode ? await (activeGroupBy ? queryOrderGroupsLocally() : queryOrderLocally(minVal, maxVal))
+      const response = order && browserMode ? await (activeGroupBy ? queryOrderGroupsLocally(minVal, maxVal) : queryOrderLocally(minVal, maxVal))
         : activeGroupBy
         ? (browserMode ? await queryGroupsLocally(minVal, maxVal)
                        : await apiService.executeQuery(selectedOperation, selectedField, uploadData.filename,

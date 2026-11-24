@@ -185,4 +185,20 @@ def test_min_max_median_by_group_match_pandas(client, field, by):
         for label, v in getattr(want, agg)().items():
             assert got[label] == pytest.approx(v, abs=1e-9), (op, label)
         assert r["records_processed"] == want.size().sum()
-    assert "no range" in q(c, type="MEDIAN", column=field, group_by=by, filter_column="age", rangeMin=30)["error"]
+
+
+@pytest.mark.parametrize("field,by,fc,lo,hi", [("amount", "region", "age", 30, 40), ("amount", "region", "amount", -100, 2000),
+                                               ("visits", "region", "score", -10.5, 120.25), ("score", "age", "score", 0, None),
+                                               ("amount", "region", "age", 200, 300)])
+def test_min_max_median_by_group_with_a_range_match_pandas(client, field, by, fc, lo, hi):
+    c, df = client
+    rows = df[list(dict.fromkeys([field, by, fc]))].dropna()
+    w = rows[fc]
+    want = rows[(w >= (lo if lo is not None else -1e9)) & (w <= (hi if hi is not None else 1e9))].groupby(by)[field]
+    for op, agg in [("MIN", "min"), ("MAX", "max"), ("MEDIAN", "median")]:
+        r = q(c, type=op, column=field, group_by=by, filter_column=fc, rangeMin=lo, rangeMax=hi)
+        got = {g["group"]: g["result"] for g in r["groups"]}
+        assert got.keys() == set(want.groups), r  # groups with no rows in range are left out
+        for label, v in getattr(want, agg)().items():
+            assert got[label] == pytest.approx(v, abs=1e-9), (op, label)
+    assert "numeric" in q(c, type="MEDIAN", column="amount", group_by="region", filter_column="name", rangeMin=1)["error"]

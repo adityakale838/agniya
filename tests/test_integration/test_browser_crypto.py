@@ -319,20 +319,42 @@ def test_group_quantiles_browser_and_python_agree_with_pandas(tmp_path, live_ser
     regions[3] = None  # skipped, as by upload_sorted_groups
     a = run_ts({"client": {"url": live_server, "dataset": "gq-b2p", "save_password": "pw", "columns": [],
                            "sorted_groups": [{"column": "charges", "values": df["charges"].tolist(), "by": "region",
-                                              "by_values": regions, "decimals": 4}],
-                           "group_quantiles": [["charges", "region", QS]], "queries": [],
-                           "tamper": [["swap-ciphertexts", "groupQuantiles", "charges", "region", QS]]}}, tmp_path)
+                                              "by_values": regions, "decimals": 4},
+                                             {"column": "charges", "values": df["charges"].tolist(), "by": "region",
+                                              "by_values": regions, "decimals": 4, "where": "age",
+                                              "where_values": df["age"].tolist(), "where_decimals": 0},
+                                             {"column": "charges", "values": df["charges"].tolist(), "by": "region",
+                                              "by_values": regions, "decimals": 4, "where": "charges"}],
+                           "group_quantiles": [["charges", "region", QS], ["charges", "region", QS, 30, 45, "age"],
+                                               ["charges", "region", QS, 5000, 20000.5, "charges"]], "queries": [],
+                           "tamper": [["swap-ciphertexts", "groupQuantiles", "charges", "region", QS],
+                                      ["late-range", "groupQuantiles", "charges", "region", QS, 30, 45, "age"],
+                                      ["late-range", "groupQuantiles", "charges", "region", QS, 5000, 20000.5, "charges"]]}},
+               tmp_path)
     want = df.drop(index=3).groupby("region")["charges"]
     got = {g["group"]: g for g in a["group_quantiles"][0]["groups"]}
     assert got.keys() == set(want.groups)
     for label, x in want:
         assert got[label]["count"] == len(x) and got[label]["values"] == [pytest.approx(x.quantile(q), abs=1e-9) for q in QS]
-    assert a["tampered"][0].startswith("Integrity check failed"), a["tampered"]
+    rest = df.drop(index=3)
+    for k, sel in [(1, rest[(rest["age"] >= 30) & (rest["age"] <= 45)]),
+                   (2, rest[(rest["charges"] >= 5000) & (rest["charges"] <= 20000.5)])]:
+        got_r = {g["group"]: g for g in a["group_quantiles"][k]["groups"]}
+        want_r = sel.groupby("region")["charges"]
+        assert got_r.keys() == set(want_r.groups)
+        for label, x in want_r:
+            assert got_r[label]["count"] == len(x)
+            assert got_r[label]["values"] == [pytest.approx(x.quantile(q), abs=1e-9) for q in QS], (k, label)
+    assert all(t.startswith("Integrity check failed") for t in a["tampered"]), a["tampered"]
     path = tmp_path / "k"
     path.write_text(a["keyfile"])
     py = AgniyaClient.load(str(path), "pw", live_server)  # the browser's copy, read by Python
     for label, vs in py.quantiles("charges", QS, by="region").items():
         assert vs == pytest.approx(got[label]["values"], abs=1e-9)
+    for k, args in [(1, (30, 45, "age")), (2, (5000, 20000.5, "charges"))]:  # the browser's ranged copies
+        py_r = py.quantiles("charges", QS, args[0], args[1], by="region", where=args[2])
+        for g in a["group_quantiles"][k]["groups"]:
+            assert py_r[g["group"]] == pytest.approx(g["values"], abs=1e-9)
     py.upload_sorted_groups("bmi", df["bmi"], by="children", by_values=df["children"], decimals=4)  # int labels
     py.save(str(path), "pw")
     b = run_ts({"load": {"keyfile": path.read_text(), "password": "pw", "url": live_server, "queries": [],

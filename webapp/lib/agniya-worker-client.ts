@@ -63,13 +63,14 @@ export class CryptoWorker {
   }
 
   /** Copy of `column` sorted within each group of `by`, for groupQuantiles. */
-  uploadSortedGroups(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>, decimals: number) {
-    return this.call<{ ciphertexts: number }>('uploadSortedGroups', { column, values, by, byValues, decimals });
+  uploadSortedGroups(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>, decimals: number,
+                     where?: string, whereValues?: Array<number | null>, whereDecimals?: number) {
+    return this.call<{ ciphertexts: number }>('uploadSortedGroups', { column, values, by, byValues, decimals, where, whereValues, whereDecimals });
   }
 
   /** Every group's quantiles of `column` by `by`, plus the rows in the copy. */
-  groupQuantiles(column: string, by: string, qs: number[]) {
-    return this.call<GroupQuantileAnswer & { total: number }>('groupQuantiles', { column, by, qs });
+  groupQuantiles(column: string, by: string, qs: number[], lo?: number, hi?: number, where?: string) {
+    return this.call<GroupQuantileAnswer & { total: number }>('groupQuantiles', { column, by, qs, lo, hi, where });
   }
 
   /** Encrypted key file text (scrypt + AES-256-GCM, same format as the Python client). */

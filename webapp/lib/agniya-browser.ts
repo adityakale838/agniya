@@ -564,6 +564,7 @@ interface ColumnMeta {
   macKey?: Uint8Array;  // integrity tags (absent in key files from before them: answers are not checked)
   shift?: bigint;  // "name^2" copies: they hold (x - shift)^2
   sizes?: number[];  // "a#g^sorted" copies: rows per label, in label order
+  wspan?: bigint; woff?: bigint;  // ... "a#g^sorted|w": OPE keys are group * wspan + w - woff
 }
 
 /** Sample variance (ddof=1, as pandas and SQL VARIANCE) of n fixed-point values from their sum s1 and
@@ -988,41 +989,64 @@ export class BrowserClient {
 
   /** `column` sorted within each group of `by`, stored as "column#by^sorted" (as AgniyaClient.upload_sorted_groups),
    *  for groupQuantiles. Rows missing either are skipped. Labels and group sizes stay here, but reading a quantile
-   *  shows the server which ciphertexts hold it, so roughly where each group starts and ends. */
+   *  shows the server which ciphertexts hold it, so roughly where each group starts and ends. With `where`
+   *  ("column#by^sorted|where"), sorted by where within each group, with OPE tags of (group, where) for ranges. */
   async uploadSortedGroups(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>,
-                           decimals: number): Promise<{ ciphertexts: number }> {
-    const scale = 10 ** decimals, groups = new Map<string, bigint[]>();
+                           decimals: number, where?: string, whereValues?: Array<number | null>,
+                           whereDecimals = 0): Promise<{ ciphertexts: number }> {
+    if (where === column && !whereValues) [whereValues, whereDecimals] = [values, decimals];
+    const scale = 10 ** decimals, fscale = 10 ** whereDecimals, groups = new Map<string, Array<[bigint, bigint]>>();
     values.forEach((a, i) => {
-      const g = byValues[i];
-      if (a !== null && Number.isFinite(a) && g !== null && g !== '') {
+      const g = byValues[i], w = where !== undefined ? whereValues![i] : 0;
+      if (a !== null && Number.isFinite(a) && g !== null && g !== '' && w !== null && Number.isFinite(w)) {
         if (!groups.has(g)) groups.set(g, []);
-        groups.get(g)!.push(fixedPoint(a, scale));
+        groups.get(g)!.push([fixedPoint(w, fscale), fixedPoint(a, scale)]);
       }
     });
-    if (!groups.size) throw new Error(`No rows have both ${column} and ${by}`);
-    const labels = [...groups.keys()].sort(), name = `${column}#${by}^sorted`;
-    const r = await this.put(name, labels.flatMap(l => groups.get(l)!.sort(cmp)), scale, null, scale);
-    Object.assign(this.columns.get(name)!, { labels, sizes: labels.map(l => groups.get(l)!.length) });
+    if (!groups.size) throw new Error(`No rows have ${column}, ${by}` + (where !== undefined ? ` and ${where}` : ''));
+    const labels = [...groups.keys()].sort(), name = `${column}#${by}^sorted` + (where !== undefined ? `|${where}` : '');
+    const rows = labels.flatMap((l, gi) => groups.get(l)!.sort((x, y) => cmp(x[0], y[0]) || cmp(x[1], y[1])).map(([w, a]) => [gi, w, a] as const));
+    const extra: Partial<ColumnMeta> = { labels, sizes: labels.map(l => groups.get(l)!.length) };
+    let keys: bigint[] | null = null;
+    if (where !== undefined) {
+      const woff = rows.reduce((m, r) => (r[1] < m ? r[1] : m), rows[0][1]);
+      const wspan = rows.reduce((m, r) => (r[1] > m ? r[1] : m), rows[0][1]) - woff + 1n;
+      Object.assign(extra, { woff, wspan });
+      keys = rows.map(([gi, w]) => BigInt(gi) * wspan + w - woff);  // sorted: (group, where)
+    }
+    const r = await this.put(name, rows.map(x => x[2]), scale, keys, fscale);
+    Object.assign(this.columns.get(name)!, extra);
     return r;
   }
 
   /** Every group's quantiles (q = 0 MIN, 0.5 MEDIAN, 1 MAX; pandas' linear interpolation) of `column` by `by`
-   *  (needs uploadSortedGroups): the server sends the ciphertexts holding those rows, checked and decrypted here. */
-  async groupQuantiles(column: string, by: string, qs: number[]): Promise<GroupQuantileAnswer> {
-    const name = `${column}#${by}^sorted`, m = this.columns.get(name);
-    if (!m?.sizes) throw new Error(`No copy of ${column} sorted within groups of ${by}`);
-    const spans: Array<[number, number]> = [];
-    m.sizes.reduce((i, n) => { spans.push([i, i + n]); return i + n; }, 0);
-    const want = [...new Set(spans.flatMap(([i, j]) => qs.flatMap(q => quantileRows(i, j, q).slice(0, 2))))].sort((a, b) => a - b);
+   *  (needs uploadSortedGroups): the server sends the ciphertexts holding those rows, checked and decrypted here.
+   *  With `where`, only rows with lo <= where <= hi; groups with none are left out. */
+  async groupQuantiles(column: string, by: string, qs: number[], lo?: number, hi?: number, where?: string): Promise<GroupQuantileAnswer> {
+    const name = `${column}#${by}^sorted` + (where ? `|${where}` : ''), m = this.columns.get(name);
+    if (!m?.sizes) throw new Error(`No copy of ${column} sorted within groups of ${by}` + (where ? ` and by ${where}` : ''));
+    if (!where && (lo !== undefined || hi !== undefined)) throw new Error('A range needs where (the column it applies to)');
+    let spans = new Map<string | number, [number, number]>();
+    m.sizes.reduce((i, n, g) => { spans.set(m.labels![g], [i, i + n]); return i + n; }, 0);
+    if (where) spans = await this.groupRanges(m, name, spans, lo, hi);
+    const inOrder = !where || where === column;  // rows in range sorted by value: read only the quantile rows
+    const want = [...new Set([...spans.values()].flatMap(([i, j]) =>
+      inOrder ? qs.flatMap(q => quantileRows(i, j, q).slice(0, 2)) : Array.from({ length: j - i }, (_, k) => i + k)))].sort((a, b) => a - b);
     const index = [...new Set(want.map(x => Math.floor(x / m.slots)))];
-    const r = await this.v2('/api/v2/ciphertexts', { column: name, index }) as { ciphertexts: string[]; time_ms?: number };
+    const cts: string[] = [];
+    let serverMs = 0;
+    for (let k = 0; k < index.length; k += 4096) {
+      const r = await this.v2('/api/v2/ciphertexts', { column: name, index: index.slice(k, k + 4096) }) as { ciphertexts: string[]; time_ms?: number };
+      cts.push(...r.ciphertexts);
+      serverMs += r.time_ms ?? 0;
+    }
     const bits = BigInt(m.slotBits), mask = (1n << bits) - 1n, plain = new Map<number, bigint>();
     let ok = false;
     try {  // each must be the stored ciphertext at its index
-      ok = r.ciphertexts.length === index.length;
+      ok = cts.length === index.length;
       const mac = m.macKey && new ColumnMac(this.pub.n, m.macKey);
       for (let k = 0; ok && k < index.length; k++) {
-        const p = decrypt(this.priv, unhex(r.ciphertexts[k]));
+        const p = decrypt(this.priv, unhex(cts[k]));
         plain.set(index[k], p);
         if (mac) ok = await mac.check(p, 0, index[k], 1);
       }
@@ -1032,13 +1056,49 @@ export class BrowserClient {
     if (!ok) throw new Error(`Integrity check failed: the server's answer for ${name} does not match the uploaded data`);
     const value = (x: number) => Number(((plain.get(Math.floor(x / m.slots))! >> (BigInt(x % m.slots) * bits)) & mask) + m.offset);
     return {
-      groups: m.labels!.map((group, g) => {
-        const [i, j] = spans[g];
-        return { group, count: j - i, values: qs.map(q => { const [a, b, f] = quantileRows(i, j, q); return (value(a) + (value(b) - value(a)) * f) / m.scale; }) };
+      groups: [...spans].map(([group, [i, j]]) => {
+        const sorted = inOrder ? null : Array.from({ length: j - i }, (_, k) => value(i + k)).sort((a, b) => a - b);
+        const v = (x: number) => (sorted ? sorted[x - i] : value(x));
+        return { group, count: j - i, values: qs.map(q => { const [a, b, f] = quantileRows(i, j, q); return (v(a) + (v(b) - v(a)) * f) / m.scale; }) };
       }),
-      ciphertextsUsed: index.length, ciphertextBits: r.ciphertexts.map(c => bitLength(unhex(c))), serverMs: r.time_ms ?? 0,
-      verified: !!m.macKey,
+      ciphertextsUsed: index.length, ciphertextBits: cts.map(c => bitLength(unhex(c))), serverMs, verified: !!m.macKey,
     };
+  }
+
+  /** Each group's rows with lo <= where <= hi, from the server and checked (as AgniyaClient._group_ranges). */
+  private async groupRanges(m: ColumnMeta, name: string, spans: Map<string | number, [number, number]>,
+                            lo?: number, hi?: number): Promise<Map<string | number, [number, number]>> {
+    const fs = m.fscale ?? m.scale, span = m.wspan!, top = m.opeTop!;
+    let a0 = lo !== undefined ? fixedPoint(lo, fs) - m.woff! : 0n, b0 = hi !== undefined ? fixedPoint(hi, fs) - m.woff! : span - 1n;
+    if (a0 < 0n) a0 = 0n;
+    if (b0 > span - 1n) b0 = span - 1n;
+    const asked: Array<[string | number, bigint, bigint]> = [];
+    [...spans.keys()].forEach((label, gi) => {
+      let a = BigInt(gi) * span + a0 - m.opeOffset!, b = BigInt(gi) * span + b0 - m.opeOffset!;
+      if (a < 0n) a = 0n;
+      if (b > top) b = top;
+      if (a0 <= b0 && a <= b) asked.push([label, a, b]);
+    });
+    const out = new Map<string | number, [number, number]>();
+    if (!asked.length) return out;
+    const tags = await m.ope!.encryptMany(asked.flatMap(([, a, b]) => [a, b]));
+    const ranges = asked.map(([, a, b]) => ({ lo_tag: tags.get(a)!.toString(), hi_tag: tags.get(b)!.toString() }));
+    const r = await this.v2('/api/v2/ranges', { column: name, ranges }) as { ranges: Array<{ rows: [number, number]; witnesses: Witness[] }> };
+    let ok = false;
+    try {
+      ok = r.ranges.length === asked.length;
+      const mac = m.macKey && new ColumnMac(this.pub.n, m.macKey);
+      for (let k = 0; ok && k < asked.length; k++) {
+        const [i, j] = [Number(r.ranges[k].rows[0]), Number(r.ranges[k].rows[1])], [gi, gj] = spans.get(asked[k][0])!;
+        ok = gi <= i && i <= j && j <= gj
+          && (!mac || await mac.checkCut(0, m.slots, m.count, i, j, r.ranges[k].witnesses, BigInt(ranges[k].lo_tag), BigInt(ranges[k].hi_tag)));
+        if (i < j) out.set(asked[k][0], [i, j]);
+      }
+    } catch {
+      ok = false;
+    }
+    if (!ok) throw new Error(`Integrity check failed: the server's ranges for ${name} do not match the uploaded data`);
+    return out;
   }
 
   /** Every secret this client holds (primes, OPE keys, column layouts), encrypted with AES-256-GCM under
@@ -1055,6 +1115,7 @@ export class BrowserClient {
       if (m.macKey) c.mac_key = b64(m.macKey);
       if (m.shift !== undefined) c.shift = safeNum(m.shift);
       if (m.sizes) c.sizes = m.sizes;
+      if (m.wspan !== undefined) Object.assign(c, { wspan: safeNum(m.wspan), woff: safeNum(m.woff!) });
       columns[name] = c;
     }
     const secret = JSON.stringify({ dataset: this.dataset, p: hex(this.priv.p), q: hex(this.priv.q), columns });
@@ -1096,6 +1157,7 @@ export class BrowserClient {
       if (c.mac_key !== undefined) meta.macKey = unb64(c.mac_key as string);
       if (c.shift !== undefined) meta.shift = BigInt(c.shift);
       if (c.sizes !== undefined) meta.sizes = c.sizes as unknown as number[];
+      if (c.wspan !== undefined) [meta.wspan, meta.woff] = [BigInt(c.wspan), BigInt(c.woff)];
       if (c.ope_key !== undefined) {
         meta.ope = new OPE(unb64(c.ope_key as string), BigInt(c.ope_top));
         meta.opeOffset = BigInt(c.ope_offset);

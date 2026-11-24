@@ -13,7 +13,7 @@ What it does, precisely:
 Two trust models:
 - /api/upload, /api/encrypt, /api/query (dashboard demo): this process receives the plaintext
   CSV and generates and holds the private key in memory. It is the data owner.
-- /api/v2/columns, /aggregate, /quantiles, /ciphertexts, /delete (use agniya.client.AgniyaClient): the client
+- /api/v2/columns, /aggregate, /quantiles, /ranges, /ciphertexts, /delete (use agniya.client.AgniyaClient): the client
   keeps the private key and the OPE keys. This process only ever sees the public modulus n, packed
   ciphertexts, values per ciphertext, row counts and sorted OPE tags, and returns ciphertexts.
   The client checks every answer (agniya/core/integrity.py). Every call needs the dataset's
@@ -287,20 +287,27 @@ def _squares(ds, field, how):
     return cache[how]
 
 
-def _sorted_groups(ds, field, by):
-    """(copy of `field` sorted within each group of `by`, {label: (first row, end row)}) for MIN / MAX / MEDIAN
-    GROUP BY by. Built on first use and kept."""
-    col = ds['columns'][field]
+def _sorted_groups(ds, field, by, fc=None):
+    """(copy of `field` sorted within each group of `by`, {label: (first row, end row)}, {label: sorted fc keys})
+    for MIN / MAX / MEDIAN GROUP BY by; with fc, sorted by (fc, field) within each group, so the rows with fc in a
+    range are one run per group (keys: fc in fixed point). Built on first use and kept."""
+    col, df = ds['columns'][field], ds['df']
     cache = col.setdefault('sorted_groups', {})
-    if by not in cache:
-        xs, spans = [], {}
-        for g, x in ds['df'][[field, by]].dropna().groupby(by)[field]:
-            spans[g.item() if hasattr(g, 'item') else g] = (len(xs), len(xs) + len(x))
-            xs += sorted(int(round(float(v) * col['scale'])) for v in x)
+    if (by, fc) not in cache:
+        if fc and (fc not in df.columns or not pd.api.types.is_numeric_dtype(df[fc])):
+            raise ValueError(f'Range filters need a numeric column, not {fc}')
+        fscale = 1 if not fc or pd.api.types.is_integer_dtype(df[fc]) else 10 ** FIXED_POINT_DECIMALS
+        xs, spans, keys = [], {}, {}
+        for g, x in df[list(dict.fromkeys([field, by] + ([fc] if fc else [])))].dropna().groupby(by):
+            pairs = sorted((int(round(float(w) * fscale)) if fc else 0, int(round(float(v) * col['scale'])))
+                           for v, w in zip(x[field], x[fc] if fc else x[field]))
+            label = g.item() if hasattr(g, 'item') else g
+            spans[label], keys[label] = (len(xs), len(xs) + len(pairs)), [w for w, _ in pairs]
+            xs += [v for _, v in pairs]
         packed = ds['db'].encrypt_column(xs)
         ds['db'].pool.close()
-        cache[by] = (packed, spans)
-    return cache[by]
+        cache[(by, fc)] = (packed, spans, keys, fscale)
+    return cache[(by, fc)]
 
 
 @app.route('/api/query', methods=['POST'])
@@ -336,22 +343,38 @@ def execute_query():
         return v if v is None or operation == 'VARIANCE' else v ** 0.5
 
     if operation in ORDER_STATS and group_by:
-        if filtered or group_by not in col['groups']:
-            return jsonify({'error': f'{operation} GROUP BY needs a column with 2-{GROUP_MAX_VALUES} distinct values '
-                                     'and no range'}), 400
-        packed, spans = _sorted_groups(ds, field, group_by)
-        s, cs = packed['slots'], packed['ciphertexts']
-        need = {g: quantile_rows(i, j, ORDER_STATS[operation]) for g, (i, j) in spans.items()}
-        cts = list(dict.fromkeys(cs[r // s] for a, b, _ in need.values() for r in (a, b)))
+        if group_by not in col['groups']:
+            return jsonify({'error': f'{operation} GROUP BY needs a column with 2-{GROUP_MAX_VALUES} distinct values'}), 400
+        try:
+            packed, spans, keys, fscale = _sorted_groups(ds, field, group_by, fc if filtered else None)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        if filtered:  # each group's run of rows with fc in range
+            lo = int(round(float(range_min) * fscale)) if range_min not in (None, '') else None
+            hi = int(round(float(range_max) * fscale)) if range_max not in (None, '') else None
+            spans = {g: (i + (bisect_left(keys[g], lo) if lo is not None else 0),
+                         i + (bisect_right(keys[g], hi) if hi is not None else j - i)) for g, (i, j) in spans.items()}
+            spans = {g: (i, j) for g, (i, j) in spans.items() if i < j}
+        in_order = not filtered or fc == field  # rows in range sorted by value: only the quantile rows are read
+        s, cs, q = packed['slots'], packed['ciphertexts'], ORDER_STATS[operation]
+        rows = {r for i, j in spans.values() for r in (quantile_rows(i, j, q)[:2] if in_order else range(i, j))}
+        cts = list(dict.fromkeys(cs[r // s] for r in sorted(rows)))
         plain = {c: decrypt_crt(db.pub, db.priv, c) for c in cts}
-        val = lambda r: slot_value(plain[cs[r // s]], r % s, packed['slot_bits']) + packed['offset']  # noqa: E731
-        groups = [{'group': g, 'count': j - i, 'result': (val(a) + (val(b) - val(a)) * f) / col['scale']}
-                  for g, (i, j) in spans.items() for a, b, f in [need[g]]]
+        value = {r: slot_value(plain[cs[r // s]], r % s, packed['slot_bits']) + packed['offset'] for r in rows}
+        groups = []
+        for g, (i, j) in spans.items():
+            vs = value if in_order else dict(enumerate(sorted(value[r] for r in range(i, j)), i))
+            a, b, f = quantile_rows(i, j, q)
+            groups.append({'group': g, 'count': j - i, 'result': (vs[a] + (vs[b] - vs[a]) * f) / col['scale']})
         elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
         return jsonify({
             'success': True, 'operation': operation, 'field': field, 'column': field, 'group_by': group_by,
             'groups': groups, 'result': None, 'pages': 1, 'time_ms': elapsed_ms, 'query_time_ms': elapsed_ms,
-            'records_processed': packed['count'], 'ciphertexts_aggregated': len(cts), 'encrypted_computation': True,
+            'records_processed': sum(g['count'] for g in groups), 'ciphertexts_aggregated': len(cts),
+            'encrypted_computation': True,
+            **({'filter_applied': True, 'filter_column': fc, 'range': {'min': range_min, 'max': range_max},
+                'records_before_filter': packed['count'],
+                'filter_selectivity': sum(g['count'] for g in groups) / max(packed['count'], 1)} if filtered else {}),
             'security_note': f'A copy of {field} sorted within each group: the answer for each group is one row (two for an '
                              'interpolated median), so only the ciphertexts holding them were decrypted. Whoever serves '
                              'them learns which ciphertexts were read, so roughly where each group starts and ends.',
@@ -720,6 +743,26 @@ def v2_ciphertexts():
     except (KeyError, TypeError, ValueError):
         return jsonify({'error': f"index must be 1-4096 ciphertext indices below {len(col['cts'])}"}), 400
     return jsonify({'ciphertexts': [format(col['cts'][k], 'x') for k in ks]})
+
+
+@app.route('/api/v2/ranges', methods=['POST'])
+def v2_ranges():
+    """Row ranges for several (lo_tag, hi_tag) pairs on one OPE-tagged column (`ranges`: up to 1024), each with
+    the witnesses that let the client check the cut, e.g. one range per group of a copy sorted within groups."""
+    d = request.json or {}
+    _, col, err = _v2_column(d)
+    if err:
+        return err
+    rs = d.get('ranges')
+    if not isinstance(rs, list) or not 0 < len(rs) <= 1024 or not all(isinstance(r, dict) for r in rs):
+        return jsonify({'error': 'ranges must be 1-1024 objects with lo_tag / hi_tag'}), 400
+    out = []
+    for r in rs:
+        i, j, witnesses, err = _v2_rows(col, r)
+        if err:
+            return err
+        out.append({'rows': [i, j], 'witnesses': witnesses})
+    return jsonify({'ranges': out})
 
 
 @app.route('/api/v2/aggregate', methods=['POST'])

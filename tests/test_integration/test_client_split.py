@@ -512,6 +512,9 @@ def sorted_groups(setup):
     c, df = setup
     c.upload_sorted_groups("amount", df["amount"], by="region", by_values=df["region"], decimals=4)
     c.upload_sorted_groups("score", df["score"], by="age", by_values=df["age"], decimals=2)  # 60 groups, int labels
+    c.upload_sorted_groups("amount", df["amount"], by="region", by_values=df["region"], decimals=4,
+                           where="score", where_values=df["score"], where_decimals=2)
+    c.upload_sorted_groups("amount", df["amount"], by="region", by_values=df["region"], decimals=4, where="amount")
     return c, df
 
 
@@ -555,3 +558,48 @@ def test_group_quantiles_need_their_copy_and_survive_the_key_file(sorted_groups,
     c.save(str(tmp_path / "k"), "pw")
     c2 = AgniyaClient.load(str(tmp_path / "k"), "pw", transport)
     assert c2.quantiles("score", [0.5], by="age") == c.quantiles("score", [0.5], by="age")
+    assert c2.quantiles("amount", [0.5], 0, 99.5, by="region", where="score") == c.quantiles("amount", [0.5], 0, 99.5,
+                                                                                         by="region", where="score")
+
+
+@pytest.mark.parametrize("where,lo,hi", [("score", -10.5, 120.25), ("score", None, 0), ("score", 300, None),
+                                         ("score", 12.34, 12.34), ("score", 900, 1000), ("score", None, None),
+                                         ("amount", -100, 2000), ("amount", 5000, None), ("amount", 1e6, 2e6)])
+def test_group_quantiles_with_a_range_match_pandas(sorted_groups, where, lo, hi):
+    c, df = sorted_groups
+    rows = df[list(dict.fromkeys(["amount", "region", where]))].dropna()
+    w = rows[where]
+    want = rows[(w >= (lo if lo is not None else -1e9)) & (w <= (hi if hi is not None else 1e9))].groupby("region")["amount"]
+    got = c.quantiles("amount", QS, lo, hi, by="region", where=where)
+    assert set(got) == set(want.groups)  # groups with no rows in range are left out
+    for label, x in want:
+        assert got[label] == [pytest.approx(x.quantile(q), abs=1e-9) for q in QS], label
+
+
+def _shift_range(r, k):
+    x = r["ranges"][k]
+    return {**r, "ranges": r["ranges"][:k] + [{**x, "rows": [x["rows"][0] + 1, x["rows"][1]]}] + r["ranges"][k + 1:]}
+
+
+GQR = lambda c: c.quantiles("amount", QS, -10.5, 120.25, by="region", where="score")  # noqa: E731
+
+
+@pytest.mark.parametrize("path,change", [
+    ("/api/v2/ranges", lambda r: _shift_range(r, 1)),  # a group's range starts a row late
+    ("/api/v2/ranges", lambda r: {**r, "ranges": [{**x, "witnesses": []} for x in r["ranges"]]}),
+    ("/api/v2/ranges", lambda r: {**r, "ranges": r["ranges"][:-1]}),
+    ("/api/v2/ranges", lambda r: {**r, "ranges": [r["ranges"][1]] + r["ranges"][1:]}),  # another group's range
+    ("/api/v2/ciphertexts", lambda r: {**r, "ciphertexts": r["ciphertexts"][::-1]}),
+])
+def test_wrong_ranged_group_quantile_answers_are_caught(sorted_groups, path, change):
+    c, _ = sorted_groups
+    honest = GQR(c)
+    c.post = lambda p, body: change(transport(p, body)) if p == path else transport(p, body)
+    try:
+        with pytest.raises(IntegrityError):
+            GQR(c)
+    finally:
+        c.post = transport
+    assert GQR(c) == honest
+    with pytest.raises(ValueError, match="where="):
+        c.quantiles("amount", QS, 1, 2, by="region")
