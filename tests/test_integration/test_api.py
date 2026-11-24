@@ -225,3 +225,30 @@ def test_group_by_two_columns_rejects(client):
     c, _ = client
     assert "Unknown" in q(c, type="SUM", column="amount", group_by="region,nope")["error"]
     assert "groups" in q(c, type="SUM", column="amount", group_by="region,name")["error"]  # 200+ groups
+
+
+def test_banking_use_cases_server_side():
+    """The dashboard's banking presets on data/bank_customers.csv (tools/make_bank_data.py), server-side mode."""
+    path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "bank_customers.csv")
+    df = pd.read_csv(path)
+    c = srv.app.test_client()
+    with open(path, "rb") as f:
+        assert c.post("/api/upload", data={"file": (io.BytesIO(f.read()), "bank.csv")},
+                      content_type="multipart/form-data").status_code == 200
+    schema = [{"name": n, "encryption": "OPE+Paillier" if n == "credit_score" else "Paillier-2048"}
+              for n in ("credit_score", "balance", "loan_amount", "monthly_spend", "default_flag")]
+    assert c.post("/api/encrypt", json={"filename": "bank.csv", "schema": schema}).status_code == 200
+    sub = df[(df["credit_score"] >= 300) & (df["credit_score"] <= 600)]
+    cases = [("SUM", "loan_amount", "risk_band", {}, df.groupby("risk_band")["loan_amount"].sum()),
+             ("AVG", "default_flag", "segment", {}, df.groupby("segment")["default_flag"].mean()),
+             ("MEDIAN", "balance", "region", {}, df.groupby("region")["balance"].median()),
+             ("STDDEV", "monthly_spend", "segment", {}, df.groupby("segment")["monthly_spend"].std()),
+             ("SUM", "loan_amount", "product", {"filter_column": "credit_score", "rangeMin": 300, "rangeMax": 600},
+              sub.groupby("product")["loan_amount"].sum()),
+             ("SUM", "loan_amount", "region,segment", {},
+              pd.Series({f"{a}, {b}": v for (a, b), v in df.groupby(["region", "segment"])["loan_amount"].sum().items()}))]
+    for op, field, by, extra, want in cases:
+        r = c.post("/api/query", json={"filename": "bank.csv", "type": op, "column": field, "group_by": by, **extra}).get_json()
+        got = {g["group"]: g["result"] for g in r["groups"]}
+        assert got.keys() == set(want.index), (op, field, by, r)
+        assert all(got[k] == pytest.approx(v, rel=1e-9, abs=1e-6) for k, v in want.items()), (op, field, by)

@@ -33,7 +33,21 @@ type Aggregate = 'SUM' | 'AVG' | 'COUNT';  // GROUP BY and SUM paths: order stat
 type Operation = Aggregate | 'MIN' | 'MAX' | 'MEDIAN' | 'VARIANCE' | 'STDDEV';
 const ORDER_STATS: Partial<Record<Operation, number>> = { MIN: 0, MEDIAN: 0.5, MAX: 1 };  // quantile q
 const SPREAD: Operation[] = ['VARIANCE', 'STDDEV'];  // need a "^2" copy (sum of squares), built on first use
-const GROUP_MAX_VALUES = 64;  // as api/server_optimized.py: GROUP BY copies for columns with 2-64 distinct values
+const GROUP_MAX_VALUES = 64;
+
+/** One-click questions a bank asks of its customer data (columns of data/bank_customers.csv, from
+ *  tools/make_bank_data.py); each runs as an ordinary encrypted query. */
+interface Preset { title: string; op: Operation; field: string; group?: string; group2?: string; filter?: string; min?: string; max?: string }
+const BANK_PRESETS: Preset[] = [
+  { title: 'Loan exposure by risk band', op: 'SUM', field: 'loan_amount', group: 'risk_band' },
+  { title: 'Default rate by segment', op: 'AVG', field: 'default_flag', group: 'segment' },
+  { title: 'Median balance by region', op: 'MEDIAN', field: 'balance', group: 'region' },
+  { title: 'Spend volatility by segment', op: 'STDDEV', field: 'monthly_spend', group: 'segment' },
+  { title: 'Sub-prime exposure by product', op: 'SUM', field: 'loan_amount', group: 'product', filter: 'credit_score', min: '300', max: '600' },
+  { title: 'Loan exposure by region and segment', op: 'SUM', field: 'loan_amount', group: 'region', group2: 'segment' },
+];
+const presetSql = (p: Preset) => `${p.op}(${p.field})` + (p.filter ? ` WHERE ${p.filter} BETWEEN ${p.min} AND ${p.max}` : '')
+  + (p.group ? ` GROUP BY ${p.group}${p.group2 ? `, ${p.group2}` : ''}` : '');  // as api/server_optimized.py: GROUP BY copies for columns with 2-64 distinct values
 
 /** {field: [group columns]} from stored column names, where "a#g" is a packed by g ("a#g|w" also filters on w). */
 const groupsFromNames = (names: string[]): Record<string, string[]> => {
@@ -138,13 +152,15 @@ export default function Dashboard() {
   const [browserMode, setBrowserMode] = useState(true);
   const csvRef = useRef<{ header: string[]; rows: string[][] } | null>(null);
   const workerRef = useRef<CryptoWorker | null>(null);
-  const groupCopies = useRef(new Set<string>());  // "a#g" GROUP BY copies the worker has (g may be "b,c")
+  const groupCopies = useRef(new Set<string>());
+  const byCopies = useRef(new Set<string>());  // "a|b" copies (a in b's order, for WHERE b in range)  // "a#g" GROUP BY copies the worker has (g may be "b,c")
   const filteredCopies = useRef(new Set<string>());  // "a#g|w" copies the worker has (GROUP BY g WHERE w in range)
   const squareCopies = useRef(new Set<string>());  // copies that also have "^2" (VARIANCE / STDDEV)
   const sortedCopies = useRef(new Set<string>());  // "a#g^sorted" (and "...|w") copies: MIN / MAX / MEDIAN GROUP BY g
 
   const dropWorker = () => { workerRef.current?.terminate(); workerRef.current = null; };  // drops the key
   useEffect(() => () => workerRef.current?.terminate(), []);  // leaving the page drops the key too
+  const [presetRun, setPresetRun] = useState(0);  // a preset sets the builder, then this runs the query
 
   // Key file: the worker encrypts its keys under scrypt(password) + AES-GCM (same format as agniya/client.py).
   const [keyPassword, setKeyPassword] = useState('');
@@ -191,6 +207,7 @@ export default function Dashboard() {
       setGroupable(groupsFromNames(info.columns.map(c => c.name)));
       filteredCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#.*\|/.test(n) && !n.endsWith('^2')));
       groupCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#[^|@^]*$/.test(n)));
+      byCopies.current = new Set(info.columns.map(c => c.name).filter(n => /^[^#^]*\|[^#^]*$/.test(n)));
       squareCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.endsWith('^2')).map(n => n.slice(0, -2)));
       sortedCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.includes('^sorted')));
       setKeyPassword(''); setRestoreFile(null);
@@ -261,6 +278,7 @@ export default function Dashboard() {
     workerRef.current = worker;
     filteredCopies.current = new Set();
     groupCopies.current = new Set();
+    byCopies.current = new Set();
     squareCopies.current = new Set();
     sortedCopies.current = new Set();
     await worker.init(API_BASE_URL, `${uploadData!.filename}-${crypto.randomUUID().slice(0, 8)}`);
@@ -272,31 +290,13 @@ export default function Dashboard() {
       decimals[f.name] = vals.every(Number.isInteger) ? 0 : 4;
       ciphertexts += (await worker.upload(f.name, vals, decimals[f.name], f.encryption === 'OPE+Paillier')).ciphertexts;
     }
-    // SUM(a) WHERE b in range: a copy of every other field a in the order of each OPE field b (as the server does).
-    for (const b of fields.filter(f => f.encryption === 'OPE+Paillier')) {
-      for (const a of fields.filter(f => f.name !== b.name)) {
-        ciphertexts += (await worker.uploadBy(a.name, rowValues(a.name), b.name, rowValues(b.name),
-                                              decimals[a.name], decimals[b.name])).ciphertexts;
-      }
-    }
-    // GROUP BY: a copy of every field packed by each column with 2-64 distinct values (as the server does).
+    // Copies for "WHERE other column in range" and GROUP BY (columns with 2-64 distinct values) are built
+    // the first time a query needs them: building every pair up front made encryption slow on wide tables.
     const groupCols = csvRef.current!.header.filter(g => {
       const n = new Set(rowLabels(g).filter(v => v !== null)).size;
       return n >= 2 && n <= GROUP_MAX_VALUES;
     });
-    const groups: Record<string, string[]> = {};
-    for (const a of fields) {
-      for (const g of groupCols.filter(g => g !== a.name)) {
-        try {
-          ciphertexts += (await worker.uploadGrouped(a.name, rowValues(a.name), g, rowLabels(g), decimals[a.name])).ciphertexts;
-          (groups[a.name] ??= []).push(g);
-          groupCopies.current.add(`${a.name}#${g}`);
-        } catch (err) {
-          if (!/too large|No rows/.test(String(err))) throw err;  // skip copies that cannot be built
-        }
-      }
-    }
-    setGroupable(groups);
+    setGroupable(Object.fromEntries(fields.map(a => [a.name, groupCols.filter(g => g !== a.name)])));
     const secs = (performance.now() - t0) / 1000;
     const records = csvRef.current!.rows.length;
     return { success: true, records_encrypted: records, time_seconds: secs, throughput: records / secs, ciphertexts };
@@ -402,16 +402,19 @@ export default function Dashboard() {
 
   const queryLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
     const fc = filterBy || selectedField, worker = workerRef.current!;
-    const copy = fc === selectedField ? selectedField : `${selectedField}|${fc}`;
-    if (SPREAD.includes(selectedOperation) && !squareCopies.current.has(copy)) {  // re-upload the copy with its "^2" copy
-      if (!csvRef.current) throw new Error(`${selectedOperation} needs the CSV: upload it and encrypt again`);
-      if (fc === selectedField) {
+    const cross = fc !== selectedField, spread = SPREAD.includes(selectedOperation);
+    const copy = cross ? `${selectedField}|${fc}` : selectedField;
+    if ((cross && !byCopies.current.has(copy)) || (spread && !squareCopies.current.has(copy))) {
+      // built on first use: a copy in fc's order and/or the "^2" copy (re-uploads the column with it)
+      if (!csvRef.current) throw new Error(`${cross ? `Filtering ${selectedField} by ${fc}` : selectedOperation} needs the CSV: upload it and encrypt again`);
+      if (cross) {
+        await worker.uploadBy(selectedField, rowValues(selectedField), fc, rowValues(fc), decimalsOf(selectedField), decimalsOf(fc), spread);
+        byCopies.current.add(copy);
+      } else {
         await worker.upload(selectedField, columnValues(selectedField), decimalsOf(selectedField),
                             schema.find(f => f.name === selectedField)?.encryption === 'OPE+Paillier', true);
-      } else {
-        await worker.uploadBy(selectedField, rowValues(selectedField), fc, rowValues(fc), decimalsOf(selectedField), decimalsOf(fc), true);
       }
-      squareCopies.current.add(copy);
+      if (spread) squareCopies.current.add(copy);
     }
     const t0 = performance.now();
     const a = await worker.query(selectedField, minVal, maxVal, fc);
@@ -511,6 +514,21 @@ export default function Dashboard() {
       setIsEncrypting(false);
     }
   };
+
+  // presets that fit the loaded columns; ones whose range needs an OPE+Paillier column say so
+  const encryptedAs = (n: string) => schema.find(f => f.name === n)?.encryption;
+  const presets = BANK_PRESETS.filter(p => [p.field, p.group, p.group2, p.filter].every(c => !c || schema.some(f => f.name === c))
+                                       && PAILLIER.includes(encryptedAs(p.field) ?? ''));
+  const presetBlocker = (p: Preset) => (p.filter && encryptedAs(p.filter) !== 'OPE+Paillier'
+    ? `Set ${p.filter} to OPE+Paillier (Configure) to filter on it` : null);
+  const runPreset = (p: Preset) => {
+    setSelectedOperation(p.op); setSelectedField(p.field); setGroupBy(p.group ?? ''); setGroupBy2(p.group2 ?? '');
+    setFilterBy(p.filter ?? ''); setRangeMin(p.min ?? ''); setRangeMax(p.max ?? '');
+    setPresetRun(n => n + 1);
+  };
+  useEffect(() => {
+    if (presetRun) void handleQuery();
+  }, [presetRun]);  // eslint-disable-line react-hooks/exhaustive-deps -- runs with the state the preset just set
 
   const handleQuery = async () => {
     if (!uploadData || !selectedField) return;
@@ -983,6 +1001,30 @@ export default function Dashboard() {
 
             {/* QUERY TAB */}
             <TabsContent value="query" className="space-y-6">
+              {presets.length > 0 && (
+                <Card className="p-6 glass-morphism">
+                  <h3 className="text-xl font-semibold mb-1 flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-primary" />
+                    Banking use cases
+                  </h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    One click runs the query on the encrypted data: the server computes without any key, this browser decrypts and checks the answer.
+                  </p>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {presets.map(p => {
+                      const blocker = presetBlocker(p);
+                      return (
+                        <button key={p.title} type="button" disabled={!!blocker || isQuerying} onClick={() => runPreset(p)} title={blocker ?? undefined}
+                                className="text-left rounded-lg border border-primary/20 p-3 hover:bg-primary/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                          <div className="font-medium">{p.title}</div>
+                          <div className="font-mono text-xs text-muted-foreground mt-1">{presetSql(p)}</div>
+                          {blocker && <div className="text-xs text-amber-600 mt-1">{blocker}</div>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Card>
+              )}
               <div className="grid md:grid-cols-2 gap-6">
                 {/* Query Builder */}
                 <Card className="p-6 glass-morphism">
