@@ -18,6 +18,8 @@ ciphertexts and are decrypted here.
                      where="age", where_values=ages)
     c.query_groups("charges", "region", lo=30, hi=45, where="age")  # ... WHERE 30 <= age <= 45 GROUP BY region
     c.quantiles("charges", [0, 0.5, 1])     # MIN, MEDIAN, MAX (range_filter=True columns; lo=, hi= too)
+    c.upload_sorted_groups("charges", charges, by="region", by_values=regions, decimals=4)
+    c.quantiles("charges", [0.5], by="region")  # {'northeast': [median], ...}
     c.upload("charges", charges, decimals=4, range_filter=True, squares=True)
     c.query("charges", lo=5000)              # ... plus 'var' and 'std' (VARIANCE / STDDEV, as pandas)
 
@@ -39,6 +41,7 @@ import os
 import secrets
 import urllib.error
 import urllib.request
+from itertools import accumulate
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Union
 
 from cryptography.exceptions import InvalidTag
@@ -97,7 +100,7 @@ class AgniyaClient:
         cols = {}
         for name, m in self.columns.items():
             c = {k: m[k] for k in ('scale', 'fscale', 'slot_bits', 'slots', 'offset', 'count', 'lanes', 'labels', 'pages',
-                                   'mac_key', 'shift') if k in m}
+                                   'mac_key', 'shift', 'sizes') if k in m}
             if 'ope' in m:
                 c.update(ope_key=base64.b64encode(m['ope'].key).decode(), ope_offset=m['ope_offset'], ope_top=m['ope_top'])
             cols[name] = c
@@ -215,6 +218,24 @@ class AgniyaClient:
             out = out or {**r, 'column': name, 'ciphertexts': len(packed['ciphertexts']), 'pages': packed['pages']}
         pool.close()
         return out
+
+    def upload_sorted_groups(self, column: str, values: Iterable[float], by: str, by_values: Iterable,
+                             decimals: int = 0) -> dict:
+        """Store `column` sorted within each group of `by` (labels in by_values, one per row) as "column#by^sorted",
+        so quantiles(column, qs, by=by) gives every group's MIN / MEDIAN / MAX / any quantile. Rows where either is
+        missing are left out. The labels and group sizes stay here, but reading a quantile shows the server which
+        ciphertexts hold it, so roughly where each group starts and ends (to within a ciphertext of rows)."""
+        s, groups = 10 ** decimals, {}
+        for a, b in zip(values, by_values, strict=True):
+            if a is not None and b is not None and a == a and b == b:  # x == x is False for NaN
+                groups.setdefault(b.item() if hasattr(b, 'item') else b, []).append(int(round(a * s)))
+        if not groups:
+            raise ValueError(f'No rows have both {column} and {by}')
+        labels = sorted(groups)
+        name = f'{column}#{by}^sorted'
+        r = self._upload(name, [x for g in labels for x in sorted(groups[g])], s, None, s)
+        self.columns[name].update(labels=labels, sizes=[len(groups[g]) for g in labels])
+        return r
 
     def query_groups(self, column: str, by: str, lo: Optional[float] = None, hi: Optional[float] = None,
                      where: Optional[str] = None) -> dict:
@@ -349,15 +370,19 @@ class AgniyaClient:
         return r
 
     def quantiles(self, column: str, qs: Sequence[float], lo: Optional[float] = None,
-                  hi: Optional[float] = None) -> List[Optional[float]]:
+                  hi: Optional[float] = None, by: Optional[str] = None):
         """Quantiles of a column uploaded with range_filter=True, as pandas computes them (linear
         interpolation): q = 0 is MIN, 0.5 MEDIAN, 1 MAX. Optionally only rows with lo <= value <= hi;
         None for each q when no row is. The column is packed sorted, so each quantile reads one or two
-        rows: their ciphertexts are decrypted here (which shows this client the other values in them)."""
+        rows: their ciphertexts are decrypted here (which shows this client the other values in them).
+        With by= (needs upload_sorted_groups, no range): {label: [one value per q]} for every group."""
+        qs = [float(q) for q in qs]
+        if by:
+            return self._group_quantiles(column, by, qs)
         m = self.columns.get(column)
         if m is None or 'ope' not in m or '|' in column or '#' in column:
             raise ValueError(f'{column} was not uploaded with range_filter=True')
-        qs, rng = [float(q) for q in qs], None
+        rng = None
         if lo is not None or hi is not None:
             rng = self._range_tags(m, lo, hi)
             if rng is None:
@@ -365,29 +390,59 @@ class AgniyaClient:
         r = self._v2('/api/v2/quantiles', {'column': column, 'q': qs, **(rng or {})})
         if rng and 'mac_key' in m and 'rows' not in r:
             raise IntegrityError(f'The server sent no rows to check {column} against: update the server')
-        s = m['slots']
         try:  # the cells must be exactly the rows these quantiles need, from the stored ciphertexts
             i, j = (int(r['rows'][0]), int(r['rows'][1])) if rng else (0, m['count'])
             want = sorted({x for q in qs for x in quantile_rows(i, j, q)[:2]}) if i < j else []
             cells = {int(c['row']): int(c['ciphertext'], 16) for c in r['cells']}
-            plain = {ct: decrypt_crt(self.pub, self.priv, ct) for ct in set(cells.values())}
-            ok = r['count'] == j - i and sorted(cells) == want and 0 <= i <= j <= m['count']
-            if ok and 'mac_key' in m:
-                mac = ColumnMac(self.pub.n, base64.b64decode(m['mac_key']))
-                ok = (all(mac.check(plain[cells[x]], 0, x // s, 1) for x in want)
-                      and (not rng or mac.check_cut(0, s, m['count'], i, j, r['witnesses'], rng['lo_tag'], rng['hi_tag'])))
+            value = (self._cell_values(m, want, [cells[x] for x in want])
+                     if r['count'] == j - i and sorted(cells) == want and 0 <= i <= j <= m['count'] else None)
+            if value is not None and rng and 'mac_key' in m and not ColumnMac(
+                    self.pub.n, base64.b64decode(m['mac_key'])).check_cut(
+                    0, m['slots'], m['count'], i, j, r['witnesses'], rng['lo_tag'], rng['hi_tag']):
+                value = None
         except (KeyError, TypeError, ValueError, IndexError):
-            ok = False
-        if not ok:
+            value = None
+        if value is None:
             raise IntegrityError(f"The server's answer for {column} does not match the uploaded data")
         if i == j:
             return [None] * len(qs)
-        value = {x: slot_value(plain[cells[x]], x % s, m['slot_bits']) + m['offset'] for x in want}
-        out = []
-        for q in qs:
-            a, b, frac = quantile_rows(i, j, q)
-            out.append((value[a] + (value[b] - value[a]) * frac) / m['scale'])
-        return out
+        return [self._interpolate(value, i, j, q) / m['scale'] for q in qs]
+
+    def _group_quantiles(self, column: str, by: str, qs: List[float]) -> dict:
+        name = f'{column}#{by}^sorted'
+        m = self.columns.get(name)
+        if m is None:
+            raise ValueError(f'Call upload_sorted_groups({column!r}, ..., by={by!r}) first')
+        starts = list(accumulate([0] + m['sizes']))
+        spans = list(zip(starts, starts[1:]))
+        want = sorted({x for i, j in spans for q in qs for x in quantile_rows(i, j, q)[:2]})
+        index = sorted({x // m['slots'] for x in want})
+        r = self._v2('/api/v2/ciphertexts', {'column': name, 'index': index})
+        try:
+            cts = dict(zip(index, (int(c, 16) for c in r['ciphertexts']), strict=True))
+            value = self._cell_values(m, want, [cts[x // m['slots']] for x in want])
+        except (KeyError, TypeError, ValueError, IndexError):
+            value = None
+        if value is None:
+            raise IntegrityError(f"The server's answer for {name} does not match the uploaded data")
+        return {label: [self._interpolate(value, i, j, q) / m['scale'] for q in qs]
+                for label, (i, j) in zip(m['labels'], spans)}
+
+    def _cell_values(self, m: dict, rows: List[int], cts: List[int]) -> Optional[Dict[int, int]]:
+        """{row: fixed-point value} from cts[k], the stored ciphertext holding rows[k]; None when one of them is not
+        the ciphertext the integrity tags say is at that index."""
+        s = m['slots']
+        plain = {ct: decrypt_crt(self.pub, self.priv, ct) for ct in set(cts)}
+        if 'mac_key' in m:
+            mac = ColumnMac(self.pub.n, base64.b64decode(m['mac_key']))
+            if not all(mac.check(plain[ct], 0, x // s, 1) for x, ct in zip(rows, cts)):
+                return None
+        return {x: slot_value(plain[ct], x % s, m['slot_bits']) + m['offset'] for x, ct in zip(rows, cts)}
+
+    @staticmethod
+    def _interpolate(value: Dict[int, int], i: int, j: int, q: float) -> float:
+        a, b, frac = quantile_rows(i, j, q)
+        return value[a] + (value[b] - value[a]) * frac
 
     def query(self, column: str, lo: Optional[float] = None, hi: Optional[float] = None,
               by: Optional[str] = None) -> dict:

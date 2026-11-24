@@ -2,7 +2,7 @@
  * Web Worker that owns the BrowserClient: key generation, encryption, OPE tagging, the
  * /api/v2 calls and decryption all run here, off the page's main thread. The private key
  * and OPE keys exist only in this worker; the page sees query answers.
- * Message protocol: { id, op: 'init' | 'load' | 'upload' | 'uploadBy' | 'uploadGrouped' | 'save' | 'query' | 'queryGroups' | 'quantiles', args } -> { id, result } | { id, error }.
+ * Message protocol: { id, op: 'init' | 'load' | 'upload' | 'uploadBy' | 'uploadGrouped' | 'save' | 'query' | 'queryGroups' | 'quantiles' | 'uploadSortedGroups' | 'groupQuantiles', args } -> { id, result } | { id, error }.
  */
 import { BrowserClient, httpPost } from './agniya-browser';
 
@@ -42,6 +42,12 @@ self.onmessage = async (e: MessageEvent<{ id: number; op: string; args: Record<s
       const column = args.column as string;
       const answer = await client.quantiles(column, args.qs as number[], args.lo as number | undefined, args.hi as number | undefined);
       result = { ...answer, total: client.columns.get(column)!.count };
+    } else if (op === 'uploadSortedGroups') {
+      result = await client.uploadSortedGroups(args.column as string, args.values as Array<number | null>, args.by as string,
+                                               args.byValues as Array<string | null>, args.decimals as number);
+    } else if (op === 'groupQuantiles') {
+      const answer = await client.groupQuantiles(args.column as string, args.by as string, args.qs as number[]);
+      result = { ...answer, total: client.columns.get(`${args.column}#${args.by}^sorted`)!.count };
     } else if (op === 'save') {
       result = { text: await client.saveKeyFile(args.password as string), dataset: client.dataset };
     } else if (op === 'query') {

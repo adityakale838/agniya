@@ -309,3 +309,34 @@ def test_variance_browser_and_python_agree_with_pandas(tmp_path, live_server):
     b = run_ts({"load": {"keyfile": path.read_text(), "password": "pw", "url": live_server, "queries": [["bmi", None, None]]}},
                tmp_path)
     assert b["answers"][0]["std"] == pytest.approx(df["bmi"].std(), rel=1e-12)
+
+
+def test_group_quantiles_browser_and_python_agree_with_pandas(tmp_path, live_server):
+    from agniya.client import AgniyaClient
+    df = pd.read_csv(os.path.join(ROOT, "data", "insurance_real.csv"))
+    df["charges"] = df["charges"].map(lambda v: int(round(v * 10**4)) / 10**4)  # as both clients store it
+    regions = df["region"].tolist()
+    regions[3] = None  # skipped, as by upload_sorted_groups
+    a = run_ts({"client": {"url": live_server, "dataset": "gq-b2p", "save_password": "pw", "columns": [],
+                           "sorted_groups": [{"column": "charges", "values": df["charges"].tolist(), "by": "region",
+                                              "by_values": regions, "decimals": 4}],
+                           "group_quantiles": [["charges", "region", QS]], "queries": [],
+                           "tamper": [["swap-ciphertexts", "groupQuantiles", "charges", "region", QS]]}}, tmp_path)
+    want = df.drop(index=3).groupby("region")["charges"]
+    got = {g["group"]: g for g in a["group_quantiles"][0]["groups"]}
+    assert got.keys() == set(want.groups)
+    for label, x in want:
+        assert got[label]["count"] == len(x) and got[label]["values"] == [pytest.approx(x.quantile(q), abs=1e-9) for q in QS]
+    assert a["tampered"][0].startswith("Integrity check failed"), a["tampered"]
+    path = tmp_path / "k"
+    path.write_text(a["keyfile"])
+    py = AgniyaClient.load(str(path), "pw", live_server)  # the browser's copy, read by Python
+    for label, vs in py.quantiles("charges", QS, by="region").items():
+        assert vs == pytest.approx(got[label]["values"], abs=1e-9)
+    py.upload_sorted_groups("bmi", df["bmi"], by="children", by_values=df["children"], decimals=4)  # int labels
+    py.save(str(path), "pw")
+    b = run_ts({"load": {"keyfile": path.read_text(), "password": "pw", "url": live_server, "queries": [],
+                         "group_quantiles": [["bmi", "children", [0.5]]]}}, tmp_path)
+    assert "error" not in b, b.get("error")
+    assert {g["group"]: g["values"][0] for g in b["group_quantiles"][0]["groups"]} == pytest.approx(
+        df.groupby("children")["bmi"].median().to_dict(), abs=1e-9)

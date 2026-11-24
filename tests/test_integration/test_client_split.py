@@ -505,3 +505,53 @@ def test_variance_survives_the_key_file(spread, tmp_path):
     c2 = AgniyaClient.load(str(tmp_path / "k"), "pw", transport)
     assert c2.query("v_score", -10.5, 120.25) == c.query("v_score", -10.5, 120.25)
     assert c2.query_groups("v_amount", "age", 0, 99.5, where="score") == c.query_groups("v_amount", "age", 0, 99.5, where="score")
+
+
+@pytest.fixture(scope="module")
+def sorted_groups(setup):
+    c, df = setup
+    c.upload_sorted_groups("amount", df["amount"], by="region", by_values=df["region"], decimals=4)
+    c.upload_sorted_groups("score", df["score"], by="age", by_values=df["age"], decimals=2)  # 60 groups, int labels
+    return c, df
+
+
+@pytest.mark.parametrize("col,by", [("amount", "region"), ("score", "age")])
+def test_group_quantiles_match_pandas(sorted_groups, col, by):
+    c, df = sorted_groups
+    got = c.quantiles(col, QS, by=by)
+    want = df[[col, by]].dropna().groupby(by)[col]
+    assert set(got) == set(want.groups)
+    for label, x in want:
+        assert got[label] == [pytest.approx(x.quantile(q), abs=1e-9) for q in QS], label
+
+
+GQ = lambda c: c.quantiles("amount", QS, by="region")  # noqa: E731
+
+
+@pytest.mark.parametrize("change", [
+    lambda r: {**r, "ciphertexts": r["ciphertexts"][::-1]},  # swapped
+    lambda r: {**r, "ciphertexts": r["ciphertexts"][:-1]},  # one missing
+    lambda r: {**r, "ciphertexts": [r["ciphertexts"][0]] * len(r["ciphertexts"])},  # another index's ciphertext
+    lambda r: {**r, "ciphertexts": ["zz"] + r["ciphertexts"][1:]},  # malformed
+])
+def test_wrong_group_quantile_answers_are_caught(sorted_groups, change):
+    c, _ = sorted_groups
+    honest = GQ(c)
+    c.post = lambda path, body: change(transport(path, body)) if path == "/api/v2/ciphertexts" else transport(path, body)
+    try:
+        with pytest.raises(IntegrityError):
+            GQ(c)
+    finally:
+        c.post = transport
+    assert GQ(c) == honest
+
+
+def test_group_quantiles_need_their_copy_and_survive_the_key_file(sorted_groups, tmp_path):
+    c, _ = sorted_groups
+    with pytest.raises(ValueError, match="upload_sorted_groups"):
+        c.quantiles("age", [0.5], by="region")
+    with pytest.raises(RuntimeError, match="400"):
+        c._v2("/api/v2/ciphertexts", {"column": "amount#region^sorted", "index": [10 ** 6]})
+    c.save(str(tmp_path / "k"), "pw")
+    c2 = AgniyaClient.load(str(tmp_path / "k"), "pw", transport)
+    assert c2.quantiles("score", [0.5], by="age") == c.quantiles("score", [0.5], by="age")

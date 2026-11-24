@@ -38,6 +38,9 @@ if (job.client) {  // end to end against a running server
   for (const x of job.client.grouped ?? []) {
     await c.uploadGrouped(x.column, x.values, x.by, x.by_values, x.decimals, x.where, x.where_values, x.where_decimals, x.squares);
   }
+  for (const x of job.client.sorted_groups ?? []) await c.uploadSortedGroups(x.column, x.values, x.by, x.by_values, x.decimals);
+  out.group_quantiles = [];
+  for (const [col, by, qs] of job.client.group_quantiles ?? []) out.group_quantiles.push(await c.groupQuantiles(col, by, qs));
   out.answers = [];
   for (const [col, lo, hi, by] of job.client.queries) out.answers.push(await c.query(col, lo ?? undefined, hi ?? undefined, by));
   out.groups = [];
@@ -51,6 +54,7 @@ if (job.client) {  // end to end against a running server
     c.post = async (path, body) => {
       const r = await post(path, body);
       if (mode === 'drop-cell' && path === '/api/v2/quantiles') r.cells.pop();
+      if (mode === 'swap-ciphertexts' && path === '/api/v2/ciphertexts') r.ciphertexts.reverse();
       if (path !== '/api/v2/aggregate') return r;
       if (mode === 'squares-of-main' && body.column.endsWith('^2')) return post(path, { ...body, column: body.column.slice(0, -2) });
       if (mode === 'double' && r.product) r.product = (BigInt('0x' + r.product) ** 2n % c.pub.nSquared).toString(16);
@@ -58,7 +62,7 @@ if (job.client) {  // end to end against a running server
       if (mode === 'malformed') r.product = 'zz';
       return r;
     };
-    const run = { groups: c.queryGroups, quantiles: c.quantiles, query: c.query }[kind].bind(c);
+    const run = { groups: c.queryGroups, quantiles: c.quantiles, query: c.query, groupQuantiles: c.groupQuantiles }[kind].bind(c);
     (out.tampered ??= []).push(await run(...args.map(x => x ?? undefined)).then(() => 'accepted', e => e.message));
     c.post = post;
   }
@@ -82,6 +86,8 @@ if (job.load) {  // restore from a key file (either side's), then query
     for (const [col, by, lo, hi, where] of job.load.group_queries ?? []) {
       out.groups.push(await c.queryGroups(col, by, lo ?? undefined, hi ?? undefined, where));
     }
+    out.group_quantiles = [];
+    for (const [col, by, qs] of job.load.group_quantiles ?? []) out.group_quantiles.push(await c.groupQuantiles(col, by, qs));
   } catch (e) {
     out.error = e.message;
   }

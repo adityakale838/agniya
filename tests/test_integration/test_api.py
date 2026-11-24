@@ -146,7 +146,6 @@ def test_min_max_median_match_pandas(client, col, lo, hi):
 def test_min_max_median_need_a_sorted_column(client):
     c, _ = client
     assert "OPE+Paillier" in q(c, type="MIN", column="amount")["error"]  # packed unsorted
-    assert "OPE+Paillier" in q(c, type="MAX", column="age", group_by="region")["error"]
     assert "OPE+Paillier" in q(c, type="MEDIAN", column="amount", filter_column="age", rangeMin=30)["error"]
 
 
@@ -173,3 +172,17 @@ def test_variance_and_stddev_match_pandas(client, field, by, fc, lo, hi):
             want = getattr(rows.groupby(by)[field], agg)()
             got = {g["group"]: g["result"] for g in r["groups"]}
             assert set(got) == set(want.index) and all(_close(got[k], v) for k, v in want.items()), (op, r)
+
+
+@pytest.mark.parametrize("field,by", [("amount", "region"), ("score", "age"), ("visits", "region")])
+def test_min_max_median_by_group_match_pandas(client, field, by):
+    c, df = client
+    want = df[[field, by]].dropna().groupby(by)[field]
+    for op, agg in [("MIN", "min"), ("MAX", "max"), ("MEDIAN", "median")]:
+        r = q(c, type=op, column=field, group_by=by)
+        got = {g["group"]: g["result"] for g in r["groups"]}
+        assert got.keys() == set(want.groups), r
+        for label, v in getattr(want, agg)().items():
+            assert got[label] == pytest.approx(v, abs=1e-9), (op, label)
+        assert r["records_processed"] == want.size().sum()
+    assert "no range" in q(c, type="MEDIAN", column=field, group_by=by, filter_column="age", rangeMin=30)["error"]

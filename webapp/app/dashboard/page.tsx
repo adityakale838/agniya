@@ -82,7 +82,7 @@ interface QueryResult {
   filter_applied?: boolean;
   filter_column?: string;
   group_by?: string;
-  groups?: Array<{ group: string | number; sum: number; count: number; avg: number; result: number | null }>;
+  groups?: Array<{ group: string | number; sum?: number; count: number; avg?: number; result: number | null }>;
   range?: { min: number | null; max: number | null };
   records_before_filter?: number;
   filter_selectivity?: number;
@@ -136,6 +136,7 @@ export default function Dashboard() {
   const workerRef = useRef<CryptoWorker | null>(null);
   const filteredCopies = useRef(new Set<string>());  // "a#g|w" copies the worker has (GROUP BY g WHERE w in range)
   const squareCopies = useRef(new Set<string>());  // copies that also have "^2" (VARIANCE / STDDEV)
+  const sortedCopies = useRef(new Set<string>());  // "a#g" with a "a#g^sorted" copy (MIN / MAX / MEDIAN GROUP BY g)
 
   const dropWorker = () => { workerRef.current?.terminate(); workerRef.current = null; };  // drops the key
   useEffect(() => () => workerRef.current?.terminate(), []);  // leaving the page drops the key too
@@ -185,6 +186,7 @@ export default function Dashboard() {
       setGroupable(groupsFromNames(info.columns.map(c => c.name)));
       filteredCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#.*\|/.test(n) && !n.endsWith('^2')));
       squareCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.endsWith('^2')).map(n => n.slice(0, -2)));
+      sortedCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.endsWith('^sorted')).map(n => n.slice(0, -7)));
       setKeyPassword(''); setRestoreFile(null);
       setActiveTab('query');
     } catch (err) {
@@ -249,6 +251,7 @@ export default function Dashboard() {
     workerRef.current = worker;
     filteredCopies.current = new Set();
     squareCopies.current = new Set();
+    sortedCopies.current = new Set();
     await worker.init(API_BASE_URL, `${uploadData!.filename}-${crypto.randomUUID().slice(0, 8)}`);
     let ciphertexts = 0;
     const decimals: Record<string, number> = {};
@@ -343,6 +346,30 @@ export default function Dashboard() {
         verification: `Server picked ${a.ciphertextsUsed} ciphertext(s) by sorted position in ${a.serverMs} ms without any key; decrypted in this browser`
           + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
         computation_type: 'Order statistic on a sorted packed column',
+      },
+    };
+  };
+
+  const queryOrderGroupsLocally = async (): Promise<QueryResult> => {
+    const worker = workerRef.current!, copy = `${selectedField}#${activeGroupBy}`;
+    if (!sortedCopies.current.has(copy)) {  // a copy sorted within each group, built on first use
+      if (!csvRef.current) throw new Error(`${selectedOperation} GROUP BY ${activeGroupBy} needs the CSV: upload it and encrypt again`);
+      await worker.uploadSortedGroups(selectedField, rowValues(selectedField), activeGroupBy, rowLabels(activeGroupBy), decimalsOf(selectedField));
+      sortedCopies.current.add(copy);
+    }
+    const t0 = performance.now();
+    const a = await worker.groupQuantiles(selectedField, activeGroupBy, [ORDER_STATS[selectedOperation]!]);
+    return {
+      operation: selectedOperation, field: selectedField, column: selectedField, group_by: activeGroupBy,
+      groups: a.groups.map(g => ({ group: g.group, count: g.count, result: g.values[0] })), result: null,
+      time_ms: performance.now() - t0, records_processed: a.total, ciphertexts_aggregated: a.ciphertextsUsed,
+      security_note: `A copy of ${selectedField} sorted within each group: the server sent the ciphertexts holding each group's answer`
+        + ' and this browser decrypted them. The labels and group sizes stay here, but the server sees which ciphertexts were read, so roughly where groups start and end.',
+      encryption_proof: {
+        ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits.slice(0, 3), modulus_n_bit_length: 2048,
+        verification: `Server sent ${a.ciphertextsUsed} stored ciphertext(s) without any key; decrypted in this browser`
+          + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
+        computation_type: 'Order statistic per group on a copy sorted within groups',
       },
     };
   };
@@ -478,13 +505,14 @@ export default function Dashboard() {
       }
       
       const order = ORDER_STATS[selectedOperation] !== undefined;
-      if (order && (activeGroupBy || (filterBy && filterBy !== selectedField)
-                    || schema.find(f => f.name === selectedField)?.encryption !== 'OPE+Paillier')) {
-        setError(`${selectedOperation} needs an OPE+Paillier field, filtered by itself, without GROUP BY`);
+      if (order && (activeGroupBy ? minVal !== undefined || maxVal !== undefined
+                    : (filterBy && filterBy !== selectedField) || schema.find(f => f.name === selectedField)?.encryption !== 'OPE+Paillier')) {
+        setError(activeGroupBy ? `${selectedOperation} GROUP BY takes no range`
+                 : `${selectedOperation} needs an OPE+Paillier field filtered by itself, or a GROUP BY`);
         setIsQuerying(false);
         return;
       }
-      const response = order && browserMode ? await queryOrderLocally(minVal, maxVal)
+      const response = order && browserMode ? await (activeGroupBy ? queryOrderGroupsLocally() : queryOrderLocally(minVal, maxVal))
         : activeGroupBy
         ? (browserMode ? await queryGroupsLocally(minVal, maxVal)
                        : await apiService.executeQuery(selectedOperation, selectedField, uploadData.filename,
@@ -959,13 +987,13 @@ export default function Dashboard() {
                             COUNT - Number of records
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setSelectedOperation('MIN')}>
-                            MIN - Smallest value (OPE+Paillier fields)
+                            MIN - Smallest value (OPE+Paillier, or per group)
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setSelectedOperation('MAX')}>
-                            MAX - Largest value (OPE+Paillier fields)
+                            MAX - Largest value (OPE+Paillier, or per group)
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setSelectedOperation('MEDIAN')}>
-                            MEDIAN - Middle value (OPE+Paillier fields)
+                            MEDIAN - Middle value (OPE+Paillier, or per group)
                           </DropdownMenuItem>
                           <DropdownMenuItem onClick={() => setSelectedOperation('VARIANCE')}>
                             VARIANCE - Sample variance

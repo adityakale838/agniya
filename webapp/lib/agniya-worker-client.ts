@@ -1,5 +1,5 @@
 // Page-side handle to lib/agniya-worker.ts: one worker = one key pair. terminate() drops the key.
-import type { GroupAnswer, QuantileAnswer, QueryAnswer } from './agniya-browser';
+import type { GroupAnswer, GroupQuantileAnswer, QuantileAnswer, QueryAnswer } from './agniya-browser';
 
 export type WorkerAnswer = QueryAnswer & { total: number };
 
@@ -60,6 +60,16 @@ export class CryptoWorker {
   /** Quantiles (0 = MIN, 0.5 = MEDIAN, 1 = MAX) of an OPE+Paillier column, optionally lo <= value <= hi. */
   quantiles(column: string, qs: number[], lo?: number, hi?: number) {
     return this.call<QuantileAnswer & { total: number }>('quantiles', { column, qs, lo, hi });
+  }
+
+  /** Copy of `column` sorted within each group of `by`, for groupQuantiles. */
+  uploadSortedGroups(column: string, values: Array<number | null>, by: string, byValues: Array<string | null>, decimals: number) {
+    return this.call<{ ciphertexts: number }>('uploadSortedGroups', { column, values, by, byValues, decimals });
+  }
+
+  /** Every group's quantiles of `column` by `by`, plus the rows in the copy. */
+  groupQuantiles(column: string, by: string, qs: number[]) {
+    return this.call<GroupQuantileAnswer & { total: number }>('groupQuantiles', { column, by, qs });
   }
 
   /** Encrypted key file text (scrypt + AES-256-GCM, same format as the Python client). */
