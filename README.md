@@ -178,4 +178,4 @@ are in [docs/PROJECT_REVIEW.md](docs/PROJECT_REVIEW.md).
 
 ## License
 
-MIT
+Apache License 2.0: see [`LICENSE`](LICENSE).
