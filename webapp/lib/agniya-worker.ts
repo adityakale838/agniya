@@ -8,15 +8,56 @@ import { BrowserClient, httpPost } from './agniya-browser';
 
 let client: BrowserClient | null = null;
 
+/** Encrypt big batches across helper workers (one per spare core, up to 8; started on first use and ended with
+ *  this worker). Encryption is ~all of the upload time and each ciphertext is independent. Falls back to
+ *  encrypting here when there is one core or nested workers are unavailable. */
+function encryptInParallel(c: BrowserClient) {
+  const n = Math.min(8, (navigator.hardwareConcurrency ?? 1) - 1);
+  const serial = c.encryptMany;
+  if (n < 2 || typeof Worker === 'undefined') return;
+  let pool: Worker[] | null = null, next = 0;
+  const pending = new Map<number, { resolve: (cts: string[]) => void; reject: (e: Error) => void }>();
+  const p = c.priv.p.toString(), q = c.priv.q.toString();
+  c.encryptMany = async plains => {
+    if (plains.length < 4 * n) return serial(plains);
+    try {
+      pool ??= Array.from({ length: n }, () => {
+        const w = new Worker(new URL('./agniya-encrypt-worker.ts', import.meta.url), { type: 'module' });
+        w.onmessage = (e: MessageEvent<{ id: number; cts: string[] }>) => {
+          pending.get(e.data.id)?.resolve(e.data.cts);
+          pending.delete(e.data.id);
+        };
+        w.onerror = e => {
+          pending.forEach(x => x.reject(new Error(e.message || 'Encryption worker failed')));
+          pending.clear();
+        };
+        return w;
+      });
+    } catch {
+      c.encryptMany = serial;  // nested workers not supported here
+      return serial(plains);
+    }
+    const size = Math.ceil(plains.length / n);
+    const parts = await Promise.all(pool.map((w, k) => new Promise<string[]>((resolve, reject) => {
+      const id = next++;
+      pending.set(id, { resolve, reject });
+      w.postMessage({ id, p, q, plains: plains.slice(k * size, (k + 1) * size).map(String) });
+    })));
+    return parts.flat().map(h => BigInt('0x' + h));
+  };
+}
+
 self.onmessage = async (e: MessageEvent<{ id: number; op: string; args: Record<string, unknown> }>) => {
   const { id, op, args } = e.data;
   try {
     let result: unknown;
     if (op === 'init') {
       client = new BrowserClient(httpPost(args.baseUrl as string), args.dataset as string);
+      encryptInParallel(client);
       result = { modulusBits: client.pub.n.toString(2).length };
     } else if (op === 'load') {
       client = await BrowserClient.loadKeyFile(args.text as string, args.password as string, httpPost(args.baseUrl as string));
+      encryptInParallel(client);
       result = { dataset: client.dataset, columns: [...client.columns].map(([name, m]) =>
         ({ name, count: m.count, scale: m.scale, rangeFilter: !!m.ope })) };
     } else if (!client) {

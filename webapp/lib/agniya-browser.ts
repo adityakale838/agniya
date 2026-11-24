@@ -634,6 +634,9 @@ export class BrowserClient {
 
   private tokenP?: Promise<string>;
 
+  /** Encrypts plaintexts in order; here by default, or across workers (agniya-worker.ts sets a parallel one). */
+  encryptMany = async (plains: bigint[]): Promise<bigint[]> => plains.map(x => encrypt(this.pub, this.priv, x));
+
   /** POST to /api/v2 with this dataset's name and token (as AgniyaClient._v2). */
   private async v2(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.post(path, { ...body, dataset: this.dataset, token: await (this.tokenP ??= datasetToken(this.priv, this.dataset)) });
@@ -733,11 +736,11 @@ export class BrowserClient {
         if (fscale !== sc) meta.fscale = fscale;
         body = { slots: lanes, count: rows.length, ope_tags: tags };  // the server cuts each page like a sorted column
       }
-      const tagged = await mac.tag(plain, pages);
+      const cts = (await this.encryptMany(await mac.tag(plain, pages))).map(hex);
       for (let p = 0; p < pages; p++) {
         await this.v2('/api/v2/columns', { column: col + (p ? `@${p}` : ''), n: hex(this.pub.n),
           ...body, ...(tags && { tag_macs: await mac.tagMacs(p, tags, meta.lanes!) }),
-          ciphertexts: tagged.slice(p * m, (p + 1) * m).map(x => hex(encrypt(this.pub, this.priv, x))) });
+          ciphertexts: cts.slice(p * m, (p + 1) * m) });
       }
       this.columns.set(col, meta);
       out ??= { ciphertexts: plain.length, pages };
@@ -889,7 +892,7 @@ export class BrowserClient {
         shifted.slice(i, i + slots).forEach((v, j) => { acc |= v << BigInt(j * bits); });
         plain.push(acc);
       }
-      const cts = (await mac.tag(plain)).map(x => hex(encrypt(this.pub, this.priv, x)));
+      const cts = (await this.encryptMany(await mac.tag(plain))).map(hex);
       await this.v2('/api/v2/columns', { column: name, n: hex(this.pub.n), ciphertexts: cts, slots, count: vals.length,
         ...(tags && { ope_tags: tags, tag_macs: await mac.tagMacs(0, tags, slots) }) });
       this.columns.set(name, { scale: sc, slotBits: bits, slots, offset, count: vals.length, macKey: mac.key, ...ope, ...extra,
