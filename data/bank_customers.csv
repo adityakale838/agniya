@@ -1,0 +1,2001 @@
+customer_id,region,segment,product,age,credit_score,risk_band,balance,loan_amount,monthly_spend,days_past_due,default_flag
+C100000,South East,Retail,Savings,18,677,C,11960.49,0.0,935.14,0,0
+C100001,Wales,Business,Credit Card,21,713,B,11701.36,3697.28,2807.1,0,0
+C100002,Wales,Wealth,Savings,28,803,A,16144.67,0.0,4008.53,0,0
+C100003,Scotland,Business,Credit Card,41,696,B,24228.21,8136.44,2324.28,0,0
+C100004,London,Business,Credit Card,31,766,A,20847.35,12059.81,3413.49,0,0
+C100005,London,Premier,Savings,60,842,A,11924.39,0.0,1736.68,0,0
+C100006,Wales,Wealth,Savings,25,658,C,30160.97,0.0,9961.66,0,0
+C100007,North West,Retail,Current,56,715,B,1479.86,0.0,1494.92,0,0
+C100008,Midlands,Premier,Savings,26,755,A,21917.61,0.0,787.66,0,0
+C100009,North West,Wealth,Credit Card,39,709,B,8375.91,6494.42,7108.45,0,0
+C100010,Midlands,Retail,Current,40,707,B,4414.91,0.0,712.42,0,0
+C100011,Scotland,Retail,Credit Card,52,659,C,7349.25,3110.82,1831.61,0,0
+C100012,Scotland,Retail,Credit Card,29,682,B,1755.19,2040.81,667.11,0,0
+C100013,South East,Retail,Savings,32,654,C,1683.04,0.0,1425.17,0,0
+C100014,Scotland,Retail,Savings,47,850,A,11594.31,0.0,1050.34,0,0
+C100015,London,Retail,Mortgage,43,850,A,1561.57,213331.83,651.64,0,0
+C100016,Midlands,Wealth,Credit Card,42,756,A,187443.37,9975.94,3868.62,0,0
+C100017,London,Business,Mortgage,55,685,B,15990.32,225121.84,7158.96,0,0
+C100018,London,Retail,Mortgage,34,650,C,9907.41,235150.28,528.86,0,0
+C100019,Midlands,Retail,Current,43,629,C,740.24,0.0,916.04,0,0
+C100020,North West,Retail,Personal Loan,45,632,C,1336.36,8137.53,236.76,0,0
+C100021,Wales,Business,Mortgage,56,606,C,6847.63,799308.39,7472.52,0,0
+C100022,Midlands,Business,Current,29,761,A,13198.86,0.0,5749.71,0,0
+C100023,Wales,Retail,Current,27,731,B,1152.91,0.0,1222.68,0,0
+C100024,Wales,Business,Mortgage,36,744,B,32633.32,305370.88,3659.13,0,0
+C100025,Midlands,Wealth,Savings,42,824,A,40043.86,0.0,3421.87,0,0
+C100026,Midlands,Retail,Current,37,517,E,5475.83,0.0,1685.9,0,0
+C100027,Wales,Retail,Savings,27,608,C,2369.0,0.0,1248.58,0,0
+C100028,Midlands,Business,Personal Loan,53,556,D,13370.67,51484.97,3943.67,0,0
+C100029,London,Business,Savings,55,598,D,42337.19,0.0,7309.05,0,0
+C100030,Midlands,Premier,Current,38,703,B,8995.14,0.0,4603.34,0,0
+C100031,Scotland,Retail,Credit Card,35,756,A,673.29,1496.02,1230.66,0,0
+C100032,Wales,Retail,Savings,39,706,B,12573.0,0.0,553.91,0,0
+C100033,Midlands,Retail,Current,48,786,A,1619.52,0.0,1501.38,0,0
+C100034,North West,Retail,Mortgage,21,842,A,5968.06,91565.52,3610.0,0,0
+C100035,North West,Retail,Mortgage,44,768,A,1632.74,194598.58,1536.09,0,0
+C100036,North West,Premier,Savings,47,620,C,3307.91,0.0,3128.03,0,0
+C100037,Midlands,Retail,Savings,45,735,B,391.3,0.0,1164.41,0,0
+C100038,Wales,Retail,Savings,35,700,B,1683.7,0.0,1725.87,0,0
+C100039,North West,Premier,Mortgage,55,583,D,9149.56,369066.82,1688.22,0,0
+C100040,Midlands,Retail,Credit Card,18,716,B,517.69,2165.36,1833.8,0,0
+C100041,London,Premier,Savings,36,686,B,20828.69,0.0,4171.8,0,0
+C100042,London,Retail,Savings,20,674,C,1015.19,0.0,397.07,0,0
+C100043,Midlands,Wealth,Personal Loan,60,638,C,29452.13,28292.85,7942.61,0,0
+C100044,South East,Premier,Current,40,850,A,17052.67,0.0,7843.94,0,0
+C100045,Scotland,Premier,Savings,18,671,C,1909.19,0.0,2592.3,0,0
+C100046,South East,Retail,Savings,54,850,A,10654.05,0.0,2578.8,0,0
+C100047,Midlands,Business,Personal Loan,53,716,B,63573.05,14463.35,1219.05,0,0
+C100048,South East,Business,Savings,34,619,C,3169.05,0.0,3708.82,0,0
+C100049,Midlands,Premier,Current,51,508,E,3710.65,0.0,4902.61,0,0
+C100050,Midlands,Premier,Savings,23,574,D,3764.5,0.0,2698.34,0,0
+C100051,London,Premier,Current,34,825,A,2476.81,0.0,6700.21,0,0
+C100052,London,Business,Savings,59,722,B,9492.42,0.0,4535.0,0,0
+C100053,Wales,Retail,Personal Loan,39,738,B,970.97,18673.89,1209.17,0,0
+C100054,Wales,Business,Current,51,839,A,15378.49,0.0,1467.66,0,0
+C100055,Scotland,Retail,Personal Loan,41,687,B,1819.07,6750.1,740.01,90,1
+C100056,Wales,Retail,Savings,24,773,A,3080.71,0.0,566.06,0,0
+C100057,London,Retail,Savings,45,597,D,4294.0,0.0,1145.15,0,0
+C100058,Midlands,Retail,Credit Card,48,485,E,443.63,3089.48,1380.05,90,1
+C100059,Midlands,Retail,Current,65,648,C,5636.56,0.0,1556.6,0,0
+C100060,South East,Retail,Current,45,633,C,2676.77,0.0,1920.06,0,0
+C100061,London,Retail,Savings,69,711,B,2528.16,0.0,310.04,0,0
+C100062,Scotland,Retail,Credit Card,49,605,C,1498.07,954.12,1000.96,0,0
+C100063,Midlands,Retail,Personal Loan,36,695,B,848.74,6323.76,1722.78,0,0
+C100064,Wales,Business,Credit Card,18,635,C,3927.07,6400.48,3608.31,30,0
+C100065,South East,Business,Credit Card,50,819,A,14301.8,5987.84,3314.95,0,0
+C100066,South East,Retail,Current,28,774,A,507.47,0.0,1194.84,0,0
+C100067,North West,Premier,Current,48,753,A,2736.75,0.0,1483.65,0,0
+C100068,Midlands,Retail,Personal Loan,52,577,D,580.2,15240.1,1535.88,0,0
+C100069,South East,Retail,Personal Loan,55,754,A,985.56,22999.63,2031.2,60,0
+C100070,Wales,Premier,Credit Card,35,671,C,7677.4,3281.69,4690.42,0,0
+C100071,London,Premier,Savings,50,747,B,6616.98,0.0,4312.28,0,0
+C100072,Wales,Retail,Mortgage,18,722,B,3258.88,243876.76,1531.85,0,0
+C100073,Scotland,Retail,Savings,29,676,C,2220.37,0.0,1043.37,0,0
+C100074,Wales,Retail,Credit Card,42,625,C,1986.92,6175.01,923.67,60,0
+C100075,Wales,Retail,Savings,34,773,A,9606.78,0.0,1275.17,0,0
+C100076,South East,Wealth,Credit Card,41,702,B,35289.57,10036.98,2684.07,0,0
+C100077,Wales,Retail,Credit Card,30,711,B,2516.29,1615.34,699.08,0,0
+C100078,North West,Retail,Current,55,598,D,2546.83,0.0,2253.79,0,0
+C100079,Scotland,Retail,Mortgage,46,745,B,4817.2,102463.87,1445.43,0,0
+C100080,London,Wealth,Savings,57,741,B,22720.24,0.0,5770.85,0,0
+C100081,Midlands,Retail,Current,48,599,D,4617.37,0.0,705.6,0,0
+C100082,Midlands,Business,Current,47,680,B,1352.11,0.0,5071.99,0,0
+C100083,South East,Premier,Mortgage,49,785,A,38476.5,372091.8,2764.43,0,0
+C100084,London,Business,Savings,43,745,B,72160.02,0.0,2619.61,0,0
+C100085,Midlands,Business,Mortgage,36,631,C,26727.53,390803.37,2522.94,0,0
+C100086,London,Retail,Savings,35,539,D,1275.12,0.0,2099.11,0,0
+C100087,Wales,Retail,Personal Loan,39,649,C,1182.75,7394.48,670.46,0,0
+C100088,Wales,Retail,Savings,50,603,C,2977.94,0.0,1263.53,0,0
+C100089,London,Retail,Savings,72,850,A,1084.0,0.0,2515.54,0,0
+C100090,South East,Business,Savings,30,797,A,42375.17,0.0,1395.59,0,0
+C100091,Scotland,Wealth,Current,40,721,B,22488.89,0.0,6381.49,0,0
+C100092,Wales,Retail,Credit Card,43,714,B,848.06,2293.74,1179.45,0,0
+C100093,Scotland,Retail,Current,37,762,A,776.62,0.0,1385.76,0,0
+C100094,Midlands,Business,Current,47,765,A,15947.07,0.0,1064.88,0,0
+C100095,Midlands,Business,Savings,58,643,C,2105.63,0.0,4723.62,0,0
+C100096,London,Retail,Mortgage,48,705,B,1127.9,129758.65,640.92,30,0
+C100097,Wales,Retail,Personal Loan,30,536,D,658.67,15068.89,608.74,0,0
+C100098,South East,Retail,Credit Card,50,745,B,2581.59,2577.16,1830.48,0,0
+C100099,Scotland,Retail,Mortgage,44,649,C,5691.31,418353.76,508.09,0,0
+C100100,Midlands,Premier,Mortgage,51,716,B,23221.76,452807.31,1895.19,0,0
+C100101,Wales,Retail,Personal Loan,18,722,B,909.13,9333.45,1220.2,0,0
+C100102,North West,Premier,Current,51,607,C,5706.94,0.0,1474.96,0,0
+C100103,Midlands,Retail,Credit Card,47,672,C,3618.4,1444.93,1412.0,0,0
+C100104,North West,Retail,Current,42,495,E,5074.07,0.0,524.47,0,0
+C100105,London,Premier,Credit Card,22,695,B,8339.98,4620.21,1360.05,0,0
+C100106,Midlands,Retail,Current,52,850,A,1731.95,0.0,2261.25,0,0
+C100107,London,Premier,Current,48,624,C,11228.89,0.0,2650.29,0,0
+C100108,Midlands,Retail,Current,65,531,D,2528.82,0.0,1054.8,0,0
+C100109,South East,Retail,Current,38,633,C,1310.42,0.0,532.08,0,0
+C100110,Wales,Retail,Savings,52,681,B,7578.11,0.0,960.89,0,0
+C100111,Midlands,Retail,Current,38,752,A,6107.33,0.0,746.0,0,0
+C100112,South East,Wealth,Credit Card,32,708,B,25909.92,4877.28,12462.69,0,0
+C100113,Scotland,Premier,Credit Card,41,710,B,1973.94,3796.84,2588.27,0,0
+C100114,London,Business,Current,50,721,B,12278.79,0.0,3400.35,0,0
+C100115,North West,Business,Credit Card,38,682,B,11111.91,4319.11,1713.05,90,1
+C100116,Scotland,Wealth,Credit Card,56,761,A,27578.7,16120.21,6964.82,0,0
+C100117,North West,Retail,Credit Card,69,529,D,1617.87,3319.54,2050.26,60,0
+C100118,Midlands,Wealth,Credit Card,46,654,C,14860.94,12072.29,7116.16,0,0
+C100119,Wales,Retail,Current,18,738,B,8043.8,0.0,909.0,0,0
+C100120,North West,Business,Mortgage,28,677,C,4969.6,575253.79,3783.89,0,0
+C100121,North West,Retail,Mortgage,48,631,C,5099.85,117399.05,400.03,0,0
+C100122,South East,Retail,Mortgage,41,739,B,874.68,348475.83,1872.06,0,0
+C100123,North West,Retail,Savings,37,734,B,6578.7,0.0,1739.35,0,0
+C100124,Scotland,Business,Credit Card,64,676,C,6834.56,4731.34,3485.06,0,0
+C100125,South East,Retail,Credit Card,33,743,B,811.49,2259.3,2574.2,30,0
+C100126,London,Retail,Current,29,686,B,4082.7,0.0,665.49,0,0
+C100127,Wales,Premier,Current,47,850,A,3708.86,0.0,699.79,0,0
+C100128,Midlands,Retail,Mortgage,27,758,A,5342.34,171043.22,804.87,0,0
+C100129,London,Retail,Current,47,761,A,2630.08,0.0,1771.24,0,0
+C100130,Wales,Premier,Savings,35,744,B,7431.01,0.0,1079.37,0,0
+C100131,London,Premier,Savings,41,788,A,9081.08,0.0,2051.31,0,0
+C100132,North West,Retail,Savings,60,616,C,2311.42,0.0,449.88,0,0
+C100133,London,Business,Savings,43,790,A,39751.55,0.0,1601.06,0,0
+C100134,London,Retail,Credit Card,47,753,A,1597.88,2422.0,461.36,0,0
+C100135,North West,Retail,Mortgage,51,619,C,1584.98,127540.4,1223.72,0,0
+C100136,South East,Retail,Credit Card,18,673,C,1634.55,2305.33,1920.35,0,0
+C100137,North West,Wealth,Current,36,660,C,30879.13,0.0,7714.22,0,0
+C100138,Wales,Business,Savings,48,820,A,11090.68,0.0,3516.32,0,0
+C100139,Midlands,Retail,Savings,62,642,C,763.65,0.0,1423.76,0,0
+C100140,London,Retail,Mortgage,41,666,C,648.04,421171.67,941.28,0,0
+C100141,Scotland,Retail,Personal Loan,50,829,A,15468.41,6694.47,1826.43,0,0
+C100142,North West,Retail,Mortgage,48,714,B,972.46,178726.12,815.74,0,0
+C100143,Midlands,Premier,Credit Card,43,712,B,2326.84,9188.54,1227.56,0,0
+C100144,London,Retail,Savings,45,736,B,1693.68,0.0,1558.34,0,0
+C100145,North West,Business,Credit Card,18,691,B,683.14,10579.21,2504.02,30,0
+C100146,Wales,Retail,Savings,68,680,B,615.08,0.0,1370.36,0,0
+C100147,Wales,Retail,Credit Card,48,597,D,321.82,4797.03,324.34,0,0
+C100148,Wales,Premier,Current,34,710,B,9808.46,0.0,2268.34,0,0
+C100149,London,Wealth,Current,34,720,B,20290.59,0.0,6126.72,0,0
+C100150,South East,Retail,Savings,54,537,D,3410.36,0.0,1720.67,0,0
+C100151,Midlands,Retail,Current,35,719,B,1069.48,0.0,846.62,0,0
+C100152,Wales,Premier,Mortgage,38,651,C,2622.58,197704.17,2353.16,0,0
+C100153,Wales,Premier,Credit Card,30,694,B,3536.05,5661.9,5278.57,0,0
+C100154,Wales,Retail,Personal Loan,46,731,B,1000.72,21584.26,1136.13,30,0
+C100155,Wales,Business,Savings,38,720,B,6459.77,0.0,2602.34,0,0
+C100156,Scotland,Retail,Personal Loan,45,668,C,1087.97,17010.7,3467.04,60,0
+C100157,Midlands,Retail,Current,22,698,B,2689.75,0.0,853.53,0,0
+C100158,Midlands,Retail,Savings,50,599,D,1713.21,0.0,750.06,0,0
+C100159,Scotland,Business,Credit Card,33,594,D,25903.67,11002.74,2069.31,0,0
+C100160,Wales,Retail,Credit Card,48,625,C,239.68,2468.65,714.72,0,0
+C100161,Scotland,Retail,Current,39,596,D,175.02,0.0,2532.32,0,0
+C100162,South East,Retail,Mortgage,72,732,B,767.62,378845.16,487.73,0,0
+C100163,South East,Wealth,Current,41,743,B,29859.45,0.0,3557.88,0,0
+C100164,Midlands,Premier,Credit Card,58,697,B,29505.86,3663.24,1689.35,0,0
+C100165,London,Retail,Current,39,679,C,2464.08,0.0,785.35,0,0
+C100166,Scotland,Wealth,Credit Card,45,746,B,71263.88,7787.27,5695.19,0,0
+C100167,Scotland,Premier,Personal Loan,47,638,C,6267.5,24474.59,2896.47,0,0
+C100168,London,Retail,Mortgage,51,814,A,11306.7,294522.57,1881.25,0,0
+C100169,Midlands,Retail,Credit Card,49,681,B,2038.22,1782.44,1034.36,0,0
+C100170,Scotland,Retail,Credit Card,51,668,C,3341.88,1793.74,1409.5,0,0
+C100171,Midlands,Business,Savings,34,696,B,1075.47,0.0,1562.63,0,0
+C100172,North West,Premier,Current,18,789,A,5970.77,0.0,1807.72,0,0
+C100173,Scotland,Retail,Current,26,690,B,12238.4,0.0,2551.19,0,0
+C100174,South East,Retail,Mortgage,51,846,A,374.9,219716.18,1017.32,0,0
+C100175,Wales,Retail,Credit Card,58,734,B,6475.79,880.27,663.26,0,0
+C100176,Wales,Retail,Mortgage,45,669,C,1897.8,147379.92,974.68,0,0
+C100177,Midlands,Retail,Current,36,757,A,8117.92,0.0,1146.74,0,0
+C100178,London,Retail,Current,35,652,C,600.39,0.0,663.54,0,0
+C100179,Midlands,Business,Savings,34,627,C,49569.84,0.0,6057.62,0,0
+C100180,Scotland,Retail,Personal Loan,37,584,D,1817.74,9760.73,1003.72,0,0
+C100181,North West,Wealth,Credit Card,56,729,B,420673.14,7912.68,3766.07,0,0
+C100182,South East,Retail,Credit Card,53,784,A,923.16,4557.9,1485.83,0,0
+C100183,Midlands,Premier,Current,28,747,B,3814.14,0.0,2471.59,0,0
+C100184,Wales,Retail,Current,34,813,A,661.0,0.0,832.19,0,0
+C100185,London,Retail,Current,49,552,D,1901.47,0.0,628.22,0,0
+C100186,North West,Premier,Personal Loan,41,743,B,8107.45,13729.91,3664.41,0,0
+C100187,North West,Retail,Savings,45,719,B,3320.04,0.0,1641.69,0,0
+C100188,North West,Premier,Savings,23,757,A,19540.44,0.0,5022.64,0,0
+C100189,North West,Retail,Savings,30,619,C,614.92,0.0,1936.52,0,0
+C100190,Midlands,Retail,Current,32,673,C,4198.11,0.0,2806.06,0,0
+C100191,Scotland,Retail,Personal Loan,42,627,C,237.1,7923.03,1504.27,0,0
+C100192,Midlands,Premier,Mortgage,76,625,C,6005.24,236914.89,2222.67,60,0
+C100193,Scotland,Business,Savings,35,732,B,29730.76,0.0,2986.18,0,0
+C100194,Wales,Retail,Current,32,745,B,3039.15,0.0,1248.1,0,0
+C100195,London,Wealth,Current,37,739,B,107708.39,0.0,5618.13,0,0
+C100196,Wales,Retail,Current,34,649,C,1094.13,0.0,954.76,0,0
+C100197,North West,Retail,Current,24,850,A,4189.35,0.0,727.81,0,0
+C100198,Scotland,Business,Current,68,796,A,26632.9,0.0,4398.29,0,0
+C100199,North West,Retail,Personal Loan,37,731,B,1574.67,6433.14,938.98,0,0
+C100200,Midlands,Premier,Savings,27,592,D,6752.13,0.0,2482.73,0,0
+C100201,London,Premier,Current,49,731,B,16004.85,0.0,1377.42,0,0
+C100202,Scotland,Retail,Personal Loan,48,619,C,17220.38,5916.45,1408.12,0,0
+C100203,London,Business,Current,55,667,C,2151.19,0.0,4762.15,0,0
+C100204,North West,Retail,Credit Card,43,697,B,10311.33,1751.92,2147.65,0,0
+C100205,Wales,Premier,Savings,32,844,A,13696.89,0.0,2189.02,0,0
+C100206,London,Retail,Personal Loan,20,749,B,284.18,7113.85,1460.96,0,0
+C100207,Scotland,Retail,Current,59,678,C,794.19,0.0,1385.66,0,0
+C100208,London,Retail,Current,41,726,B,4156.3,0.0,1048.78,0,0
+C100209,North West,Retail,Personal Loan,18,642,C,375.92,7572.61,1357.92,0,0
+C100210,London,Retail,Savings,42,723,B,4499.13,0.0,1081.79,0,0
+C100211,South East,Premier,Current,52,751,A,2474.61,0.0,1865.19,0,0
+C100212,Midlands,Premier,Current,55,664,C,3987.42,0.0,3155.95,0,0
+C100213,London,Retail,Savings,59,738,B,2591.07,0.0,2247.51,0,0
+C100214,South East,Business,Mortgage,39,707,B,3217.95,281830.58,1461.97,0,0
+C100215,Wales,Retail,Credit Card,26,809,A,947.92,2817.45,573.57,0,0
+C100216,London,Retail,Current,49,770,A,1383.86,0.0,924.05,0,0
+C100217,Wales,Premier,Credit Card,83,806,A,45534.66,4112.13,3047.08,0,0
+C100218,Midlands,Retail,Mortgage,43,689,B,592.12,167504.01,1185.3,0,0
+C100219,Wales,Retail,Current,49,850,A,3862.57,0.0,1224.86,0,0
+C100220,North West,Retail,Mortgage,18,805,A,15780.69,120852.77,2468.87,0,0
+C100221,Wales,Premier,Mortgage,40,734,B,4963.03,396816.97,3721.33,0,0
+C100222,North West,Retail,Credit Card,38,850,A,1867.04,1950.44,1222.92,0,0
+C100223,North West,Retail,Current,36,588,D,540.1,0.0,700.09,0,0
+C100224,Wales,Retail,Credit Card,32,697,B,965.37,3271.52,387.15,0,0
+C100225,North West,Premier,Savings,64,681,B,3567.36,0.0,2084.29,0,0
+C100226,London,Business,Credit Card,33,750,A,18738.58,4972.47,1748.64,0,0
+C100227,Scotland,Retail,Mortgage,31,724,B,1056.26,147784.34,1717.01,30,0
+C100228,Wales,Retail,Savings,41,612,C,6197.12,0.0,617.08,0,0
+C100229,London,Retail,Personal Loan,18,584,D,4411.21,9810.34,1383.7,90,1
+C100230,Wales,Retail,Savings,33,734,B,2825.96,0.0,1546.86,0,0
+C100231,South East,Retail,Mortgage,20,680,B,341.95,280392.36,1547.2,0,0
+C100232,Wales,Business,Personal Loan,61,849,A,19168.56,13642.28,4778.39,0,0
+C100233,London,Premier,Savings,66,683,B,853.14,0.0,2686.78,0,0
+C100234,Scotland,Premier,Savings,39,670,C,5767.2,0.0,3756.41,0,0
+C100235,London,Retail,Credit Card,56,621,C,1025.51,5586.43,378.08,0,0
+C100236,London,Retail,Savings,36,557,D,652.83,0.0,1007.36,0,0
+C100237,Scotland,Retail,Savings,30,686,B,534.7,0.0,1377.84,0,0
+C100238,Wales,Business,Mortgage,57,749,B,13572.66,574423.59,2710.63,90,1
+C100239,Midlands,Premier,Current,44,828,A,1593.92,0.0,1978.54,0,0
+C100240,North West,Premier,Current,76,609,C,9741.54,0.0,2118.27,0,0
+C100241,Wales,Premier,Current,52,649,C,12555.74,0.0,2072.13,0,0
+C100242,Midlands,Premier,Current,59,774,A,5004.97,0.0,3582.7,0,0
+C100243,Scotland,Retail,Mortgage,35,794,A,3573.85,108376.36,2859.87,30,0
+C100244,Scotland,Retail,Credit Card,60,737,B,1269.87,2379.1,960.66,0,0
+C100245,Midlands,Business,Mortgage,26,637,C,7894.64,267351.87,3904.4,0,0
+C100246,London,Retail,Savings,18,634,C,2490.3,0.0,1870.48,0,0
+C100247,South East,Retail,Savings,46,687,B,15563.79,0.0,786.89,0,0
+C100248,London,Premier,Savings,41,839,A,6763.65,0.0,3142.06,0,0
+C100249,Scotland,Business,Current,44,610,C,14654.7,0.0,5629.41,0,0
+C100250,Wales,Retail,Savings,37,731,B,4394.03,0.0,2564.57,0,0
+C100251,North West,Retail,Personal Loan,37,751,A,1863.38,11745.96,1541.84,0,0
+C100252,Scotland,Premier,Current,32,709,B,13141.07,0.0,4248.27,0,0
+C100253,London,Wealth,Current,50,745,B,92137.46,0.0,8867.72,0,0
+C100254,Wales,Business,Current,27,572,D,10042.42,0.0,1856.26,0,0
+C100255,South East,Retail,Current,45,661,C,1442.15,0.0,952.1,0,0
+C100256,South East,Retail,Current,48,670,C,3535.78,0.0,783.16,0,0
+C100257,Midlands,Retail,Current,18,710,B,305.3,0.0,1276.17,0,0
+C100258,London,Retail,Current,45,720,B,2009.3,0.0,801.06,0,0
+C100259,Wales,Premier,Current,25,677,C,48729.73,0.0,2942.73,0,0
+C100260,Midlands,Business,Current,52,653,C,6254.98,0.0,2150.25,90,1
+C100261,London,Premier,Current,74,850,A,3426.13,0.0,1951.48,0,0
+C100262,South East,Retail,Current,18,513,E,290.63,0.0,2248.33,0,0
+C100263,Midlands,Retail,Personal Loan,20,804,A,2341.32,5138.92,1510.85,0,0
+C100264,South East,Retail,Savings,33,649,C,2232.18,0.0,681.96,0,0
+C100265,Scotland,Premier,Savings,43,763,A,9246.07,0.0,3368.54,0,0
+C100266,North West,Retail,Credit Card,49,676,C,387.84,1202.7,1208.88,0,0
+C100267,London,Premier,Savings,40,697,B,10572.68,0.0,1308.81,0,0
+C100268,London,Retail,Savings,51,740,B,14533.56,0.0,1181.46,0,0
+C100269,South East,Premier,Savings,35,635,C,27212.95,0.0,2929.79,0,0
+C100270,London,Retail,Mortgage,25,632,C,4739.43,190945.67,1647.39,0,0
+C100271,South East,Retail,Savings,37,772,A,1922.57,0.0,1388.26,0,0
+C100272,North West,Retail,Credit Card,44,754,A,2778.98,4706.5,445.62,0,0
+C100273,Midlands,Premier,Savings,56,530,D,24190.6,0.0,1058.73,0,0
+C100274,London,Retail,Credit Card,46,773,A,3097.95,2139.81,1089.86,0,0
+C100275,North West,Wealth,Savings,54,647,C,56704.64,0.0,11439.09,0,0
+C100276,Wales,Retail,Current,44,833,A,5815.96,0.0,1356.91,0,0
+C100277,Wales,Premier,Credit Card,41,768,A,1236.87,7273.99,4447.69,0,0
+C100278,North West,Wealth,Savings,25,715,B,112207.27,0.0,11122.11,0,0
+C100279,Scotland,Business,Credit Card,40,635,C,8691.15,17337.67,1855.81,0,0
+C100280,Scotland,Business,Credit Card,50,820,A,5544.68,3260.21,4083.29,0,0
+C100281,North West,Retail,Current,57,614,C,586.18,0.0,1531.92,0,0
+C100282,Scotland,Premier,Current,49,738,B,42702.66,0.0,2566.16,0,0
+C100283,Midlands,Retail,Personal Loan,45,477,E,1339.98,23686.78,972.53,0,0
+C100284,South East,Retail,Savings,48,821,A,660.86,0.0,2233.39,0,0
+C100285,Scotland,Premier,Current,43,735,B,25607.16,0.0,947.31,0,0
+C100286,Wales,Retail,Mortgage,40,787,A,3800.85,212189.42,963.66,0,0
+C100287,North West,Retail,Current,49,684,B,202.62,0.0,1019.23,0,0
+C100288,Midlands,Retail,Personal Loan,54,729,B,3409.86,6797.7,794.55,0,0
+C100289,Scotland,Premier,Current,41,595,D,35190.88,0.0,1848.45,0,0
+C100290,South East,Retail,Savings,55,507,E,955.91,0.0,505.45,90,1
+C100291,Midlands,Retail,Current,33,788,A,4025.35,0.0,1045.51,0,0
+C100292,London,Business,Current,36,574,D,7966.17,0.0,5138.71,0,0
+C100293,North West,Business,Credit Card,35,699,B,2467.5,2185.55,2263.78,0,0
+C100294,Scotland,Retail,Credit Card,19,754,A,650.71,1804.02,1097.18,0,0
+C100295,South East,Retail,Savings,38,721,B,200.82,0.0,694.45,0,0
+C100296,Midlands,Retail,Current,56,733,B,1162.92,0.0,1518.98,0,0
+C100297,North West,Business,Savings,34,782,A,16407.71,0.0,4164.96,0,0
+C100298,London,Premier,Current,51,850,A,12797.76,0.0,3805.92,0,0
+C100299,Midlands,Business,Savings,39,630,C,6720.84,0.0,1728.1,0,0
+C100300,Wales,Retail,Current,18,552,D,1359.16,0.0,2371.18,0,0
+C100301,London,Retail,Current,27,695,B,6464.35,0.0,1034.69,0,0
+C100302,Midlands,Premier,Mortgage,40,550,D,27679.41,223013.61,1767.47,90,1
+C100303,Wales,Wealth,Credit Card,64,754,A,107047.9,3930.13,8179.76,0,0
+C100304,North West,Retail,Credit Card,28,623,C,7703.32,1239.72,2145.11,0,0
+C100305,Wales,Retail,Credit Card,36,812,A,2525.39,2010.8,3225.94,0,0
+C100306,South East,Retail,Current,27,621,C,1804.19,0.0,2652.34,0,0
+C100307,Midlands,Business,Current,56,818,A,1383.18,0.0,4564.54,0,0
+C100308,South East,Retail,Savings,49,513,E,9781.95,0.0,928.31,0,0
+C100309,London,Retail,Current,42,619,C,1055.25,0.0,1238.7,0,0
+C100310,Midlands,Premier,Savings,32,729,B,13428.23,0.0,3096.62,0,0
+C100311,Wales,Premier,Savings,38,713,B,6323.94,0.0,1235.48,0,0
+C100312,Wales,Retail,Credit Card,46,850,A,4658.42,1300.03,1235.0,0,0
+C100313,Scotland,Retail,Savings,26,650,C,2741.27,0.0,1213.94,0,0
+C100314,North West,Premier,Current,45,646,C,1895.37,0.0,1656.82,0,0
+C100315,South East,Retail,Current,51,672,C,1094.06,0.0,507.74,0,0
+C100316,North West,Premier,Credit Card,46,710,B,3703.34,3467.53,3564.03,0,0
+C100317,London,Retail,Credit Card,46,536,D,22987.49,1190.79,665.98,0,0
+C100318,Wales,Retail,Personal Loan,25,695,B,1392.55,10323.03,520.35,0,0
+C100319,Scotland,Premier,Current,18,645,C,21691.57,0.0,2098.36,0,0
+C100320,North West,Premier,Savings,38,680,B,7371.85,0.0,1591.56,0,0
+C100321,Midlands,Retail,Current,37,492,E,1146.64,0.0,1407.15,0,0
+C100322,North West,Retail,Current,35,738,B,1717.35,0.0,1457.5,0,0
+C100323,North West,Premier,Savings,43,850,A,22177.57,0.0,3642.45,0,0
+C100324,South East,Premier,Savings,75,731,B,6700.04,0.0,3727.13,0,0
+C100325,Scotland,Retail,Savings,46,708,B,308.67,0.0,548.38,0,0
+C100326,Midlands,Retail,Credit Card,31,572,D,2500.49,994.99,1117.66,0,0
+C100327,Wales,Retail,Current,18,849,A,3454.84,0.0,515.48,0,0
+C100328,North West,Retail,Personal Loan,37,719,B,1314.74,6551.4,354.81,0,0
+C100329,London,Retail,Current,53,760,A,699.27,0.0,1078.49,0,0
+C100330,Wales,Retail,Credit Card,60,678,C,2729.86,2172.01,1463.86,0,0
+C100331,North West,Premier,Personal Loan,71,662,C,5565.51,8592.71,5629.91,90,1
+C100332,Midlands,Retail,Current,43,757,A,1555.15,0.0,874.66,0,0
+C100333,Midlands,Business,Current,34,553,D,25387.13,0.0,1744.23,0,0
+C100334,London,Retail,Savings,27,702,B,2220.91,0.0,1064.46,0,0
+C100335,Wales,Business,Mortgage,45,678,C,33636.63,527924.03,3260.64,0,0
+C100336,London,Premier,Savings,44,734,B,5301.27,0.0,2187.86,0,0
+C100337,Midlands,Retail,Credit Card,34,671,C,4318.89,2248.17,2139.02,0,0
+C100338,Scotland,Premier,Savings,56,663,C,2702.56,0.0,3317.14,0,0
+C100339,Midlands,Retail,Savings,55,452,E,3103.45,0.0,1029.92,0,0
+C100340,Midlands,Retail,Current,40,692,B,2581.78,0.0,1140.05,0,0
+C100341,Scotland,Retail,Savings,38,625,C,4704.08,0.0,522.7,0,0
+C100342,London,Retail,Savings,43,836,A,3291.99,0.0,3844.32,0,0
+C100343,Midlands,Premier,Mortgage,33,584,D,14753.87,606224.12,3312.88,0,0
+C100344,London,Retail,Credit Card,45,704,B,308.4,1764.69,1882.94,0,0
+C100345,London,Business,Savings,44,633,C,14593.94,0.0,4328.91,0,0
+C100346,Midlands,Business,Personal Loan,69,587,D,10662.78,8143.56,1838.25,0,0
+C100347,North West,Retail,Current,37,640,C,1328.56,0.0,618.55,0,0
+C100348,Scotland,Retail,Current,30,779,A,2598.36,0.0,1854.06,0,0
+C100349,London,Retail,Credit Card,45,737,B,3789.29,2457.94,698.44,0,0
+C100350,North West,Premier,Savings,47,645,C,6124.56,0.0,2185.45,0,0
+C100351,Midlands,Retail,Current,29,614,C,1030.91,0.0,1295.75,0,0
+C100352,Wales,Business,Current,42,655,C,12067.19,0.0,2077.24,0,0
+C100353,Wales,Retail,Credit Card,35,711,B,891.29,5341.42,961.74,0,0
+C100354,Midlands,Retail,Mortgage,42,682,B,2047.16,61901.67,869.86,0,0
+C100355,Wales,Retail,Savings,71,679,C,1083.96,0.0,1308.29,0,0
+C100356,Midlands,Premier,Mortgage,20,784,A,17734.41,293783.87,649.06,0,0
+C100357,South East,Retail,Current,30,742,B,1487.3,0.0,2023.56,0,0
+C100358,London,Retail,Current,60,782,A,8535.65,0.0,896.52,0,0
+C100359,London,Retail,Savings,40,545,D,824.8,0.0,1357.44,0,0
+C100360,London,Retail,Credit Card,43,698,B,1625.77,2949.47,1572.94,0,0
+C100361,Wales,Retail,Credit Card,37,682,B,5577.79,1366.04,613.72,0,0
+C100362,Wales,Retail,Mortgage,41,545,D,2566.38,127348.26,1931.06,0,0
+C100363,South East,Retail,Credit Card,39,747,B,6261.85,1943.78,722.3,0,0
+C100364,Midlands,Wealth,Savings,38,698,B,18006.59,0.0,1565.23,0,0
+C100365,Wales,Retail,Current,37,667,C,728.15,0.0,977.11,0,0
+C100366,London,Retail,Mortgage,48,715,B,2728.05,136607.82,942.33,0,0
+C100367,Midlands,Premier,Current,53,549,D,8533.92,0.0,932.84,0,0
+C100368,Wales,Retail,Current,36,664,C,9276.98,0.0,1792.46,0,0
+C100369,North West,Premier,Current,31,730,B,40646.63,0.0,977.14,0,0
+C100370,London,Retail,Savings,68,702,B,9366.47,0.0,1442.85,0,0
+C100371,South East,Retail,Current,55,777,A,3116.68,0.0,988.27,0,0
+C100372,London,Retail,Savings,53,583,D,4728.92,0.0,353.74,0,0
+C100373,Midlands,Retail,Credit Card,65,753,A,730.78,2642.61,1245.59,0,0
+C100374,North West,Retail,Personal Loan,22,529,D,1070.62,7278.16,1459.77,0,0
+C100375,North West,Retail,Personal Loan,24,509,E,3805.35,16293.6,978.95,0,0
+C100376,North West,Retail,Personal Loan,24,658,C,3081.07,5621.36,841.88,0,0
+C100377,Midlands,Business,Savings,33,456,E,3284.75,0.0,3830.28,0,0
+C100378,Scotland,Business,Savings,63,710,B,1568.74,0.0,5482.55,0,0
+C100379,Midlands,Premier,Credit Card,77,791,A,2027.46,25113.06,2150.45,0,0
+C100380,South East,Retail,Savings,38,627,C,3004.9,0.0,1536.77,0,0
+C100381,Wales,Premier,Current,59,606,C,5429.2,0.0,2245.51,0,0
+C100382,North West,Retail,Savings,36,728,B,1975.0,0.0,762.51,0,0
+C100383,North West,Premier,Credit Card,54,786,A,7651.94,3203.28,2201.53,0,0
+C100384,Midlands,Retail,Savings,61,648,C,8347.71,0.0,623.07,0,0
+C100385,South East,Premier,Mortgage,44,690,B,20105.33,151794.92,6910.5,0,0
+C100386,London,Retail,Savings,40,668,C,884.46,0.0,810.24,0,0
+C100387,South East,Premier,Credit Card,22,702,B,11588.79,9942.65,915.66,0,0
+C100388,Wales,Retail,Personal Loan,33,779,A,544.29,6000.05,665.56,0,0
+C100389,London,Business,Credit Card,55,676,C,9262.57,5809.51,2488.86,0,0
+C100390,Wales,Business,Mortgage,43,788,A,16005.34,305642.91,2629.16,0,0
+C100391,Midlands,Retail,Current,43,630,C,3384.6,0.0,523.91,0,0
+C100392,London,Premier,Savings,27,797,A,9766.85,0.0,2939.37,0,0
+C100393,North West,Business,Credit Card,51,763,A,4857.44,4773.31,3495.71,0,0
+C100394,Wales,Premier,Mortgage,45,613,C,17589.18,247841.93,4291.88,0,0
+C100395,North West,Retail,Credit Card,47,705,B,1419.6,1806.81,1212.23,0,0
+C100396,Scotland,Retail,Savings,71,684,B,1871.13,0.0,938.92,0,0
+C100397,South East,Retail,Credit Card,41,627,C,5459.53,2637.71,873.67,0,0
+C100398,South East,Retail,Current,31,627,C,3283.49,0.0,908.01,0,0
+C100399,Scotland,Retail,Personal Loan,35,694,B,712.52,4679.63,836.86,0,0
+C100400,Midlands,Premier,Credit Card,41,652,C,9738.37,2874.31,2104.65,0,0
+C100401,South East,Wealth,Personal Loan,50,558,D,13437.05,76733.78,4267.88,0,0
+C100402,Scotland,Retail,Current,26,715,B,3782.64,0.0,1100.57,0,0
+C100403,Midlands,Retail,Savings,34,768,A,683.99,0.0,2055.11,0,0
+C100404,South East,Business,Credit Card,25,590,D,8347.02,3240.85,3682.46,0,0
+C100405,North West,Retail,Current,36,708,B,1756.58,0.0,563.68,0,0
+C100406,South East,Wealth,Credit Card,18,754,A,22839.16,6987.35,6517.45,0,0
+C100407,North West,Retail,Mortgage,35,532,D,22597.65,141809.26,2536.09,0,0
+C100408,Scotland,Retail,Savings,18,722,B,440.97,0.0,1440.13,0,0
+C100409,Wales,Business,Current,48,741,B,19582.02,0.0,9451.63,0,0
+C100410,Midlands,Retail,Current,61,651,C,1350.06,0.0,1279.2,0,0
+C100411,Scotland,Retail,Credit Card,31,652,C,142.58,2590.79,371.35,0,0
+C100412,London,Retail,Savings,29,680,B,1451.09,0.0,1040.15,0,0
+C100413,South East,Premier,Personal Loan,45,689,B,2677.76,10012.38,1184.47,0,0
+C100414,North West,Premier,Savings,56,538,D,20764.84,0.0,1605.81,0,0
+C100415,London,Retail,Current,40,816,A,1989.3,0.0,1052.92,0,0
+C100416,Midlands,Retail,Personal Loan,42,582,D,1297.67,3977.54,654.83,0,0
+C100417,Wales,Retail,Savings,47,826,A,2127.37,0.0,1004.22,0,0
+C100418,Scotland,Retail,Savings,18,795,A,4016.96,0.0,2098.77,0,0
+C100419,North West,Retail,Current,21,568,D,787.7,0.0,614.69,0,0
+C100420,London,Retail,Mortgage,28,644,C,13212.56,189028.02,1600.27,0,0
+C100421,Wales,Retail,Savings,54,682,B,1214.07,0.0,1843.35,0,0
+C100422,South East,Retail,Current,33,748,B,2851.15,0.0,2143.32,0,0
+C100423,London,Retail,Credit Card,40,761,A,2940.62,1515.47,2866.43,0,0
+C100424,South East,Premier,Credit Card,37,587,D,8273.19,4147.15,6242.28,30,0
+C100425,London,Retail,Current,28,645,C,1071.73,0.0,4371.84,0,0
+C100426,Wales,Retail,Personal Loan,18,850,A,1396.29,13583.75,2904.81,0,0
+C100427,South East,Business,Current,61,672,C,5944.25,0.0,3263.8,0,0
+C100428,London,Retail,Current,35,593,D,3555.71,0.0,1866.14,0,0
+C100429,Midlands,Business,Current,31,677,C,712.79,0.0,2172.33,0,0
+C100430,South East,Business,Current,35,714,B,69885.5,0.0,3485.35,0,0
+C100431,Scotland,Retail,Current,25,559,D,479.8,0.0,1056.63,0,0
+C100432,Midlands,Premier,Mortgage,46,654,C,34573.18,235726.11,1836.94,0,0
+C100433,Scotland,Retail,Current,40,741,B,1299.83,0.0,995.06,0,0
+C100434,North West,Retail,Savings,38,672,C,2921.83,0.0,882.09,90,1
+C100435,London,Business,Credit Card,57,721,B,16959.29,7846.72,5988.66,0,0
+C100436,North West,Business,Current,30,655,C,12677.88,0.0,6193.87,0,0
+C100437,Wales,Retail,Credit Card,31,604,C,6190.02,1255.64,1300.27,0,0
+C100438,Wales,Premier,Personal Loan,39,656,C,9026.27,16215.87,3420.88,0,0
+C100439,Midlands,Retail,Savings,46,767,A,4399.77,0.0,1249.09,0,0
+C100440,Wales,Retail,Savings,30,585,D,1355.39,0.0,766.35,0,0
+C100441,Wales,Business,Credit Card,52,667,C,2442.19,2760.59,5195.28,0,0
+C100442,South East,Premier,Current,54,694,B,6177.06,0.0,1827.07,0,0
+C100443,Midlands,Premier,Current,61,693,B,16200.05,0.0,1672.26,0,0
+C100444,Wales,Retail,Current,25,740,B,3065.79,0.0,504.09,0,0
+C100445,North West,Retail,Mortgage,18,768,A,14575.54,179602.94,653.1,0,0
+C100446,Midlands,Premier,Savings,19,696,B,1450.19,0.0,1406.61,0,0
+C100447,South East,Retail,Savings,42,736,B,288.49,0.0,1007.11,0,0
+C100448,North West,Retail,Savings,29,680,B,541.98,0.0,712.59,0,0
+C100449,Wales,Business,Current,43,792,A,54116.34,0.0,4057.06,0,0
+C100450,South East,Retail,Personal Loan,54,614,C,4580.51,11237.38,1410.14,0,0
+C100451,South East,Retail,Savings,46,734,B,783.59,0.0,1501.93,0,0
+C100452,South East,Retail,Credit Card,43,722,B,1445.98,1058.21,3264.8,0,0
+C100453,London,Retail,Savings,34,786,A,656.59,0.0,1367.6,0,0
+C100454,London,Retail,Mortgage,29,626,C,1218.03,109666.47,1392.81,0,0
+C100455,London,Wealth,Mortgage,29,696,B,2438.47,2081128.74,2769.05,0,0
+C100456,North West,Business,Credit Card,72,786,A,9663.36,6849.96,2372.75,0,0
+C100457,London,Premier,Mortgage,50,834,A,17441.01,327794.84,1833.1,0,0
+C100458,Midlands,Retail,Personal Loan,29,708,B,574.49,10965.22,601.31,0,0
+C100459,South East,Retail,Current,31,704,B,2895.02,0.0,695.78,0,0
+C100460,Midlands,Retail,Savings,43,636,C,12018.05,0.0,814.76,0,0
+C100461,South East,Retail,Current,67,690,B,420.89,0.0,2099.18,0,0
+C100462,Midlands,Retail,Savings,41,694,B,2350.11,0.0,2261.49,0,0
+C100463,London,Premier,Credit Card,22,713,B,32423.25,4512.41,2028.59,0,0
+C100464,Wales,Retail,Credit Card,48,669,C,1152.41,2229.02,1302.57,0,0
+C100465,North West,Premier,Savings,43,787,A,3414.65,0.0,2429.63,0,0
+C100466,Scotland,Retail,Savings,45,638,C,810.36,0.0,1523.33,0,0
+C100467,London,Premier,Credit Card,50,683,B,7768.78,11318.99,2032.86,0,0
+C100468,Midlands,Wealth,Credit Card,39,781,A,38158.59,28336.34,14867.27,30,0
+C100469,Midlands,Business,Current,28,766,A,9684.98,0.0,4426.54,0,0
+C100470,South East,Premier,Current,55,694,B,5647.88,0.0,4625.56,0,0
+C100471,Midlands,Retail,Savings,20,821,A,611.45,0.0,514.38,0,0
+C100472,South East,Retail,Credit Card,25,556,D,630.54,1004.82,1182.12,0,0
+C100473,Midlands,Premier,Current,22,850,A,42929.49,0.0,1325.06,0,0
+C100474,Wales,Retail,Personal Loan,34,567,D,2320.43,8214.45,1802.06,0,0
+C100475,North West,Retail,Savings,46,588,D,2134.64,0.0,2403.82,0,0
+C100476,Wales,Premier,Mortgage,43,707,B,12322.42,612416.75,1410.94,0,0
+C100477,London,Retail,Savings,27,588,D,5208.4,0.0,3242.78,0,0
+C100478,North West,Wealth,Credit Card,39,801,A,30953.53,7613.92,4092.7,0,0
+C100479,London,Wealth,Savings,53,700,B,13768.01,0.0,4605.52,0,0
+C100480,South East,Retail,Current,32,664,C,85.93,0.0,1680.47,0,0
+C100481,South East,Retail,Current,40,601,C,771.14,0.0,926.24,0,0
+C100482,North West,Retail,Current,34,580,D,1973.98,0.0,1156.21,0,0
+C100483,London,Retail,Credit Card,30,535,D,2252.51,3905.74,1044.01,90,1
+C100484,Midlands,Business,Credit Card,48,741,B,13573.06,5413.36,2246.51,0,0
+C100485,South East,Wealth,Credit Card,18,839,A,18238.97,7228.14,7080.94,0,0
+C100486,South East,Business,Current,34,632,C,17564.39,0.0,1337.79,0,0
+C100487,South East,Retail,Savings,20,700,B,2145.03,0.0,1769.05,0,0
+C100488,North West,Retail,Personal Loan,59,807,A,908.71,12039.95,951.45,0,0
+C100489,North West,Retail,Mortgage,44,652,C,8750.34,160808.85,1422.92,0,0
+C100490,South East,Business,Current,24,594,D,18314.79,0.0,4101.39,0,0
+C100491,London,Retail,Personal Loan,44,748,B,1393.73,7715.21,869.9,0,0
+C100492,Scotland,Retail,Current,55,656,C,1067.1,0.0,2300.04,0,0
+C100493,Midlands,Premier,Savings,50,775,A,36537.52,0.0,1562.33,0,0
+C100494,London,Retail,Mortgage,50,734,B,4239.36,245036.25,870.51,0,0
+C100495,Wales,Premier,Savings,37,814,A,12675.38,0.0,1386.53,0,0
+C100496,London,Retail,Current,43,734,B,4317.37,0.0,680.37,0,0
+C100497,Midlands,Business,Savings,62,739,B,8856.91,0.0,5523.82,0,0
+C100498,Midlands,Retail,Current,34,567,D,4059.77,0.0,1821.61,0,0
+C100499,North West,Retail,Mortgage,56,589,D,5795.52,210444.48,812.48,0,0
+C100500,Wales,Business,Current,28,782,A,1381.45,0.0,1635.69,0,0
+C100501,North West,Premier,Savings,18,850,A,10145.83,0.0,3809.92,0,0
+C100502,North West,Retail,Mortgage,67,713,B,1022.74,115184.16,1057.89,0,0
+C100503,North West,Retail,Mortgage,25,590,D,3064.82,222319.03,851.44,0,0
+C100504,South East,Retail,Mortgage,23,814,A,601.46,154841.8,1837.75,0,0
+C100505,Midlands,Retail,Personal Loan,56,686,B,1082.11,6660.83,515.0,0,0
+C100506,Midlands,Retail,Mortgage,25,718,B,2218.29,153948.39,478.87,0,0
+C100507,Scotland,Business,Credit Card,35,680,B,30840.13,7245.03,4742.62,0,0
+C100508,Wales,Retail,Mortgage,27,699,B,13359.62,234684.73,761.37,0,0
+C100509,Midlands,Retail,Savings,35,823,A,5888.88,0.0,1154.95,0,0
+C100510,North West,Business,Savings,67,719,B,12274.23,0.0,1829.85,0,0
+C100511,Midlands,Premier,Personal Loan,24,763,A,25210.26,41890.29,1688.95,0,0
+C100512,North West,Retail,Current,52,693,B,9732.12,0.0,1104.89,0,0
+C100513,Midlands,Retail,Current,57,617,C,1668.83,0.0,1477.39,0,0
+C100514,North West,Wealth,Mortgage,43,790,A,130150.26,925266.06,8059.48,0,0
+C100515,Scotland,Business,Mortgage,18,713,B,5530.0,461196.17,3661.92,0,0
+C100516,Wales,Premier,Personal Loan,47,716,B,34578.1,20015.77,1845.39,0,0
+C100517,Scotland,Premier,Savings,30,688,B,19702.86,0.0,2010.14,0,0
+C100518,South East,Wealth,Mortgage,36,623,C,9497.6,362939.52,13006.46,0,0
+C100519,South East,Business,Current,41,626,C,11933.0,0.0,2045.75,0,0
+C100520,North West,Business,Current,56,712,B,93574.6,0.0,1168.11,0,0
+C100521,Wales,Premier,Current,29,588,D,9540.28,0.0,969.18,0,0
+C100522,Scotland,Retail,Credit Card,47,605,C,2637.48,1110.76,934.17,0,0
+C100523,Midlands,Retail,Savings,59,760,A,357.7,0.0,1603.52,0,0
+C100524,Midlands,Retail,Savings,22,792,A,197.0,0.0,1637.19,0,0
+C100525,London,Premier,Current,54,681,B,4341.26,0.0,11646.19,0,0
+C100526,North West,Retail,Savings,44,696,B,6387.97,0.0,845.96,0,0
+C100527,London,Retail,Savings,18,660,C,639.76,0.0,693.77,0,0
+C100528,Scotland,Premier,Savings,38,625,C,19867.79,0.0,2335.64,0,0
+C100529,North West,Premier,Mortgage,34,850,A,9856.47,194621.34,1848.37,0,0
+C100530,Scotland,Premier,Mortgage,64,581,D,1563.34,169205.43,1978.74,0,0
+C100531,Midlands,Retail,Savings,37,769,A,3220.39,0.0,4335.31,0,0
+C100532,Midlands,Premier,Savings,18,850,A,12594.76,0.0,4460.06,0,0
+C100533,Midlands,Retail,Credit Card,58,799,A,211.69,980.72,1346.82,0,0
+C100534,Wales,Business,Credit Card,44,762,A,2835.21,13199.69,1243.5,0,0
+C100535,South East,Premier,Personal Loan,50,635,C,9115.13,14419.9,1464.02,0,0
+C100536,Wales,Premier,Current,45,850,A,9244.2,0.0,1700.2,0,0
+C100537,Scotland,Premier,Savings,45,850,A,7612.68,0.0,2402.39,0,0
+C100538,North West,Retail,Savings,52,787,A,3178.39,0.0,911.62,0,0
+C100539,North West,Premier,Current,43,577,D,27809.0,0.0,1228.62,0,0
+C100540,Midlands,Retail,Credit Card,45,752,A,24999.5,1527.32,3140.52,0,0
+C100541,North West,Retail,Current,18,484,E,10788.76,0.0,1409.27,0,0
+C100542,North West,Retail,Current,18,757,A,10121.14,0.0,2094.83,0,0
+C100543,London,Retail,Credit Card,22,729,B,521.37,3210.75,1002.31,0,0
+C100544,Wales,Retail,Current,30,700,B,6390.0,0.0,964.68,0,0
+C100545,Wales,Premier,Savings,48,689,B,3189.54,0.0,4213.1,0,0
+C100546,North West,Retail,Savings,56,840,A,1603.07,0.0,1020.94,0,0
+C100547,North West,Business,Current,56,678,C,24359.96,0.0,3784.49,0,0
+C100548,London,Retail,Current,24,680,B,529.77,0.0,2161.83,0,0
+C100549,North West,Premier,Mortgage,45,589,D,7135.06,172065.38,1913.54,0,0
+C100550,North West,Business,Current,43,730,B,102551.36,0.0,4210.23,0,0
+C100551,Midlands,Retail,Savings,36,464,E,870.85,0.0,449.08,0,0
+C100552,North West,Business,Current,46,685,B,6813.92,0.0,3598.95,0,0
+C100553,Wales,Retail,Credit Card,21,774,A,3677.61,2108.92,679.45,0,0
+C100554,Wales,Business,Credit Card,52,809,A,2417.08,13245.25,3773.19,0,0
+C100555,South East,Premier,Mortgage,34,732,B,1499.88,755090.69,12222.16,0,0
+C100556,Scotland,Retail,Mortgage,49,749,B,21208.71,116011.56,828.59,0,0
+C100557,Scotland,Business,Current,55,578,D,9851.8,0.0,3346.12,0,0
+C100558,Midlands,Retail,Savings,25,668,C,1117.93,0.0,591.55,0,0
+C100559,Midlands,Business,Current,38,672,C,31340.42,0.0,4942.79,0,0
+C100560,Midlands,Retail,Credit Card,29,644,C,194.22,3043.64,636.55,0,0
+C100561,Wales,Premier,Personal Loan,54,721,B,917.93,13550.95,3077.24,0,0
+C100562,South East,Premier,Current,47,608,C,9885.51,0.0,7774.98,0,0
+C100563,Midlands,Wealth,Credit Card,53,696,B,116651.48,8486.53,1841.24,0,0
+C100564,London,Retail,Current,32,609,C,3913.29,0.0,1096.77,0,0
+C100565,London,Retail,Savings,29,681,B,1119.37,0.0,1024.55,0,0
+C100566,Scotland,Business,Credit Card,41,629,C,8759.56,7878.54,4214.06,0,0
+C100567,South East,Retail,Credit Card,49,837,A,10059.61,1500.24,509.39,0,0
+C100568,North West,Premier,Savings,43,630,C,3382.83,0.0,1815.75,0,0
+C100569,London,Retail,Savings,39,728,B,862.61,0.0,473.81,0,0
+C100570,Scotland,Retail,Current,75,732,B,465.65,0.0,449.36,0,0
+C100571,Scotland,Retail,Savings,25,666,C,1729.48,0.0,2110.0,0,0
+C100572,North West,Retail,Credit Card,44,589,D,4758.7,2439.04,2250.27,0,0
+C100573,North West,Premier,Credit Card,59,793,A,27327.31,3537.72,1873.89,0,0
+C100574,Midlands,Wealth,Personal Loan,36,748,B,141763.88,25653.95,1907.3,0,0
+C100575,South East,Premier,Credit Card,24,785,A,974.12,2913.01,2142.96,0,0
+C100576,Wales,Retail,Savings,25,638,C,411.04,0.0,1197.22,0,0
+C100577,London,Retail,Mortgage,36,675,C,8295.72,320769.99,1020.92,0,0
+C100578,North West,Premier,Mortgage,66,689,B,3934.44,274415.21,2927.92,0,0
+C100579,Scotland,Premier,Mortgage,46,744,B,533.93,272658.18,2457.55,0,0
+C100580,Wales,Retail,Savings,36,640,C,1344.76,0.0,1007.93,0,0
+C100581,Wales,Retail,Mortgage,53,664,C,5399.47,147960.77,1149.16,0,0
+C100582,Scotland,Retail,Current,32,811,A,2245.06,0.0,1534.16,0,0
+C100583,London,Retail,Mortgage,46,798,A,4828.58,140510.69,773.92,0,0
+C100584,Midlands,Retail,Current,18,787,A,1406.93,0.0,610.76,0,0
+C100585,London,Retail,Savings,49,761,A,2258.0,0.0,1354.2,0,0
+C100586,North West,Retail,Mortgage,50,786,A,1456.65,195960.96,1449.09,0,0
+C100587,North West,Retail,Current,34,750,A,742.91,0.0,2416.79,0,0
+C100588,Scotland,Retail,Current,25,727,B,3377.61,0.0,750.32,0,0
+C100589,North West,Premier,Current,18,765,A,5889.35,0.0,1829.4,0,0
+C100590,South East,Retail,Credit Card,29,664,C,491.49,6846.65,769.22,0,0
+C100591,London,Retail,Current,51,638,C,4733.61,0.0,933.21,0,0
+C100592,Scotland,Premier,Credit Card,66,591,D,7903.33,5949.57,1092.17,0,0
+C100593,London,Business,Current,58,719,B,35455.6,0.0,6907.79,0,0
+C100594,Wales,Premier,Credit Card,39,768,A,19554.86,5868.59,5151.17,0,0
+C100595,Midlands,Retail,Current,18,850,A,1165.23,0.0,991.74,0,0
+C100596,London,Retail,Mortgage,41,681,B,16743.71,271529.32,1794.04,30,0
+C100597,South East,Retail,Personal Loan,39,624,C,6922.33,4364.45,374.71,0,0
+C100598,North West,Business,Personal Loan,51,587,D,3072.59,10611.54,2785.07,90,1
+C100599,London,Premier,Credit Card,54,782,A,6877.75,4782.29,1251.69,0,0
+C100600,Wales,Retail,Personal Loan,62,724,B,1226.49,12352.78,968.57,0,0
+C100601,London,Retail,Savings,40,570,D,1264.65,0.0,772.5,0,0
+C100602,Scotland,Retail,Mortgage,53,634,C,5779.2,142277.56,1323.93,0,0
+C100603,London,Retail,Credit Card,36,841,A,1303.46,1535.52,762.94,0,0
+C100604,London,Retail,Savings,40,719,B,5412.64,0.0,1624.42,0,0
+C100605,Scotland,Retail,Savings,46,707,B,7578.8,0.0,839.48,0,0
+C100606,Midlands,Retail,Personal Loan,49,850,A,2114.43,11412.9,905.82,0,0
+C100607,South East,Retail,Credit Card,38,714,B,4202.42,1275.9,599.26,0,0
+C100608,North West,Retail,Savings,18,694,B,1330.5,0.0,1965.78,0,0
+C100609,London,Retail,Personal Loan,37,674,C,4540.12,18521.99,813.97,0,0
+C100610,Wales,Premier,Current,37,752,A,16146.07,0.0,3696.44,0,0
+C100611,Midlands,Premier,Current,49,683,B,16219.23,0.0,2316.53,0,0
+C100612,Wales,Retail,Savings,24,440,E,863.46,0.0,856.73,0,0
+C100613,Wales,Retail,Current,26,781,A,4442.3,0.0,2251.31,0,0
+C100614,South East,Retail,Credit Card,33,584,D,5649.61,1318.89,1104.96,0,0
+C100615,London,Premier,Current,39,712,B,5173.51,0.0,1410.28,0,0
+C100616,Midlands,Retail,Current,45,733,B,2614.62,0.0,2385.51,0,0
+C100617,South East,Retail,Credit Card,19,706,B,673.69,1669.7,1406.43,0,0
+C100618,Midlands,Business,Personal Loan,52,673,C,2177.02,18113.27,2351.54,0,0
+C100619,South East,Business,Credit Card,54,636,C,22708.5,3283.74,2882.63,0,0
+C100620,Wales,Retail,Savings,34,662,C,845.74,0.0,2598.44,0,0
+C100621,South East,Retail,Credit Card,43,723,B,5031.3,3704.57,1149.05,0,0
+C100622,Wales,Retail,Current,24,719,B,895.83,0.0,1096.08,0,0
+C100623,North West,Premier,Current,35,703,B,21347.92,0.0,3028.53,0,0
+C100624,South East,Retail,Current,39,793,A,13706.04,0.0,1533.2,0,0
+C100625,Midlands,Retail,Savings,48,623,C,2116.42,0.0,942.22,0,0
+C100626,Wales,Retail,Mortgage,37,699,B,5876.75,232258.07,1158.42,0,0
+C100627,Wales,Premier,Current,34,665,C,153235.77,0.0,1628.31,0,0
+C100628,Wales,Retail,Personal Loan,50,553,D,897.68,5451.62,1810.09,30,0
+C100629,Scotland,Retail,Current,44,599,D,653.44,0.0,1285.83,0,0
+C100630,North West,Retail,Credit Card,56,722,B,540.48,3034.67,665.61,30,0
+C100631,Scotland,Premier,Savings,49,555,D,1760.49,0.0,1915.5,0,0
+C100632,London,Business,Mortgage,26,715,B,7236.18,300640.15,1477.13,0,0
+C100633,South East,Premier,Credit Card,26,699,B,4515.49,17087.99,3369.19,0,0
+C100634,South East,Retail,Savings,45,674,C,1576.14,0.0,2076.29,0,0
+C100635,South East,Premier,Mortgage,48,657,C,2328.58,161786.68,2664.73,0,0
+C100636,London,Retail,Savings,23,592,D,1350.05,0.0,819.1,0,0
+C100637,North West,Premier,Mortgage,45,673,C,6407.16,1116691.58,1708.41,0,0
+C100638,North West,Premier,Mortgage,61,576,D,2904.01,226221.16,3673.75,0,0
+C100639,London,Business,Mortgage,58,699,B,56353.31,519003.13,4884.83,0,0
+C100640,North West,Retail,Savings,38,730,B,1056.77,0.0,914.83,0,0
+C100641,Midlands,Premier,Current,55,839,A,12012.14,0.0,1784.39,0,0
+C100642,Midlands,Premier,Savings,30,626,C,10125.57,0.0,1625.42,0,0
+C100643,Wales,Premier,Savings,37,819,A,4767.1,0.0,3370.7,0,0
+C100644,Scotland,Wealth,Credit Card,56,687,B,108264.08,21821.26,3784.97,0,0
+C100645,North West,Retail,Savings,30,539,D,5979.06,0.0,2267.01,0,0
+C100646,Scotland,Premier,Current,42,664,C,8226.69,0.0,2264.3,0,0
+C100647,North West,Premier,Credit Card,31,730,B,6703.6,3455.1,2154.16,30,0
+C100648,London,Business,Current,18,787,A,44028.38,0.0,3376.34,0,0
+C100649,Wales,Retail,Mortgage,49,616,C,876.92,212610.21,763.41,0,0
+C100650,Wales,Retail,Credit Card,39,710,B,757.68,1503.7,525.21,0,0
+C100651,London,Wealth,Personal Loan,38,663,C,10490.81,29553.63,4380.36,0,0
+C100652,South East,Retail,Current,61,634,C,3437.24,0.0,1499.42,0,0
+C100653,North West,Retail,Current,46,741,B,5322.06,0.0,1146.21,0,0
+C100654,London,Wealth,Credit Card,18,750,A,310942.17,9863.08,4540.99,0,0
+C100655,North West,Retail,Mortgage,38,748,B,1731.81,530752.14,1235.53,0,0
+C100656,Scotland,Retail,Credit Card,60,618,C,994.6,1514.09,2207.22,0,0
+C100657,Midlands,Retail,Savings,41,609,C,39198.03,0.0,866.27,0,0
+C100658,Scotland,Retail,Credit Card,47,823,A,717.51,1316.16,1376.0,0,0
+C100659,Midlands,Retail,Mortgage,31,701,B,2044.85,785240.51,783.86,0,0
+C100660,Scotland,Retail,Savings,30,650,C,336.23,0.0,1153.25,0,0
+C100661,Midlands,Retail,Savings,48,586,D,8765.86,0.0,725.82,0,0
+C100662,Midlands,Retail,Personal Loan,37,769,A,2107.43,5006.84,461.34,0,0
+C100663,London,Retail,Mortgage,37,580,D,1887.08,351326.02,1490.25,90,1
+C100664,Midlands,Retail,Current,64,652,C,2359.54,0.0,722.54,0,0
+C100665,Scotland,Wealth,Credit Card,30,578,D,4218.38,5810.23,6524.02,0,0
+C100666,South East,Premier,Savings,37,598,D,35796.08,0.0,776.55,0,0
+C100667,Scotland,Retail,Current,44,495,E,3962.62,0.0,942.46,0,0
+C100668,London,Retail,Current,55,603,C,4371.13,0.0,1456.39,0,0
+C100669,South East,Premier,Savings,43,806,A,2126.35,0.0,1495.19,0,0
+C100670,London,Premier,Personal Loan,28,655,C,5321.92,12311.78,3263.96,0,0
+C100671,North West,Retail,Savings,22,592,D,3081.48,0.0,284.18,0,0
+C100672,Midlands,Retail,Current,19,612,C,859.73,0.0,570.36,0,0
+C100673,Scotland,Premier,Current,44,746,B,5032.3,0.0,5037.33,0,0
+C100674,Midlands,Wealth,Savings,38,722,B,70199.67,0.0,3654.25,0,0
+C100675,Wales,Retail,Mortgage,32,668,C,1029.31,373040.91,1063.14,0,0
+C100676,Wales,Retail,Mortgage,40,623,C,2262.53,122798.17,1095.06,90,1
+C100677,South East,Retail,Savings,18,767,A,1804.16,0.0,1170.69,0,0
+C100678,Midlands,Business,Current,40,599,D,59964.11,0.0,2406.05,0,0
+C100679,North West,Retail,Current,33,850,A,1672.13,0.0,779.85,0,0
+C100680,North West,Premier,Credit Card,45,789,A,4894.21,5100.52,2096.55,0,0
+C100681,Midlands,Premier,Savings,42,556,D,5473.75,0.0,1110.04,0,0
+C100682,Midlands,Retail,Credit Card,30,765,A,1108.41,3731.12,724.25,0,0
+C100683,Scotland,Retail,Credit Card,28,583,D,1273.99,2279.7,525.55,0,0
+C100684,Scotland,Retail,Current,50,836,A,1039.65,0.0,704.0,0,0
+C100685,Wales,Retail,Current,39,784,A,1412.34,0.0,702.85,0,0
+C100686,Wales,Premier,Savings,73,707,B,11421.16,0.0,2732.1,0,0
+C100687,London,Retail,Savings,23,645,C,1049.75,0.0,546.78,0,0
+C100688,South East,Business,Current,65,727,B,2252.15,0.0,2211.97,0,0
+C100689,London,Retail,Mortgage,58,750,A,3605.92,256912.04,549.26,0,0
+C100690,London,Retail,Current,37,661,C,1565.35,0.0,1959.94,0,0
+C100691,London,Retail,Credit Card,41,628,C,4228.82,2678.06,1404.14,0,0
+C100692,North West,Retail,Personal Loan,29,677,C,2431.6,15311.99,954.5,0,0
+C100693,Midlands,Business,Current,53,743,B,6386.67,0.0,2695.36,0,0
+C100694,Midlands,Retail,Personal Loan,23,648,C,850.82,7930.48,1471.48,0,0
+C100695,Scotland,Retail,Current,51,652,C,962.83,0.0,592.33,0,0
+C100696,Wales,Retail,Current,32,816,A,1931.59,0.0,2000.72,0,0
+C100697,North West,Premier,Credit Card,58,720,B,2772.67,1724.44,2025.08,30,0
+C100698,Scotland,Retail,Savings,41,641,C,2200.18,0.0,1537.81,0,0
+C100699,London,Retail,Credit Card,43,749,B,1301.83,2790.0,2071.37,0,0
+C100700,North West,Premier,Current,18,850,A,15548.92,0.0,2803.03,0,0
+C100701,London,Premier,Current,41,710,B,16923.18,0.0,2437.19,0,0
+C100702,North West,Retail,Savings,26,540,D,4493.99,0.0,1057.97,0,0
+C100703,Wales,Wealth,Current,23,715,B,6048.36,0.0,5819.28,0,0
+C100704,South East,Retail,Credit Card,47,739,B,5575.04,3575.24,1027.8,0,0
+C100705,North West,Wealth,Savings,41,707,B,37697.57,0.0,4929.38,0,0
+C100706,London,Retail,Current,45,650,C,5502.86,0.0,1051.03,0,0
+C100707,South East,Retail,Current,50,524,D,978.35,0.0,1620.73,0,0
+C100708,South East,Retail,Personal Loan,45,850,A,14527.91,12244.43,1411.2,0,0
+C100709,Scotland,Premier,Credit Card,56,628,C,14400.86,5037.69,2174.69,0,0
+C100710,Scotland,Retail,Current,31,674,C,1950.19,0.0,1378.34,0,0
+C100711,Scotland,Retail,Credit Card,47,596,D,241.18,4198.77,1442.65,0,0
+C100712,Wales,Wealth,Current,18,607,C,51852.22,0.0,6352.91,0,0
+C100713,Wales,Premier,Current,62,741,B,3972.69,0.0,4227.22,0,0
+C100714,South East,Retail,Savings,18,666,C,3050.96,0.0,1247.68,0,0
+C100715,South East,Retail,Savings,27,779,A,4106.98,0.0,1342.12,0,0
+C100716,Wales,Retail,Current,46,775,A,6060.99,0.0,1901.03,0,0
+C100717,Midlands,Business,Credit Card,18,660,C,130430.02,10244.71,3096.08,0,0
+C100718,Scotland,Retail,Savings,45,755,A,1381.49,0.0,902.15,0,0
+C100719,London,Retail,Savings,18,638,C,780.99,0.0,373.72,0,0
+C100720,South East,Premier,Savings,63,744,B,964.46,0.0,3744.53,0,0
+C100721,London,Retail,Mortgage,29,727,B,860.92,137303.79,1300.96,0,0
+C100722,Scotland,Retail,Credit Card,32,651,C,1583.95,778.08,511.13,30,0
+C100723,Midlands,Retail,Mortgage,18,572,D,12597.33,374743.04,1578.1,0,0
+C100724,Wales,Business,Current,47,666,C,40987.88,0.0,2144.36,0,0
+C100725,Scotland,Premier,Savings,56,748,B,14603.2,0.0,2241.82,0,0
+C100726,Scotland,Premier,Savings,31,814,A,2161.26,0.0,3702.96,0,0
+C100727,Midlands,Business,Current,18,723,B,13866.47,0.0,3861.1,0,0
+C100728,Midlands,Business,Savings,41,760,A,8553.23,0.0,5232.23,0,0
+C100729,Scotland,Retail,Credit Card,21,669,C,3160.31,917.65,1230.81,0,0
+C100730,Wales,Retail,Savings,19,787,A,1666.7,0.0,1304.57,0,0
+C100731,Wales,Premier,Credit Card,45,499,E,10431.83,1885.04,6290.78,30,0
+C100732,London,Retail,Savings,32,609,C,9653.37,0.0,4171.9,0,0
+C100733,Scotland,Retail,Current,41,774,A,893.94,0.0,724.67,0,0
+C100734,North West,Retail,Savings,52,762,A,576.18,0.0,1556.66,0,0
+C100735,Midlands,Retail,Credit Card,42,849,A,2695.42,4856.61,913.07,0,0
+C100736,North West,Retail,Savings,51,803,A,1915.05,0.0,1404.37,0,0
+C100737,Midlands,Retail,Mortgage,35,682,B,1853.24,194760.22,1623.49,0,0
+C100738,South East,Premier,Savings,49,592,D,10234.59,0.0,2296.49,0,0
+C100739,Midlands,Premier,Mortgage,32,786,A,26642.47,685513.34,1636.46,0,0
+C100740,Wales,Business,Current,42,790,A,5070.36,0.0,2792.97,0,0
+C100741,Scotland,Premier,Savings,50,757,A,7108.05,0.0,1376.02,0,0
+C100742,Midlands,Business,Mortgage,66,764,A,3602.98,271805.27,1639.91,0,0
+C100743,North West,Retail,Credit Card,64,671,C,3558.78,1047.22,2755.0,0,0
+C100744,South East,Premier,Credit Card,37,702,B,14333.41,10715.21,1902.27,60,0
+C100745,London,Business,Credit Card,48,695,B,6192.52,5436.08,3538.79,0,0
+C100746,Wales,Retail,Savings,35,779,A,2911.94,0.0,1847.18,0,0
+C100747,South East,Business,Credit Card,34,596,D,45652.22,4017.12,5569.05,0,0
+C100748,Wales,Retail,Current,37,738,B,2045.19,0.0,662.34,0,0
+C100749,London,Business,Credit Card,41,685,B,23799.31,17335.11,4161.86,0,0
+C100750,South East,Business,Credit Card,69,835,A,12565.24,21926.54,3238.76,0,0
+C100751,Wales,Retail,Savings,46,727,B,4212.89,0.0,1344.43,0,0
+C100752,North West,Premier,Savings,46,596,D,21453.52,0.0,1809.79,0,0
+C100753,London,Business,Savings,30,718,B,6129.04,0.0,1641.19,0,0
+C100754,Midlands,Premier,Savings,25,735,B,12791.81,0.0,1351.94,0,0
+C100755,Midlands,Retail,Savings,24,770,A,866.44,0.0,1913.16,0,0
+C100756,Wales,Retail,Savings,46,608,C,4747.92,0.0,1925.58,0,0
+C100757,Midlands,Premier,Credit Card,28,697,B,55465.79,9308.09,2707.28,0,0
+C100758,North West,Business,Current,52,647,C,1900.94,0.0,3432.26,0,0
+C100759,North West,Retail,Current,30,635,C,705.77,0.0,1098.43,0,0
+C100760,Wales,Premier,Current,53,674,C,38801.7,0.0,3147.46,0,0
+C100761,Midlands,Premier,Mortgage,67,850,A,6441.13,306676.63,2043.97,0,0
+C100762,Wales,Retail,Mortgage,18,717,B,5387.95,350631.18,1112.81,0,0
+C100763,London,Wealth,Current,29,672,C,4060.56,0.0,13988.3,0,0
+C100764,London,Retail,Mortgage,49,589,D,569.67,365390.12,1445.28,0,0
+C100765,Wales,Retail,Mortgage,40,725,B,5128.39,166084.99,1203.46,0,0
+C100766,North West,Premier,Current,46,639,C,11120.62,0.0,4463.7,0,0
+C100767,Scotland,Business,Savings,21,850,A,2528.0,0.0,1907.12,0,0
+C100768,Scotland,Premier,Mortgage,25,773,A,13909.07,375959.73,3389.54,0,0
+C100769,Midlands,Retail,Credit Card,29,850,A,2970.07,2202.81,773.35,0,0
+C100770,Wales,Premier,Current,31,733,B,8845.86,0.0,1068.68,0,0
+C100771,South East,Retail,Credit Card,18,771,A,2666.8,1420.45,1293.76,0,0
+C100772,North West,Premier,Credit Card,18,673,C,3367.51,3500.86,2229.1,0,0
+C100773,North West,Retail,Mortgage,45,817,A,4005.91,145422.1,4559.35,0,0
+C100774,Scotland,Premier,Savings,33,650,C,22811.96,0.0,2894.46,0,0
+C100775,Midlands,Retail,Current,18,838,A,665.25,0.0,1342.17,0,0
+C100776,London,Retail,Current,33,817,A,917.75,0.0,692.12,0,0
+C100777,Wales,Retail,Mortgage,28,720,B,1414.81,207563.88,1065.69,0,0
+C100778,Wales,Business,Savings,30,594,D,110808.96,0.0,1863.68,0,0
+C100779,South East,Premier,Current,42,710,B,2361.59,0.0,1806.45,0,0
+C100780,Scotland,Retail,Current,43,789,A,2267.45,0.0,764.46,0,0
+C100781,South East,Retail,Credit Card,37,652,C,2972.77,3166.17,887.83,0,0
+C100782,North West,Retail,Current,37,745,B,1821.13,0.0,927.1,0,0
+C100783,Midlands,Retail,Personal Loan,28,549,D,224.57,16323.14,831.94,0,0
+C100784,Wales,Retail,Current,18,564,D,2610.31,0.0,1060.15,0,0
+C100785,Wales,Retail,Mortgage,35,752,A,2222.36,258594.94,681.67,0,0
+C100786,Wales,Retail,Current,45,607,C,1623.57,0.0,951.93,0,0
+C100787,North West,Retail,Savings,51,636,C,7175.51,0.0,863.16,0,0
+C100788,London,Retail,Savings,38,699,B,483.05,0.0,2072.68,0,0
+C100789,Midlands,Business,Savings,51,652,C,10536.19,0.0,2610.29,0,0
+C100790,South East,Retail,Current,41,751,A,17709.13,0.0,848.0,0,0
+C100791,Midlands,Retail,Savings,30,751,A,3329.6,0.0,1106.88,0,0
+C100792,Wales,Retail,Savings,21,629,C,2605.75,0.0,853.3,0,0
+C100793,South East,Retail,Current,41,844,A,2818.25,0.0,1306.71,0,0
+C100794,North West,Retail,Savings,23,577,D,5191.61,0.0,810.46,0,0
+C100795,Scotland,Premier,Savings,53,739,B,1872.47,0.0,2356.18,0,0
+C100796,Wales,Premier,Credit Card,48,620,C,5877.23,9209.29,2002.6,30,0
+C100797,Scotland,Premier,Mortgage,49,702,B,20216.62,257597.74,1395.23,0,0
+C100798,Midlands,Retail,Personal Loan,36,753,A,4798.27,12665.17,1240.93,0,0
+C100799,South East,Retail,Savings,69,652,C,5264.6,0.0,1421.13,0,0
+C100800,Wales,Retail,Mortgage,34,752,A,1134.38,110724.03,1229.19,0,0
+C100801,South East,Wealth,Current,53,750,A,62892.13,0.0,7968.58,0,0
+C100802,South East,Retail,Mortgage,20,681,B,1294.56,80677.05,751.92,60,0
+C100803,Wales,Retail,Personal Loan,44,850,A,1053.49,10167.93,888.05,0,0
+C100804,North West,Retail,Credit Card,28,723,B,1121.38,3330.54,2159.5,0,0
+C100805,Scotland,Retail,Credit Card,68,670,C,4980.18,2352.03,953.3,0,0
+C100806,Midlands,Premier,Current,59,805,A,2340.55,0.0,2629.87,0,0
+C100807,Wales,Retail,Credit Card,50,691,B,4378.05,1239.76,1326.74,0,0
+C100808,Midlands,Retail,Savings,23,627,C,958.46,0.0,1085.44,0,0
+C100809,South East,Retail,Credit Card,26,631,C,1182.49,4345.77,1840.32,0,0
+C100810,Midlands,Retail,Credit Card,18,702,B,1457.68,3564.3,2577.2,0,0
+C100811,Wales,Retail,Credit Card,46,713,B,3040.93,2265.8,933.31,0,0
+C100812,North West,Business,Mortgage,50,739,B,5839.62,443924.37,4631.85,0,0
+C100813,South East,Retail,Personal Loan,23,694,B,365.68,12370.5,601.74,60,0
+C100814,Midlands,Retail,Current,39,820,A,2778.53,0.0,1620.6,0,0
+C100815,North West,Retail,Savings,21,621,C,1214.27,0.0,718.83,0,0
+C100816,North West,Retail,Current,41,755,A,4644.11,0.0,653.27,0,0
+C100817,Wales,Retail,Credit Card,43,712,B,11216.88,2920.52,854.54,30,0
+C100818,London,Wealth,Mortgage,34,615,C,47575.52,801829.84,2097.07,0,0
+C100819,South East,Business,Savings,55,685,B,10637.09,0.0,3364.29,0,0
+C100820,South East,Wealth,Current,43,721,B,1961.54,0.0,8927.18,0,0
+C100821,Scotland,Retail,Current,53,801,A,2218.19,0.0,745.11,0,0
+C100822,London,Retail,Mortgage,47,535,D,8509.45,319357.29,1024.59,0,0
+C100823,London,Retail,Current,38,726,B,1477.14,0.0,2186.01,0,0
+C100824,London,Retail,Savings,18,768,A,574.81,0.0,1303.18,0,0
+C100825,Scotland,Retail,Current,33,739,B,2716.02,0.0,1020.8,0,0
+C100826,Wales,Premier,Credit Card,36,631,C,8772.83,6458.4,4182.26,0,0
+C100827,North West,Retail,Current,63,613,C,952.42,0.0,1743.69,0,0
+C100828,Midlands,Business,Mortgage,41,592,D,58213.85,494438.17,2288.26,0,0
+C100829,Scotland,Retail,Credit Card,39,664,C,2799.59,2042.16,1899.44,0,0
+C100830,Scotland,Retail,Credit Card,31,674,C,9155.26,1129.59,969.94,0,0
+C100831,Midlands,Premier,Credit Card,48,703,B,11038.51,5393.78,1917.88,0,0
+C100832,North West,Retail,Mortgage,52,683,B,3204.91,260251.85,574.52,0,0
+C100833,London,Wealth,Current,42,697,B,14923.6,0.0,4867.31,0,0
+C100834,North West,Retail,Personal Loan,55,676,C,1524.57,6334.27,763.72,0,0
+C100835,South East,Retail,Credit Card,18,729,B,5037.79,1890.3,1212.04,60,0
+C100836,North West,Retail,Personal Loan,35,732,B,595.81,7837.9,691.27,0,0
+C100837,London,Business,Mortgage,42,804,A,24836.81,218818.16,1860.83,0,0
+C100838,South East,Retail,Savings,39,598,D,212.35,0.0,3546.09,0,0
+C100839,South East,Retail,Current,28,699,B,723.15,0.0,611.45,0,0
+C100840,South East,Wealth,Current,40,631,C,6440.29,0.0,11659.27,0,0
+C100841,Wales,Retail,Savings,51,667,C,5780.23,0.0,1997.08,0,0
+C100842,Wales,Retail,Credit Card,38,620,C,2549.91,1530.04,858.95,0,0
+C100843,Wales,Retail,Savings,47,725,B,3347.01,0.0,825.85,0,0
+C100844,Scotland,Retail,Savings,18,666,C,3710.33,0.0,808.73,0,0
+C100845,North West,Retail,Personal Loan,32,658,C,1391.56,5373.96,1578.26,60,0
+C100846,Wales,Retail,Current,41,741,B,3331.77,0.0,1154.13,0,0
+C100847,North West,Retail,Credit Card,21,611,C,940.0,2661.54,1537.85,0,0
+C100848,Wales,Retail,Credit Card,33,647,C,2693.96,1908.37,648.85,0,0
+C100849,Midlands,Retail,Savings,41,692,B,2795.75,0.0,540.72,0,0
+C100850,North West,Business,Savings,58,604,C,2745.81,0.0,3201.82,0,0
+C100851,Scotland,Retail,Mortgage,44,703,B,683.56,184261.38,903.85,0,0
+C100852,South East,Retail,Current,29,677,C,7348.89,0.0,3719.81,0,0
+C100853,Scotland,Retail,Mortgage,19,685,B,7059.42,70664.88,1254.87,0,0
+C100854,South East,Retail,Personal Loan,28,575,D,226.79,4388.7,908.49,0,0
+C100855,Wales,Retail,Mortgage,35,616,C,1856.64,185273.82,2118.21,0,0
+C100856,North West,Business,Credit Card,47,635,C,17084.61,3908.64,2909.56,0,0
+C100857,London,Premier,Mortgage,51,592,D,28649.79,346691.09,2030.06,30,0
+C100858,London,Premier,Credit Card,36,673,C,20523.04,6891.82,4205.69,0,0
+C100859,South East,Premier,Current,50,704,B,22648.87,0.0,2255.19,0,0
+C100860,Scotland,Retail,Current,61,736,B,1934.65,0.0,808.61,0,0
+C100861,London,Premier,Mortgage,53,815,A,5439.66,266811.91,2796.0,0,0
+C100862,North West,Business,Current,58,748,B,18547.59,0.0,2767.13,0,0
+C100863,London,Retail,Mortgage,29,710,B,1457.05,232660.07,864.26,0,0
+C100864,Midlands,Retail,Savings,39,798,A,3977.7,0.0,1210.8,0,0
+C100865,South East,Retail,Current,23,763,A,616.87,0.0,827.58,0,0
+C100866,Wales,Premier,Current,18,721,B,20010.14,0.0,7610.92,0,0
+C100867,Midlands,Retail,Current,55,599,D,1000.8,0.0,1164.7,0,0
+C100868,Wales,Retail,Savings,31,618,C,12003.72,0.0,513.41,0,0
+C100869,South East,Retail,Mortgage,27,658,C,1658.58,46363.92,965.66,0,0
+C100870,North West,Retail,Savings,35,684,B,791.52,0.0,1348.51,0,0
+C100871,Wales,Business,Savings,53,605,C,20347.38,0.0,2290.73,0,0
+C100872,Wales,Retail,Savings,52,798,A,2957.18,0.0,1952.73,0,0
+C100873,London,Retail,Current,40,734,B,16521.54,0.0,818.34,0,0
+C100874,South East,Wealth,Credit Card,19,734,B,118705.8,14781.09,3438.14,0,0
+C100875,Wales,Retail,Savings,23,685,B,2487.58,0.0,967.35,0,0
+C100876,London,Retail,Mortgage,18,656,C,3056.75,97396.47,800.16,0,0
+C100877,North West,Retail,Current,39,708,B,1001.79,0.0,1520.42,0,0
+C100878,Midlands,Business,Credit Card,27,621,C,14313.32,4247.49,2619.77,0,0
+C100879,Midlands,Premier,Personal Loan,70,725,B,2508.45,14081.96,1333.96,0,0
+C100880,Scotland,Retail,Credit Card,31,850,A,3160.05,1854.92,664.88,0,0
+C100881,South East,Business,Personal Loan,42,678,C,4553.15,30591.92,5127.03,0,0
+C100882,London,Retail,Current,44,642,C,838.92,0.0,771.05,0,0
+C100883,London,Retail,Mortgage,45,676,C,1527.95,90457.39,573.2,0,0
+C100884,Scotland,Retail,Mortgage,54,754,A,5889.98,131757.58,918.9,0,0
+C100885,North West,Retail,Personal Loan,54,719,B,1732.99,3138.86,1700.19,0,0
+C100886,Scotland,Retail,Savings,71,704,B,4129.49,0.0,1130.37,0,0
+C100887,Wales,Premier,Current,37,772,A,41705.97,0.0,1621.76,0,0
+C100888,Scotland,Retail,Current,41,850,A,6208.51,0.0,726.28,0,0
+C100889,Midlands,Retail,Current,54,850,A,1613.42,0.0,786.37,0,0
+C100890,North West,Retail,Mortgage,26,760,A,277.58,175170.78,1673.24,0,0
+C100891,Wales,Premier,Savings,57,532,D,4305.04,0.0,1839.19,0,0
+C100892,Wales,Retail,Personal Loan,34,651,C,4111.71,8929.63,1240.68,90,1
+C100893,London,Premier,Savings,54,738,B,3826.05,0.0,2200.24,0,0
+C100894,Midlands,Business,Savings,47,717,B,3548.11,0.0,2127.46,0,0
+C100895,Midlands,Business,Current,41,668,C,10325.56,0.0,3149.32,0,0
+C100896,North West,Retail,Credit Card,40,709,B,5959.82,4351.13,2569.08,0,0
+C100897,Scotland,Retail,Current,47,761,A,1546.91,0.0,1559.73,0,0
+C100898,London,Wealth,Credit Card,63,780,A,119454.4,4456.64,8311.72,0,0
+C100899,North West,Retail,Current,18,480,E,1878.34,0.0,1385.88,0,0
+C100900,Midlands,Business,Mortgage,58,758,A,8831.34,143139.87,2733.83,0,0
+C100901,South East,Retail,Current,80,681,B,6287.13,0.0,1788.72,0,0
+C100902,Wales,Premier,Credit Card,39,810,A,2497.7,3832.07,3512.07,0,0
+C100903,North West,Premier,Mortgage,41,658,C,7083.74,191234.38,5413.28,90,1
+C100904,North West,Retail,Current,48,842,A,583.18,0.0,2603.55,0,0
+C100905,Wales,Wealth,Savings,26,673,C,123897.47,0.0,2699.43,0,0
+C100906,London,Premier,Savings,37,629,C,3868.56,0.0,942.87,0,0
+C100907,Midlands,Retail,Savings,59,579,D,7074.81,0.0,1328.66,0,0
+C100908,Wales,Wealth,Credit Card,43,625,C,10719.87,15145.83,5185.01,0,0
+C100909,London,Retail,Savings,30,656,C,1263.48,0.0,1249.54,0,0
+C100910,North West,Retail,Savings,60,703,B,2878.72,0.0,862.59,0,0
+C100911,London,Retail,Current,41,687,B,3569.63,0.0,1480.02,0,0
+C100912,Wales,Premier,Savings,67,718,B,5018.18,0.0,1546.22,0,0
+C100913,South East,Retail,Current,49,639,C,12034.08,0.0,356.61,0,0
+C100914,North West,Retail,Current,40,656,C,1333.63,0.0,2195.8,0,0
+C100915,North West,Retail,Credit Card,44,549,D,3142.57,5008.46,1442.18,30,0
+C100916,Scotland,Business,Current,53,850,A,38436.57,0.0,9237.79,0,0
+C100917,Scotland,Retail,Savings,38,570,D,3886.91,0.0,902.12,0,0
+C100918,Midlands,Business,Current,40,572,D,66031.13,0.0,3252.28,0,0
+C100919,Wales,Retail,Current,30,666,C,2317.34,0.0,773.4,0,0
+C100920,South East,Retail,Savings,46,688,B,270.82,0.0,2794.84,0,0
+C100921,Wales,Retail,Personal Loan,34,705,B,5620.98,7194.97,1484.04,0,0
+C100922,Wales,Retail,Current,18,613,C,891.32,0.0,1405.0,0,0
+C100923,London,Retail,Current,32,663,C,6530.77,0.0,1129.69,0,0
+C100924,Midlands,Retail,Credit Card,20,781,A,2115.3,1478.0,1783.85,0,0
+C100925,Wales,Premier,Current,57,620,C,11257.68,0.0,4177.18,0,0
+C100926,South East,Retail,Current,35,731,B,226.19,0.0,815.42,0,0
+C100927,Wales,Retail,Current,18,645,C,3516.22,0.0,1345.71,0,0
+C100928,Wales,Retail,Personal Loan,42,661,C,883.22,10101.82,832.63,0,0
+C100929,South East,Retail,Savings,29,700,B,216.08,0.0,1685.44,0,0
+C100930,Wales,Premier,Credit Card,70,644,C,8453.5,3493.02,4328.3,0,0
+C100931,South East,Premier,Personal Loan,36,821,A,11647.49,17021.76,1492.38,0,0
+C100932,Midlands,Premier,Savings,48,733,B,3904.32,0.0,1924.02,0,0
+C100933,Wales,Premier,Mortgage,53,727,B,4090.12,248783.85,1397.74,0,0
+C100934,South East,Retail,Credit Card,35,785,A,1083.35,1963.92,1263.58,0,0
+C100935,South East,Retail,Credit Card,22,763,A,5385.54,2987.29,835.22,0,0
+C100936,North West,Retail,Mortgage,53,578,D,3289.07,322119.4,1298.25,0,0
+C100937,Scotland,Retail,Savings,42,663,C,531.64,0.0,598.65,0,0
+C100938,London,Retail,Mortgage,27,626,C,553.25,136694.56,781.18,60,0
+C100939,North West,Retail,Current,36,732,B,1066.97,0.0,1116.83,0,0
+C100940,Midlands,Premier,Current,43,769,A,9088.03,0.0,3345.44,0,0
+C100941,North West,Retail,Mortgage,43,737,B,1372.84,161439.05,1445.35,0,0
+C100942,North West,Business,Savings,44,629,C,19380.28,0.0,2191.5,0,0
+C100943,North West,Retail,Credit Card,33,587,D,1483.28,2377.97,3333.2,90,1
+C100944,Midlands,Premier,Savings,59,754,A,11853.04,0.0,1103.9,0,0
+C100945,South East,Retail,Current,43,660,C,49162.42,0.0,1152.06,0,0
+C100946,London,Retail,Current,41,721,B,885.64,0.0,740.85,0,0
+C100947,South East,Business,Savings,58,668,C,4744.1,0.0,3112.8,0,0
+C100948,South East,Premier,Current,55,766,A,37683.79,0.0,3329.46,0,0
+C100949,Midlands,Premier,Savings,49,674,C,5431.11,0.0,4671.86,0,0
+C100950,Midlands,Retail,Current,38,717,B,1592.95,0.0,1746.36,0,0
+C100951,North West,Retail,Current,19,663,C,1586.68,0.0,1161.35,0,0
+C100952,London,Retail,Current,30,643,C,951.25,0.0,1371.7,0,0
+C100953,Wales,Wealth,Savings,21,779,A,12030.13,0.0,7188.11,0,0
+C100954,Wales,Premier,Current,26,719,B,5449.75,0.0,3474.85,0,0
+C100955,Scotland,Retail,Credit Card,49,663,C,1318.73,2213.13,2205.61,0,0
+C100956,Midlands,Business,Mortgage,39,737,B,18111.1,502726.35,5037.14,0,0
+C100957,Midlands,Retail,Savings,35,729,B,2202.53,0.0,502.89,0,0
+C100958,Midlands,Retail,Current,31,742,B,2933.14,0.0,831.13,0,0
+C100959,Wales,Premier,Mortgage,44,748,B,6401.14,349174.35,1520.71,0,0
+C100960,London,Retail,Credit Card,35,523,D,3078.46,2305.51,1538.64,0,0
+C100961,London,Retail,Current,41,600,C,500.94,0.0,437.75,0,0
+C100962,South East,Retail,Credit Card,45,571,D,4541.39,2188.17,1378.2,0,0
+C100963,South East,Business,Savings,25,559,D,7417.19,0.0,4295.95,90,1
+C100964,Scotland,Retail,Mortgage,47,597,D,1761.0,153758.63,1622.49,0,0
+C100965,Wales,Business,Mortgage,38,772,A,26021.85,696632.99,3165.39,0,0
+C100966,Wales,Retail,Savings,57,579,D,1975.12,0.0,1507.78,0,0
+C100967,London,Retail,Savings,24,630,C,1669.97,0.0,1679.78,0,0
+C100968,London,Retail,Mortgage,20,711,B,4904.97,215476.93,819.36,0,0
+C100969,North West,Retail,Savings,41,753,A,2100.15,0.0,581.31,0,0
+C100970,Midlands,Business,Savings,18,714,B,5153.81,0.0,4308.99,0,0
+C100971,North West,Premier,Savings,38,645,C,3132.75,0.0,1608.74,0,0
+C100972,South East,Retail,Current,31,703,B,1052.9,0.0,897.91,0,0
+C100973,North West,Premier,Current,41,657,C,11717.04,0.0,1626.33,0,0
+C100974,Scotland,Retail,Mortgage,58,821,A,2581.89,215156.1,1228.64,0,0
+C100975,Scotland,Business,Credit Card,44,834,A,82489.08,16592.5,2170.0,0,0
+C100976,North West,Retail,Savings,18,656,C,2547.2,0.0,994.73,0,0
+C100977,South East,Retail,Personal Loan,53,780,A,4078.26,22088.86,1510.56,0,0
+C100978,Scotland,Retail,Mortgage,46,661,C,9726.78,78871.51,2017.01,0,0
+C100979,Midlands,Premier,Mortgage,44,747,B,6989.57,436437.96,2981.67,0,0
+C100980,Scotland,Retail,Credit Card,31,730,B,4350.62,3695.18,661.89,0,0
+C100981,North West,Retail,Savings,37,785,A,272.57,0.0,1896.05,0,0
+C100982,South East,Retail,Current,42,728,B,952.93,0.0,783.56,0,0
+C100983,London,Premier,Credit Card,29,794,A,1793.77,4203.51,2802.45,0,0
+C100984,North West,Retail,Mortgage,42,693,B,4895.63,149939.07,777.86,0,0
+C100985,Wales,Retail,Savings,38,713,B,2762.99,0.0,854.0,0,0
+C100986,London,Retail,Credit Card,57,757,A,1797.24,1969.62,444.59,30,0
+C100987,Scotland,Retail,Current,46,743,B,2740.16,0.0,1693.19,0,0
+C100988,Midlands,Retail,Mortgage,58,735,B,2651.94,233350.51,1540.38,0,0
+C100989,Midlands,Retail,Credit Card,61,801,A,12586.95,2091.85,1893.79,0,0
+C100990,South East,Business,Credit Card,73,640,C,2183.39,2479.98,6120.11,0,0
+C100991,South East,Retail,Savings,47,669,C,487.16,0.0,1285.5,0,0
+C100992,Scotland,Business,Personal Loan,21,690,B,7704.58,19905.68,1390.74,0,0
+C100993,Wales,Retail,Personal Loan,31,672,C,2584.18,7867.55,2440.94,0,0
+C100994,Midlands,Premier,Current,67,656,C,5871.35,0.0,2131.12,0,0
+C100995,Scotland,Premier,Mortgage,51,629,C,4019.33,453453.07,3575.95,0,0
+C100996,North West,Retail,Credit Card,55,654,C,4245.04,1236.08,1224.69,0,0
+C100997,London,Retail,Savings,45,779,A,6317.29,0.0,1437.84,0,0
+C100998,London,Business,Current,39,697,B,2948.75,0.0,3530.2,0,0
+C100999,Scotland,Retail,Credit Card,33,735,B,448.22,3894.77,1034.86,0,0
+C101000,Scotland,Retail,Current,35,850,A,2359.66,0.0,843.19,0,0
+C101001,South East,Retail,Personal Loan,50,745,B,4053.58,21376.08,520.18,0,0
+C101002,London,Premier,Credit Card,47,640,C,10666.02,3648.98,2698.8,0,0
+C101003,Midlands,Retail,Personal Loan,33,499,E,1642.84,9492.02,1402.25,0,0
+C101004,Wales,Retail,Mortgage,19,814,A,1625.02,148068.02,1109.49,0,0
+C101005,North West,Retail,Credit Card,58,640,C,2974.9,4392.13,2460.23,0,0
+C101006,Scotland,Retail,Mortgage,37,764,A,2843.96,135659.82,5189.07,0,0
+C101007,Scotland,Retail,Savings,37,836,A,1331.53,0.0,938.5,0,0
+C101008,Wales,Retail,Current,47,690,B,6892.66,0.0,1120.14,0,0
+C101009,South East,Retail,Credit Card,34,800,A,2398.26,3810.97,1114.68,0,0
+C101010,North West,Retail,Savings,36,707,B,589.25,0.0,895.73,0,0
+C101011,Scotland,Business,Credit Card,37,850,A,7946.6,1774.49,2471.35,0,0
+C101012,Wales,Retail,Current,56,761,A,3093.76,0.0,625.67,0,0
+C101013,Scotland,Retail,Current,38,668,C,962.81,0.0,690.02,0,0
+C101014,South East,Premier,Savings,64,850,A,2570.42,0.0,2028.64,0,0
+C101015,London,Retail,Credit Card,45,591,D,3454.45,1866.77,546.61,90,1
+C101016,South East,Business,Savings,43,718,B,36196.93,0.0,3405.91,0,0
+C101017,Wales,Retail,Savings,61,731,B,748.13,0.0,1177.62,0,0
+C101018,London,Retail,Current,55,739,B,445.8,0.0,1354.18,0,0
+C101019,Midlands,Retail,Current,42,662,C,435.42,0.0,1155.24,0,0
+C101020,Wales,Premier,Credit Card,49,676,C,5259.69,8543.77,1856.89,0,0
+C101021,North West,Premier,Credit Card,62,697,B,6717.86,6035.04,2429.93,0,0
+C101022,South East,Retail,Mortgage,49,694,B,3499.21,124138.83,457.53,0,0
+C101023,London,Retail,Mortgage,18,597,D,934.4,224580.88,2377.15,0,0
+C101024,Midlands,Premier,Savings,45,706,B,7809.45,0.0,4760.88,0,0
+C101025,London,Retail,Credit Card,52,671,C,1800.5,2101.31,1223.06,0,0
+C101026,Scotland,Premier,Mortgage,38,850,A,19555.28,294668.45,6573.33,0,0
+C101027,Midlands,Retail,Personal Loan,18,653,C,832.98,14792.86,1306.71,90,1
+C101028,South East,Retail,Savings,18,789,A,8876.1,0.0,1693.76,0,0
+C101029,South East,Retail,Savings,45,650,C,2092.91,0.0,1264.19,0,0
+C101030,Midlands,Retail,Personal Loan,30,779,A,11530.13,10813.9,704.37,0,0
+C101031,London,Retail,Savings,23,660,C,619.31,0.0,941.33,0,0
+C101032,South East,Retail,Credit Card,54,729,B,903.44,6953.66,787.83,0,0
+C101033,Midlands,Business,Current,49,685,B,37014.12,0.0,2973.32,0,0
+C101034,North West,Retail,Personal Loan,25,850,A,878.39,12851.11,2685.0,0,0
+C101035,London,Premier,Current,42,794,A,12328.21,0.0,3246.15,0,0
+C101036,Scotland,Retail,Credit Card,25,618,C,2512.83,1900.51,793.64,0,0
+C101037,South East,Business,Credit Card,71,711,B,40430.52,12645.49,4838.95,30,0
+C101038,London,Premier,Credit Card,58,732,B,10031.79,2318.5,6727.8,0,0
+C101039,North West,Retail,Current,39,569,D,786.13,0.0,922.06,0,0
+C101040,Wales,Retail,Mortgage,28,686,B,1192.24,204903.87,1274.45,0,0
+C101041,Midlands,Retail,Credit Card,35,718,B,251.13,2742.36,1758.65,0,0
+C101042,London,Premier,Personal Loan,45,750,A,6298.98,22518.85,2431.97,0,0
+C101043,London,Retail,Savings,18,636,C,2458.04,0.0,894.57,0,0
+C101044,Midlands,Retail,Current,18,850,A,2256.82,0.0,968.08,0,0
+C101045,South East,Wealth,Savings,56,745,B,73312.36,0.0,6292.24,0,0
+C101046,Scotland,Retail,Current,18,685,B,1236.3,0.0,820.45,0,0
+C101047,Wales,Retail,Savings,45,783,A,2566.39,0.0,2284.98,0,0
+C101048,Midlands,Retail,Credit Card,66,850,A,1331.04,1598.84,1251.64,0,0
+C101049,South East,Retail,Personal Loan,29,738,B,918.1,4729.2,1426.61,0,0
+C101050,South East,Retail,Personal Loan,67,709,B,2036.4,7366.14,494.05,0,0
+C101051,South East,Retail,Credit Card,37,709,B,1113.69,4023.96,641.05,0,0
+C101052,Scotland,Retail,Credit Card,50,596,D,5956.4,2877.6,656.9,0,0
+C101053,Scotland,Retail,Credit Card,24,729,B,4429.31,3911.75,947.94,0,0
+C101054,North West,Retail,Savings,37,712,B,371.58,0.0,1334.22,0,0
+C101055,South East,Premier,Personal Loan,28,658,C,88336.72,12226.63,3977.24,30,0
+C101056,London,Retail,Current,51,725,B,141.69,0.0,1264.1,0,0
+C101057,London,Business,Current,68,666,C,7971.09,0.0,1783.42,0,0
+C101058,Midlands,Business,Current,41,584,D,12263.68,0.0,3346.99,0,0
+C101059,Midlands,Retail,Personal Loan,49,673,C,1106.26,9329.25,1377.43,0,0
+C101060,Midlands,Retail,Savings,57,654,C,590.87,0.0,718.68,0,0
+C101061,Wales,Retail,Current,47,625,C,1019.82,0.0,1053.45,0,0
+C101062,London,Premier,Mortgage,40,767,A,13388.62,760629.32,1517.09,0,0
+C101063,London,Retail,Savings,44,665,C,2189.2,0.0,971.19,0,0
+C101064,London,Retail,Current,48,727,B,596.15,0.0,709.55,0,0
+C101065,Scotland,Retail,Mortgage,42,760,A,1253.13,129903.46,1580.06,0,0
+C101066,Wales,Wealth,Mortgage,52,734,B,48381.07,2028011.1,4050.73,0,0
+C101067,London,Premier,Savings,47,820,A,20627.32,0.0,2989.98,0,0
+C101068,Midlands,Business,Current,31,695,B,4702.77,0.0,1917.61,0,0
+C101069,Midlands,Business,Credit Card,50,788,A,4678.75,11874.92,5154.61,0,0
+C101070,North West,Retail,Current,18,579,D,6624.97,0.0,1774.79,0,0
+C101071,North West,Wealth,Mortgage,43,539,D,80855.77,592427.81,7547.94,0,0
+C101072,North West,Business,Mortgage,29,680,B,9094.63,292570.62,6546.1,30,0
+C101073,North West,Retail,Current,57,734,B,2055.15,0.0,725.01,0,0
+C101074,South East,Business,Savings,41,712,B,20637.54,0.0,1078.31,0,0
+C101075,Midlands,Retail,Personal Loan,57,717,B,719.92,13712.02,1858.02,0,0
+C101076,South East,Business,Current,29,757,A,26384.77,0.0,3670.69,0,0
+C101077,South East,Business,Current,18,828,A,2592.39,0.0,5187.54,0,0
+C101078,Midlands,Premier,Credit Card,54,723,B,25535.27,1905.67,1354.8,0,0
+C101079,London,Retail,Credit Card,32,722,B,2033.48,2949.52,1510.34,0,0
+C101080,Scotland,Premier,Current,18,694,B,2956.61,0.0,2007.16,0,0
+C101081,Scotland,Premier,Credit Card,31,669,C,37271.44,1572.55,966.96,0,0
+C101082,London,Retail,Credit Card,50,849,A,760.84,3209.72,1516.92,0,0
+C101083,Midlands,Retail,Current,59,644,C,3479.64,0.0,1984.88,0,0
+C101084,Wales,Premier,Savings,35,674,C,38779.85,0.0,1592.84,0,0
+C101085,South East,Premier,Savings,50,707,B,1989.67,0.0,3227.55,0,0
+C101086,North West,Retail,Savings,48,704,B,8344.33,0.0,1125.86,0,0
+C101087,London,Retail,Mortgage,43,582,D,1638.3,120787.35,522.99,0,0
+C101088,Midlands,Premier,Mortgage,59,785,A,487.64,1052071.38,1857.22,0,0
+C101089,Wales,Retail,Savings,35,757,A,682.0,0.0,1260.61,0,0
+C101090,Scotland,Retail,Mortgage,23,689,B,11888.02,103786.78,645.97,0,0
+C101091,Wales,Retail,Personal Loan,29,681,B,3802.68,11682.12,455.73,0,0
+C101092,London,Retail,Savings,31,850,A,1171.84,0.0,1128.81,0,0
+C101093,Midlands,Wealth,Savings,42,788,A,41760.76,0.0,3778.86,0,0
+C101094,Midlands,Retail,Mortgage,45,653,C,7100.38,69290.13,898.55,90,1
+C101095,Midlands,Business,Current,47,706,B,873.33,0.0,2151.14,0,0
+C101096,Wales,Business,Mortgage,45,708,B,7044.96,391710.45,2040.37,0,0
+C101097,London,Retail,Mortgage,62,773,A,2923.52,150279.49,461.72,0,0
+C101098,Scotland,Premier,Current,30,596,D,2628.21,0.0,3108.89,0,0
+C101099,Wales,Retail,Personal Loan,18,607,C,17440.3,9567.87,710.75,0,0
+C101100,London,Wealth,Savings,48,733,B,27449.65,0.0,4252.19,0,0
+C101101,South East,Retail,Mortgage,51,743,B,658.39,89112.32,884.31,30,0
+C101102,Scotland,Retail,Savings,39,726,B,988.47,0.0,1607.59,0,0
+C101103,North West,Retail,Savings,35,824,A,1901.95,0.0,829.28,0,0
+C101104,South East,Wealth,Current,24,850,A,31388.5,0.0,10195.71,0,0
+C101105,Wales,Retail,Mortgage,49,755,A,620.66,270370.95,2782.16,0,0
+C101106,Wales,Retail,Current,30,632,C,489.01,0.0,1252.48,0,0
+C101107,South East,Business,Savings,49,712,B,9666.49,0.0,2332.54,0,0
+C101108,Midlands,Retail,Savings,32,764,A,478.02,0.0,821.08,0,0
+C101109,North West,Retail,Current,29,655,C,2002.38,0.0,1131.68,0,0
+C101110,Wales,Retail,Current,28,723,B,1863.94,0.0,633.68,0,0
+C101111,South East,Retail,Current,43,741,B,2286.54,0.0,1224.86,0,0
+C101112,Scotland,Retail,Credit Card,18,695,B,6557.69,1456.24,1990.33,0,0
+C101113,London,Business,Credit Card,36,762,A,8850.47,9228.82,1060.68,0,0
+C101114,Midlands,Premier,Current,53,808,A,6739.29,0.0,1969.28,0,0
+C101115,Scotland,Retail,Personal Loan,44,592,D,5629.33,4575.54,937.58,0,0
+C101116,South East,Premier,Credit Card,32,758,A,5372.95,2412.25,1074.13,0,0
+C101117,South East,Retail,Current,18,605,C,622.45,0.0,735.8,0,0
+C101118,North West,Retail,Savings,20,698,B,1828.01,0.0,938.16,0,0
+C101119,South East,Retail,Credit Card,50,821,A,2308.7,1209.72,1065.55,0,0
+C101120,Scotland,Retail,Savings,54,712,B,818.31,0.0,773.87,0,0
+C101121,Midlands,Wealth,Current,45,708,B,40894.5,0.0,4680.37,0,0
+C101122,Scotland,Retail,Savings,18,629,C,3501.95,0.0,1115.4,0,0
+C101123,Midlands,Premier,Mortgage,38,782,A,1564.66,337943.59,3504.73,0,0
+C101124,Midlands,Retail,Credit Card,25,736,B,1056.7,2042.94,1630.46,0,0
+C101125,Wales,Retail,Current,29,714,B,760.12,0.0,963.97,0,0
+C101126,Midlands,Retail,Credit Card,39,692,B,1187.26,5433.78,1183.35,0,0
+C101127,Wales,Business,Current,42,761,A,32162.18,0.0,3391.86,0,0
+C101128,Wales,Retail,Personal Loan,29,641,C,335.3,8255.98,739.3,0,0
+C101129,North West,Business,Personal Loan,60,596,D,5380.5,47081.05,2113.59,0,0
+C101130,South East,Business,Savings,29,832,A,9812.93,0.0,3038.23,0,0
+C101131,North West,Wealth,Savings,65,704,B,29199.84,0.0,4538.43,0,0
+C101132,Wales,Retail,Savings,48,757,A,5977.99,0.0,985.75,0,0
+C101133,North West,Retail,Credit Card,26,722,B,2027.54,4219.66,642.81,0,0
+C101134,London,Premier,Mortgage,37,741,B,31026.65,428183.91,4730.08,0,0
+C101135,London,Retail,Mortgage,41,667,C,6048.8,131544.12,774.11,0,0
+C101136,Scotland,Retail,Credit Card,28,601,C,635.99,1775.99,1323.05,90,1
+C101137,Wales,Retail,Current,35,737,B,2429.8,0.0,1053.59,0,0
+C101138,Midlands,Business,Current,66,658,C,15191.92,0.0,5826.48,0,0
+C101139,London,Retail,Mortgage,60,781,A,2518.72,174292.9,1392.37,0,0
+C101140,London,Retail,Credit Card,44,573,D,3203.36,2082.36,495.98,90,1
+C101141,North West,Business,Credit Card,67,670,C,11080.96,4326.57,3075.67,0,0
+C101142,Midlands,Retail,Current,52,759,A,7876.78,0.0,692.78,0,0
+C101143,Wales,Premier,Mortgage,60,629,C,5032.43,1124057.71,1476.94,0,0
+C101144,Wales,Premier,Savings,43,651,C,2006.89,0.0,1482.99,0,0
+C101145,Wales,Business,Current,26,710,B,27273.67,0.0,2195.96,0,0
+C101146,Scotland,Retail,Credit Card,28,678,C,640.5,2309.98,1019.84,0,0
+C101147,Midlands,Retail,Credit Card,52,607,C,11752.57,1980.25,1355.55,0,0
+C101148,South East,Retail,Personal Loan,53,703,B,3114.48,9917.1,677.58,0,0
+C101149,Midlands,Retail,Mortgage,37,719,B,624.91,102533.1,1188.98,0,0
+C101150,Midlands,Retail,Current,32,444,E,11144.07,0.0,919.97,0,0
+C101151,London,Business,Credit Card,50,663,C,22841.83,3369.07,9045.76,0,0
+C101152,Scotland,Retail,Savings,26,689,B,2018.21,0.0,648.55,0,0
+C101153,Wales,Business,Savings,51,700,B,11340.57,0.0,2961.21,0,0
+C101154,Scotland,Retail,Savings,33,568,D,887.35,0.0,1104.7,0,0
+C101155,North West,Business,Credit Card,36,811,A,7690.13,5238.35,3994.28,0,0
+C101156,Scotland,Retail,Current,41,658,C,645.45,0.0,1777.0,0,0
+C101157,Wales,Wealth,Savings,36,587,D,30936.67,0.0,9267.62,0,0
+C101158,Midlands,Business,Mortgage,41,811,A,26260.73,182475.89,4173.93,0,0
+C101159,Scotland,Business,Savings,54,771,A,28575.34,0.0,2569.83,0,0
+C101160,North West,Business,Personal Loan,49,728,B,13520.81,33016.77,4850.72,0,0
+C101161,Scotland,Retail,Mortgage,18,741,B,564.36,470995.65,1007.43,0,0
+C101162,London,Premier,Personal Loan,57,689,B,7362.99,11795.72,2319.49,0,0
+C101163,Midlands,Retail,Current,48,615,C,1060.2,0.0,2181.59,0,0
+C101164,Midlands,Retail,Current,44,696,B,120.13,0.0,1017.31,0,0
+C101165,Scotland,Retail,Credit Card,18,724,B,2819.22,1448.49,512.05,0,0
+C101166,Midlands,Retail,Credit Card,24,567,D,3396.33,2692.94,764.17,90,1
+C101167,Scotland,Retail,Mortgage,54,645,C,615.88,219344.64,1437.88,0,0
+C101168,North West,Retail,Current,29,647,C,3514.65,0.0,931.23,0,0
+C101169,North West,Premier,Savings,71,615,C,5377.97,0.0,6143.36,0,0
+C101170,North West,Retail,Credit Card,34,727,B,14325.57,1815.8,2267.86,0,0
+C101171,North West,Retail,Mortgage,50,668,C,945.57,333136.38,819.19,0,0
+C101172,Scotland,Business,Current,47,741,B,8380.19,0.0,9443.22,0,0
+C101173,Wales,Business,Personal Loan,40,717,B,11082.31,16286.29,2919.71,0,0
+C101174,Wales,Retail,Savings,58,773,A,3410.15,0.0,2163.55,0,0
+C101175,South East,Business,Savings,44,762,A,9153.23,0.0,2118.1,0,0
+C101176,Midlands,Retail,Personal Loan,39,630,C,2193.69,7063.61,817.7,0,0
+C101177,Midlands,Business,Credit Card,72,774,A,30168.67,2902.19,3613.26,0,0
+C101178,South East,Retail,Mortgage,28,736,B,916.36,387579.1,825.63,0,0
+C101179,Midlands,Retail,Savings,57,850,A,1155.31,0.0,1150.17,0,0
+C101180,Scotland,Premier,Current,24,680,B,3832.49,0.0,3114.53,0,0
+C101181,North West,Retail,Credit Card,59,625,C,8026.44,6347.01,2179.61,0,0
+C101182,Midlands,Retail,Current,45,654,C,282.93,0.0,2120.15,0,0
+C101183,Scotland,Business,Mortgage,44,714,B,12491.91,482848.58,3763.83,0,0
+C101184,South East,Premier,Savings,61,775,A,13959.91,0.0,12079.94,0,0
+C101185,Wales,Retail,Current,35,655,C,1700.89,0.0,1174.87,0,0
+C101186,South East,Business,Credit Card,45,850,A,45735.93,4728.31,2642.59,0,0
+C101187,Midlands,Retail,Current,37,701,B,3731.64,0.0,3381.47,0,0
+C101188,Wales,Retail,Personal Loan,51,558,D,1072.41,7107.51,868.13,90,1
+C101189,Midlands,Business,Savings,33,706,B,19068.36,0.0,7416.01,0,0
+C101190,Scotland,Premier,Savings,43,676,C,39395.65,0.0,1955.29,0,0
+C101191,South East,Premier,Savings,44,630,C,4387.7,0.0,6398.31,0,0
+C101192,South East,Business,Savings,52,791,A,19661.68,0.0,2744.32,0,0
+C101193,Midlands,Retail,Personal Loan,18,828,A,3721.37,5066.58,3862.41,0,0
+C101194,London,Retail,Current,46,684,B,5741.79,0.0,462.68,0,0
+C101195,North West,Retail,Mortgage,32,684,B,2679.16,351009.74,529.17,0,0
+C101196,London,Retail,Mortgage,18,694,B,836.38,247976.23,893.8,0,0
+C101197,Midlands,Business,Credit Card,35,850,A,2948.01,2630.2,1770.44,0,0
+C101198,North West,Retail,Current,47,776,A,3464.48,0.0,1415.4,0,0
+C101199,Wales,Premier,Savings,61,805,A,12433.19,0.0,1300.95,0,0
+C101200,Midlands,Premier,Savings,29,731,B,1055.6,0.0,2442.92,0,0
+C101201,Scotland,Retail,Current,38,779,A,3004.69,0.0,326.03,0,0
+C101202,London,Wealth,Credit Card,67,693,B,31888.66,4965.97,10963.94,0,0
+C101203,Wales,Business,Current,49,715,B,4470.73,0.0,4456.94,0,0
+C101204,Midlands,Retail,Personal Loan,22,805,A,592.8,9093.29,1202.86,0,0
+C101205,London,Retail,Current,48,654,C,1958.65,0.0,954.92,0,0
+C101206,Scotland,Retail,Current,24,843,A,796.23,0.0,1211.42,0,0
+C101207,Scotland,Premier,Credit Card,57,629,C,15839.54,6021.87,5307.18,0,0
+C101208,Scotland,Retail,Savings,31,701,B,1719.18,0.0,956.29,0,0
+C101209,North West,Wealth,Credit Card,66,608,C,78257.17,30284.89,8674.07,0,0
+C101210,Scotland,Business,Current,42,675,C,1305.62,0.0,3265.82,0,0
+C101211,North West,Retail,Credit Card,35,744,B,833.71,5001.11,776.67,30,0
+C101212,Wales,Retail,Credit Card,43,742,B,1193.49,1852.02,873.75,0,0
+C101213,North West,Wealth,Current,32,657,C,40189.72,0.0,4438.55,0,0
+C101214,Scotland,Wealth,Savings,50,630,C,56680.0,0.0,5253.32,0,0
+C101215,North West,Premier,Credit Card,59,761,A,6416.73,4033.19,2845.13,0,0
+C101216,Wales,Retail,Credit Card,35,635,C,959.89,1681.15,1304.69,30,0
+C101217,Midlands,Premier,Credit Card,27,739,B,5102.5,3093.26,3997.65,0,0
+C101218,North West,Wealth,Savings,38,718,B,31691.51,0.0,7116.33,0,0
+C101219,Scotland,Retail,Current,43,620,C,1091.69,0.0,1021.4,0,0
+C101220,Midlands,Wealth,Current,64,681,B,18022.92,0.0,5403.74,0,0
+C101221,Scotland,Retail,Credit Card,27,717,B,4683.33,1368.63,1293.41,0,0
+C101222,Scotland,Retail,Current,38,611,C,1005.71,0.0,736.34,90,1
+C101223,London,Wealth,Mortgage,36,581,D,4876.5,1692618.77,3284.08,0,0
+C101224,Scotland,Retail,Savings,30,646,C,957.14,0.0,695.25,0,0
+C101225,Midlands,Retail,Personal Loan,28,811,A,504.49,17156.38,1398.69,0,0
+C101226,North West,Retail,Current,59,708,B,1760.48,0.0,866.82,0,0
+C101227,Wales,Retail,Savings,31,708,B,743.04,0.0,574.24,0,0
+C101228,London,Premier,Savings,40,810,A,63282.32,0.0,3770.49,0,0
+C101229,Wales,Business,Current,31,634,C,6346.05,0.0,3164.15,0,0
+C101230,London,Retail,Savings,35,788,A,5822.62,0.0,1836.54,0,0
+C101231,South East,Premier,Savings,41,655,C,7993.69,0.0,3010.21,0,0
+C101232,Wales,Retail,Credit Card,49,619,C,2135.0,3229.86,920.61,0,0
+C101233,Midlands,Premier,Current,44,733,B,1858.94,0.0,2647.34,0,0
+C101234,North West,Retail,Credit Card,33,706,B,987.21,3474.75,1472.86,0,0
+C101235,South East,Retail,Mortgage,46,615,C,9277.25,111990.12,3992.4,0,0
+C101236,London,Premier,Current,47,665,C,8395.71,0.0,4787.77,0,0
+C101237,South East,Premier,Current,35,765,A,3330.53,0.0,1946.16,0,0
+C101238,London,Premier,Savings,19,690,B,5556.54,0.0,2617.93,0,0
+C101239,Scotland,Premier,Credit Card,52,686,B,4644.11,5059.23,1751.63,0,0
+C101240,Scotland,Retail,Personal Loan,46,781,A,1499.29,8397.1,1340.64,0,0
+C101241,North West,Retail,Credit Card,32,812,A,1250.9,1335.39,815.62,0,0
+C101242,Wales,Wealth,Current,39,723,B,35971.94,0.0,9214.31,0,0
+C101243,Scotland,Retail,Personal Loan,57,673,C,1555.15,13892.38,1561.69,0,0
+C101244,London,Retail,Current,40,621,C,840.5,0.0,2478.89,0,0
+C101245,North West,Retail,Credit Card,55,790,A,1231.24,5399.82,2254.31,0,0
+C101246,Midlands,Retail,Mortgage,22,699,B,782.43,165323.06,534.26,0,0
+C101247,Scotland,Retail,Current,55,850,A,1718.88,0.0,1925.77,0,0
+C101248,Wales,Premier,Credit Card,42,712,B,65897.76,9717.8,2396.76,0,0
+C101249,Midlands,Premier,Personal Loan,44,693,B,14875.05,29052.01,4979.22,0,0
+C101250,Midlands,Premier,Mortgage,40,601,C,33048.0,345558.96,11961.55,0,0
+C101251,Scotland,Retail,Savings,47,739,B,1729.53,0.0,1069.79,0,0
+C101252,South East,Retail,Savings,26,654,C,8327.85,0.0,477.08,0,0
+C101253,Scotland,Business,Mortgage,25,603,C,1731.23,427804.26,7521.44,0,0
+C101254,Scotland,Wealth,Credit Card,58,738,B,61203.07,26784.48,3848.6,0,0
+C101255,North West,Business,Savings,44,711,B,13337.53,0.0,3068.9,0,0
+C101256,London,Retail,Current,22,697,B,3282.35,0.0,3422.88,0,0
+C101257,South East,Business,Current,41,678,C,67614.28,0.0,5609.46,0,0
+C101258,South East,Premier,Savings,51,699,B,12973.47,0.0,3244.76,0,0
+C101259,Scotland,Business,Current,60,680,B,3008.58,0.0,2024.7,0,0
+C101260,Midlands,Business,Savings,33,679,C,4095.6,0.0,2371.39,0,0
+C101261,London,Retail,Current,31,692,B,2411.13,0.0,1297.01,0,0
+C101262,South East,Premier,Savings,54,692,B,14071.03,0.0,1760.2,0,0
+C101263,Scotland,Premier,Savings,49,642,C,5358.41,0.0,1289.82,0,0
+C101264,Wales,Retail,Savings,35,795,A,274.07,0.0,1274.44,0,0
+C101265,Scotland,Retail,Credit Card,30,686,B,11167.34,1973.65,1962.2,0,0
+C101266,Wales,Retail,Credit Card,55,749,B,1444.13,2507.42,1122.38,0,0
+C101267,North West,Wealth,Current,34,761,A,28824.38,0.0,3174.4,0,0
+C101268,Scotland,Business,Personal Loan,34,705,B,15035.67,17435.71,2897.44,0,0
+C101269,South East,Wealth,Mortgage,58,771,A,55912.33,828604.68,13651.34,0,0
+C101270,North West,Retail,Savings,40,656,C,634.05,0.0,553.86,0,0
+C101271,South East,Premier,Savings,37,689,B,1474.43,0.0,4618.71,0,0
+C101272,Midlands,Retail,Savings,25,686,B,1299.11,0.0,1257.18,0,0
+C101273,London,Premier,Savings,46,794,A,29845.81,0.0,2121.26,0,0
+C101274,Midlands,Retail,Credit Card,30,771,A,1958.25,3574.68,1424.9,60,0
+C101275,North West,Retail,Credit Card,25,738,B,688.95,1633.1,1101.59,0,0
+C101276,North West,Retail,Mortgage,43,764,A,2403.67,224303.22,1114.88,0,0
+C101277,North West,Retail,Credit Card,18,666,C,1909.61,3961.95,678.49,0,0
+C101278,Midlands,Retail,Current,37,694,B,4526.49,0.0,4679.24,0,0
+C101279,Midlands,Retail,Mortgage,40,628,C,4708.68,239522.23,1777.73,0,0
+C101280,North West,Retail,Current,48,770,A,229.33,0.0,407.81,0,0
+C101281,North West,Business,Savings,61,632,C,3232.83,0.0,2139.34,0,0
+C101282,Scotland,Premier,Personal Loan,29,805,A,1544.49,12106.8,1848.47,30,0
+C101283,North West,Business,Credit Card,30,813,A,25287.26,5480.53,3925.42,0,0
+C101284,London,Wealth,Current,23,699,B,11159.88,0.0,11451.33,0,0
+C101285,North West,Premier,Credit Card,48,744,B,1949.55,5724.01,1680.19,0,0
+C101286,London,Retail,Personal Loan,18,724,B,1391.94,23865.87,1485.23,0,0
+C101287,London,Premier,Mortgage,24,737,B,7514.31,689387.82,2729.68,30,0
+C101288,North West,Wealth,Savings,43,644,C,33489.75,0.0,2768.34,0,0
+C101289,South East,Premier,Current,58,826,A,31206.65,0.0,5408.23,0,0
+C101290,North West,Wealth,Current,43,665,C,7295.78,0.0,10016.99,0,0
+C101291,North West,Retail,Credit Card,39,564,D,769.48,2582.44,507.74,0,0
+C101292,Midlands,Retail,Personal Loan,23,674,C,1438.8,9021.22,1885.79,0,0
+C101293,South East,Business,Savings,81,623,C,8441.63,0.0,3936.11,0,0
+C101294,Midlands,Retail,Mortgage,20,755,A,2580.79,228344.83,1564.88,0,0
+C101295,Wales,Retail,Current,34,589,D,2312.45,0.0,1543.17,0,0
+C101296,Scotland,Retail,Current,43,735,B,10051.39,0.0,2805.92,0,0
+C101297,Scotland,Retail,Savings,43,787,A,1392.76,0.0,1835.02,0,0
+C101298,North West,Business,Personal Loan,41,725,B,4358.98,16241.98,5612.28,0,0
+C101299,South East,Retail,Current,28,803,A,686.05,0.0,1426.59,0,0
+C101300,Midlands,Retail,Mortgage,53,758,A,6072.7,305547.99,615.51,0,0
+C101301,London,Retail,Mortgage,34,646,C,5811.3,195329.56,1122.75,0,0
+C101302,London,Premier,Mortgage,18,846,A,6497.0,360229.42,3228.61,0,0
+C101303,London,Retail,Savings,33,789,A,1969.0,0.0,920.87,0,0
+C101304,Wales,Retail,Current,42,695,B,5373.55,0.0,1840.72,0,0
+C101305,London,Retail,Credit Card,45,670,C,694.75,1784.0,779.95,0,0
+C101306,South East,Wealth,Credit Card,25,704,B,16499.7,10754.03,3345.42,0,0
+C101307,North West,Retail,Credit Card,45,810,A,8390.56,2222.99,1608.64,0,0
+C101308,North West,Retail,Current,34,610,C,6501.06,0.0,947.17,0,0
+C101309,Midlands,Premier,Credit Card,41,764,A,14428.64,11736.97,3104.37,0,0
+C101310,Midlands,Premier,Savings,68,698,B,17881.23,0.0,3674.65,0,0
+C101311,North West,Retail,Savings,30,816,A,1131.46,0.0,698.94,0,0
+C101312,Midlands,Premier,Current,47,735,B,15171.17,0.0,1664.62,0,0
+C101313,London,Retail,Savings,18,830,A,3943.84,0.0,1112.62,0,0
+C101314,Midlands,Retail,Mortgage,44,724,B,925.14,322703.2,2184.79,0,0
+C101315,South East,Retail,Personal Loan,39,715,B,307.09,21685.34,2223.49,0,0
+C101316,North West,Retail,Current,49,797,A,426.56,0.0,990.54,0,0
+C101317,Scotland,Premier,Mortgage,48,709,B,4529.17,621137.46,4599.55,0,0
+C101318,London,Retail,Current,62,689,B,3918.73,0.0,1562.34,0,0
+C101319,Midlands,Premier,Credit Card,52,767,A,4948.79,5810.46,3734.89,0,0
+C101320,Wales,Wealth,Current,57,678,C,20368.16,0.0,6409.68,0,0
+C101321,Scotland,Retail,Personal Loan,47,702,B,3815.77,6465.97,657.16,0,0
+C101322,South East,Retail,Current,65,789,A,1811.78,0.0,1091.62,0,0
+C101323,Wales,Retail,Savings,36,622,C,2071.03,0.0,1119.29,0,0
+C101324,North West,Retail,Savings,43,699,B,17667.03,0.0,1472.11,0,0
+C101325,Wales,Business,Personal Loan,59,680,B,2359.62,16633.42,6974.21,0,0
+C101326,Midlands,Business,Current,40,742,B,5919.04,0.0,3882.94,0,0
+C101327,Scotland,Premier,Current,18,607,C,1870.1,0.0,2410.9,0,0
+C101328,North West,Wealth,Savings,38,705,B,42176.41,0.0,1905.57,0,0
+C101329,South East,Business,Credit Card,48,721,B,3165.49,10705.9,2721.23,0,0
+C101330,Midlands,Premier,Savings,36,735,B,17782.24,0.0,7727.22,0,0
+C101331,Midlands,Retail,Mortgage,36,812,A,402.52,214964.75,1324.95,0,0
+C101332,Wales,Retail,Current,32,634,C,6926.2,0.0,1115.79,0,0
+C101333,Wales,Business,Mortgage,46,721,B,21120.93,283920.45,4023.39,0,0
+C101334,Midlands,Business,Current,18,665,C,12372.92,0.0,1093.01,0,0
+C101335,Midlands,Retail,Savings,35,656,C,845.38,0.0,981.12,0,0
+C101336,North West,Retail,Current,40,646,C,629.21,0.0,616.0,0,0
+C101337,North West,Retail,Mortgage,18,658,C,556.7,121935.24,1323.64,0,0
+C101338,London,Retail,Current,38,615,C,2817.92,0.0,1435.77,0,0
+C101339,North West,Retail,Credit Card,54,629,C,17204.36,1813.73,922.71,30,0
+C101340,South East,Retail,Current,45,556,D,3234.71,0.0,663.48,0,0
+C101341,London,Wealth,Current,57,670,C,254027.17,0.0,6767.68,0,0
+C101342,North West,Retail,Savings,53,565,D,745.36,0.0,456.26,0,0
+C101343,North West,Retail,Savings,50,719,B,2649.73,0.0,1081.02,0,0
+C101344,Midlands,Retail,Current,38,786,A,527.95,0.0,764.45,0,0
+C101345,Midlands,Retail,Personal Loan,37,756,A,4340.88,7532.61,1353.03,0,0
+C101346,London,Retail,Savings,48,737,B,218.67,0.0,568.17,0,0
+C101347,South East,Business,Credit Card,34,722,B,5172.36,10436.47,1937.4,0,0
+C101348,Midlands,Wealth,Savings,19,654,C,25587.8,0.0,6611.5,0,0
+C101349,London,Retail,Mortgage,43,757,A,4110.97,310066.8,748.88,0,0
+C101350,Scotland,Business,Savings,18,689,B,4323.43,0.0,1773.39,0,0
+C101351,North West,Retail,Savings,39,793,A,4011.57,0.0,1001.07,0,0
+C101352,North West,Retail,Savings,43,611,C,4300.55,0.0,936.38,0,0
+C101353,North West,Premier,Current,23,785,A,3082.4,0.0,5427.6,0,0
+C101354,Scotland,Retail,Credit Card,44,748,B,394.2,3333.44,607.5,0,0
+C101355,Wales,Retail,Mortgage,38,714,B,2012.33,94258.38,897.15,0,0
+C101356,London,Business,Current,39,627,C,14560.41,0.0,2227.73,0,0
+C101357,Midlands,Business,Current,48,590,D,18791.76,0.0,4923.2,0,0
+C101358,London,Retail,Current,41,794,A,1643.24,0.0,1106.13,0,0
+C101359,London,Business,Current,49,808,A,16828.38,0.0,4234.81,0,0
+C101360,Scotland,Retail,Current,30,694,B,11480.75,0.0,1034.66,0,0
+C101361,Midlands,Business,Savings,51,682,B,5304.59,0.0,1739.69,0,0
+C101362,Wales,Retail,Current,45,589,D,1380.0,0.0,1715.33,0,0
+C101363,South East,Business,Current,34,648,C,3118.19,0.0,1624.87,0,0
+C101364,London,Retail,Current,30,646,C,649.04,0.0,888.13,0,0
+C101365,Wales,Premier,Savings,45,636,C,2260.05,0.0,2332.92,0,0
+C101366,London,Retail,Personal Loan,40,758,A,502.22,7186.33,824.19,0,0
+C101367,London,Business,Current,71,621,C,2556.5,0.0,4191.84,0,0
+C101368,Wales,Premier,Savings,65,810,A,17242.23,0.0,4640.33,0,0
+C101369,South East,Premier,Current,61,606,C,4381.17,0.0,1724.4,0,0
+C101370,Wales,Premier,Current,48,679,C,5085.22,0.0,1605.28,0,0
+C101371,Scotland,Premier,Credit Card,69,771,A,9229.88,2768.31,6171.88,0,0
+C101372,North West,Retail,Credit Card,33,631,C,9055.02,1295.34,2863.38,0,0
+C101373,Scotland,Retail,Credit Card,57,728,B,2673.61,8169.5,1009.75,0,0
+C101374,Wales,Retail,Current,45,719,B,4378.21,0.0,805.99,0,0
+C101375,South East,Retail,Current,68,528,D,4714.54,0.0,1293.53,0,0
+C101376,South East,Retail,Current,38,850,A,3696.95,0.0,680.24,0,0
+C101377,London,Premier,Credit Card,50,804,A,10138.67,1908.67,4662.5,0,0
+C101378,North West,Premier,Mortgage,38,749,B,18540.22,949669.95,1635.0,0,0
+C101379,Scotland,Premier,Current,64,616,C,11818.91,0.0,2033.62,0,0
+C101380,Scotland,Retail,Current,33,738,B,2947.62,0.0,831.98,0,0
+C101381,South East,Wealth,Credit Card,47,655,C,50395.64,6458.55,5315.2,0,0
+C101382,Scotland,Retail,Credit Card,30,647,C,1926.41,2020.24,1444.94,0,0
+C101383,Scotland,Retail,Mortgage,40,700,B,952.97,104991.46,1411.03,0,0
+C101384,Wales,Retail,Mortgage,18,826,A,3628.35,307838.0,1837.47,0,0
+C101385,London,Retail,Credit Card,33,756,A,1799.28,3453.86,721.48,0,0
+C101386,Midlands,Retail,Credit Card,45,706,B,999.98,2074.71,656.32,0,0
+C101387,North West,Retail,Credit Card,37,525,D,9069.2,1024.73,1506.42,0,0
+C101388,North West,Business,Credit Card,45,774,A,5831.09,3318.0,2720.9,0,0
+C101389,Wales,Retail,Current,56,631,C,3451.62,0.0,1023.35,0,0
+C101390,Wales,Premier,Credit Card,43,811,A,20621.22,18392.58,3314.37,0,0
+C101391,South East,Retail,Credit Card,40,632,C,4612.4,810.63,2740.25,0,0
+C101392,Midlands,Business,Credit Card,28,595,D,5126.16,11781.29,3909.06,0,0
+C101393,Scotland,Retail,Credit Card,45,665,C,935.17,2071.1,1041.17,0,0
+C101394,Wales,Premier,Personal Loan,57,633,C,8166.63,9810.9,5572.24,60,0
+C101395,Scotland,Premier,Current,50,796,A,31376.72,0.0,3890.46,0,0
+C101396,Midlands,Retail,Savings,32,686,B,970.6,0.0,621.31,0,0
+C101397,Midlands,Retail,Mortgage,40,798,A,3279.64,356458.71,4469.6,0,0
+C101398,London,Premier,Savings,50,736,B,3783.04,0.0,1240.5,0,0
+C101399,Wales,Retail,Personal Loan,49,722,B,3414.14,5730.21,789.99,0,0
+C101400,London,Retail,Current,32,659,C,4011.91,0.0,2030.76,0,0
+C101401,London,Business,Credit Card,34,733,B,20035.16,9648.16,2266.99,0,0
+C101402,Wales,Retail,Personal Loan,31,647,C,1922.88,5503.46,1088.02,0,0
+C101403,Midlands,Retail,Savings,31,806,A,1444.6,0.0,521.2,0,0
+C101404,London,Premier,Savings,29,647,C,14415.31,0.0,4293.05,0,0
+C101405,London,Retail,Current,59,611,C,4816.32,0.0,938.5,0,0
+C101406,Scotland,Premier,Credit Card,76,722,B,2416.46,2256.12,1587.41,0,0
+C101407,South East,Retail,Personal Loan,53,650,C,2215.38,8027.02,749.6,0,0
+C101408,London,Retail,Savings,42,695,B,4909.59,0.0,439.52,0,0
+C101409,North West,Retail,Current,47,826,A,1002.41,0.0,1953.19,0,0
+C101410,London,Business,Savings,44,776,A,4984.95,0.0,2847.55,0,0
+C101411,Scotland,Premier,Personal Loan,44,635,C,13810.62,21783.39,4723.47,0,0
+C101412,Scotland,Retail,Mortgage,18,596,D,5413.02,149092.25,3855.47,90,1
+C101413,Midlands,Retail,Current,24,669,C,4657.67,0.0,668.95,0,0
+C101414,Wales,Retail,Credit Card,25,681,B,7903.2,1221.93,1741.07,0,0
+C101415,South East,Premier,Mortgage,49,776,A,13902.68,106308.12,2990.33,0,0
+C101416,London,Retail,Savings,42,678,C,382.24,0.0,1870.82,0,0
+C101417,Scotland,Retail,Personal Loan,65,732,B,1132.55,19442.93,1399.5,60,0
+C101418,North West,Business,Current,32,705,B,9143.45,0.0,4534.44,0,0
+C101419,North West,Wealth,Credit Card,42,655,C,4859.79,17707.86,4993.18,90,1
+C101420,Midlands,Premier,Current,40,702,B,8943.45,0.0,2123.91,0,0
+C101421,Scotland,Retail,Current,42,533,D,5853.43,0.0,1381.19,0,0
+C101422,Wales,Retail,Personal Loan,46,805,A,1120.77,17833.44,534.12,0,0
+C101423,Wales,Retail,Credit Card,25,621,C,538.68,2008.42,1399.01,0,0
+C101424,South East,Retail,Savings,37,673,C,911.53,0.0,450.97,0,0
+C101425,London,Retail,Current,39,697,B,1519.75,0.0,535.35,0,0
+C101426,South East,Retail,Personal Loan,37,850,A,693.76,10093.48,957.81,0,0
+C101427,London,Retail,Current,40,805,A,3252.1,0.0,586.5,0,0
+C101428,South East,Premier,Personal Loan,18,850,A,8367.65,19974.65,2761.8,0,0
+C101429,London,Retail,Current,33,662,C,1082.82,0.0,1091.62,0,0
+C101430,London,Retail,Current,45,610,C,1562.45,0.0,1041.76,0,0
+C101431,Scotland,Retail,Credit Card,63,634,C,1087.68,2841.76,1587.05,0,0
+C101432,Wales,Retail,Mortgage,75,757,A,3230.88,107459.18,1328.1,0,0
+C101433,Midlands,Retail,Current,39,816,A,941.06,0.0,525.35,0,0
+C101434,London,Wealth,Mortgage,53,849,A,3338.31,1485931.95,4920.68,0,0
+C101435,North West,Premier,Current,20,825,A,7643.25,0.0,1396.71,0,0
+C101436,Midlands,Business,Current,57,665,C,7474.8,0.0,2019.63,0,0
+C101437,Scotland,Retail,Personal Loan,44,662,C,3728.43,6794.8,441.19,0,0
+C101438,Scotland,Wealth,Current,23,771,A,310126.1,0.0,7293.79,0,0
+C101439,Wales,Retail,Credit Card,34,615,C,9863.57,3899.89,1796.55,0,0
+C101440,Midlands,Retail,Savings,52,578,D,4450.49,0.0,1834.33,0,0
+C101441,Wales,Premier,Savings,30,753,A,7374.6,0.0,3403.56,0,0
+C101442,North West,Premier,Current,77,850,A,15016.84,0.0,2304.9,0,0
+C101443,South East,Retail,Current,32,577,D,1168.56,0.0,2393.81,0,0
+C101444,Scotland,Retail,Current,47,695,B,3816.66,0.0,1213.64,0,0
+C101445,Wales,Premier,Current,67,744,B,4677.28,0.0,2879.87,0,0
+C101446,Midlands,Premier,Personal Loan,57,751,A,8297.6,13724.4,2733.74,0,0
+C101447,Wales,Premier,Savings,38,633,C,10019.23,0.0,4921.07,0,0
+C101448,South East,Wealth,Savings,49,554,D,76035.56,0.0,2215.81,0,0
+C101449,North West,Retail,Credit Card,50,733,B,4924.54,1506.53,612.64,0,0
+C101450,Scotland,Retail,Credit Card,33,754,A,600.07,5686.26,2706.94,0,0
+C101451,Midlands,Business,Current,34,631,C,14265.18,0.0,2425.53,0,0
+C101452,South East,Premier,Savings,51,686,B,2496.26,0.0,1067.86,0,0
+C101453,Scotland,Retail,Current,18,639,C,897.47,0.0,885.89,0,0
+C101454,Wales,Premier,Savings,30,698,B,23979.7,0.0,1741.8,0,0
+C101455,North West,Retail,Savings,35,802,A,1119.95,0.0,1774.81,0,0
+C101456,London,Premier,Mortgage,31,731,B,827.28,592153.09,4384.21,30,0
+C101457,Scotland,Business,Credit Card,59,779,A,5250.98,6945.51,5178.4,0,0
+C101458,Scotland,Premier,Credit Card,45,739,B,23994.38,5863.44,3079.23,0,0
+C101459,Scotland,Premier,Mortgage,56,743,B,107623.99,292444.98,4225.1,0,0
+C101460,South East,Retail,Savings,23,634,C,14053.23,0.0,2018.27,0,0
+C101461,South East,Retail,Current,64,599,D,12389.38,0.0,324.58,0,0
+C101462,Wales,Retail,Savings,26,766,A,839.64,0.0,3590.9,0,0
+C101463,Scotland,Retail,Savings,26,612,C,2498.14,0.0,882.77,0,0
+C101464,Midlands,Retail,Current,20,614,C,2795.42,0.0,1294.7,0,0
+C101465,Midlands,Retail,Mortgage,32,457,E,1634.39,177961.72,1369.59,90,1
+C101466,South East,Retail,Current,34,841,A,1988.08,0.0,2177.52,0,0
+C101467,South East,Retail,Personal Loan,49,553,D,1740.86,13710.59,1368.68,0,0
+C101468,Midlands,Business,Credit Card,47,698,B,18987.38,3635.82,9598.65,0,0
+C101469,South East,Retail,Current,44,693,B,467.22,0.0,543.4,0,0
+C101470,London,Retail,Credit Card,49,725,B,6113.1,1573.2,930.96,0,0
+C101471,London,Retail,Mortgage,53,657,C,1452.21,170519.82,1452.38,0,0
+C101472,Scotland,Retail,Personal Loan,48,571,D,2660.13,9047.71,1185.54,0,0
+C101473,South East,Retail,Current,41,664,C,2004.82,0.0,1358.82,0,0
+C101474,London,Retail,Savings,40,667,C,1292.97,0.0,1225.31,0,0
+C101475,North West,Retail,Mortgage,23,737,B,5989.89,180978.19,591.43,0,0
+C101476,London,Business,Current,52,662,C,2480.09,0.0,3977.0,0,0
+C101477,Wales,Premier,Savings,31,577,D,10172.3,0.0,1435.14,0,0
+C101478,Wales,Retail,Current,30,696,B,2419.19,0.0,1695.42,0,0
+C101479,Midlands,Retail,Savings,41,817,A,464.23,0.0,2229.19,0,0
+C101480,Wales,Retail,Credit Card,20,801,A,470.83,2995.57,1242.94,0,0
+C101481,Wales,Retail,Mortgage,51,816,A,1054.39,209936.34,411.53,0,0
+C101482,North West,Retail,Credit Card,31,732,B,2159.96,1303.35,1468.94,0,0
+C101483,Scotland,Retail,Current,56,748,B,497.02,0.0,617.88,0,0
+C101484,London,Premier,Savings,58,662,C,1503.91,0.0,4164.01,0,0
+C101485,Midlands,Retail,Current,49,625,C,1468.89,0.0,1545.83,0,0
+C101486,Midlands,Business,Personal Loan,21,753,A,12906.22,75496.11,1511.57,30,0
+C101487,Midlands,Premier,Current,41,715,B,2751.43,0.0,1803.99,0,0
+C101488,Wales,Retail,Mortgage,56,774,A,2232.38,263897.11,1195.51,0,0
+C101489,London,Business,Credit Card,50,850,A,8476.26,7282.61,2190.32,0,0
+C101490,Midlands,Retail,Savings,37,821,A,630.44,0.0,598.65,0,0
+C101491,Midlands,Retail,Mortgage,35,750,A,629.97,230588.28,1081.67,0,0
+C101492,Scotland,Retail,Mortgage,31,633,C,707.28,175763.67,1922.09,0,0
+C101493,Scotland,Retail,Current,30,649,C,4342.59,0.0,609.03,0,0
+C101494,Wales,Premier,Credit Card,61,773,A,11376.68,4548.99,3188.76,0,0
+C101495,Midlands,Retail,Personal Loan,44,800,A,8328.5,10866.75,2430.31,0,0
+C101496,North West,Retail,Savings,29,766,A,1033.6,0.0,1217.6,0,0
+C101497,Scotland,Wealth,Credit Card,27,850,A,34975.15,8271.08,23664.0,0,0
+C101498,Wales,Retail,Credit Card,41,697,B,2067.55,2363.68,968.36,0,0
+C101499,London,Wealth,Savings,52,758,A,22570.46,0.0,8711.2,0,0
+C101500,Midlands,Retail,Current,18,639,C,12223.14,0.0,1003.04,0,0
+C101501,London,Retail,Savings,46,840,A,5282.45,0.0,430.35,0,0
+C101502,South East,Retail,Personal Loan,20,781,A,4728.23,5727.83,978.39,30,0
+C101503,Midlands,Wealth,Current,28,691,B,39582.48,0.0,6702.85,0,0
+C101504,North West,Premier,Current,21,775,A,56863.38,0.0,1647.87,0,0
+C101505,North West,Retail,Savings,32,701,B,1268.5,0.0,1055.98,0,0
+C101506,South East,Retail,Credit Card,34,682,B,2278.77,4322.66,1986.87,0,0
+C101507,Midlands,Business,Credit Card,34,625,C,25863.5,5665.17,2030.63,0,0
+C101508,London,Business,Mortgage,52,630,C,9674.26,198349.92,2884.77,0,0
+C101509,North West,Business,Current,44,741,B,38932.2,0.0,4022.25,0,0
+C101510,Wales,Retail,Credit Card,42,738,B,5847.25,4055.19,2134.21,0,0
+C101511,Wales,Business,Personal Loan,53,588,D,13823.85,44255.9,2768.62,0,0
+C101512,Wales,Wealth,Credit Card,49,801,A,188695.29,18952.97,3907.93,0,0
+C101513,Midlands,Retail,Current,54,806,A,5955.12,0.0,1746.09,0,0
+C101514,Midlands,Retail,Current,50,715,B,583.82,0.0,580.92,0,0
+C101515,South East,Retail,Credit Card,33,735,B,5383.46,3595.98,1746.31,0,0
+C101516,London,Retail,Current,21,620,C,1138.43,0.0,607.55,0,0
+C101517,North West,Retail,Personal Loan,45,521,D,1401.51,20297.16,999.16,0,0
+C101518,Scotland,Retail,Personal Loan,71,850,A,818.34,26211.01,812.74,0,0
+C101519,Midlands,Wealth,Credit Card,40,715,B,46528.73,6215.72,6013.54,0,0
+C101520,London,Retail,Mortgage,36,748,B,3827.51,279480.27,1718.2,0,0
+C101521,South East,Retail,Current,61,753,A,4243.88,0.0,790.33,0,0
+C101522,London,Retail,Mortgage,30,589,D,1858.82,152869.94,2293.68,0,0
+C101523,South East,Retail,Savings,20,696,B,1583.61,0.0,967.43,0,0
+C101524,South East,Retail,Mortgage,43,721,B,1266.41,170822.5,1321.23,0,0
+C101525,North West,Retail,Credit Card,37,790,A,2424.99,1866.23,960.96,0,0
+C101526,Midlands,Retail,Mortgage,29,787,A,3939.71,188313.13,778.21,0,0
+C101527,Wales,Premier,Current,59,681,B,3403.15,0.0,1713.81,0,0
+C101528,North West,Wealth,Mortgage,43,739,B,26532.94,215833.31,7672.77,0,0
+C101529,South East,Retail,Mortgage,32,607,C,17515.76,213469.11,1059.21,0,0
+C101530,South East,Retail,Current,54,627,C,828.67,0.0,826.91,0,0
+C101531,North West,Retail,Savings,47,789,A,3976.47,0.0,882.54,0,0
+C101532,Wales,Premier,Credit Card,41,612,C,5743.98,4726.03,687.38,0,0
+C101533,Scotland,Wealth,Mortgage,37,850,A,33040.85,459286.86,9951.28,0,0
+C101534,London,Business,Credit Card,29,470,E,21330.1,4466.17,1765.09,0,0
+C101535,London,Retail,Current,28,748,B,2497.03,0.0,1115.27,0,0
+C101536,North West,Business,Current,52,730,B,12099.48,0.0,4203.61,0,0
+C101537,London,Business,Credit Card,49,813,A,1615.02,6912.23,3467.58,0,0
+C101538,London,Retail,Personal Loan,18,597,D,1338.23,6633.3,1070.05,0,0
+C101539,South East,Retail,Credit Card,25,579,D,32252.35,5863.77,994.18,0,0
+C101540,Midlands,Retail,Current,57,750,A,1949.06,0.0,1385.73,0,0
+C101541,London,Business,Credit Card,67,709,B,5374.72,4715.03,2989.36,0,0
+C101542,South East,Retail,Personal Loan,31,698,B,1883.29,12188.08,1124.43,0,0
+C101543,Midlands,Premier,Savings,38,720,B,31826.74,0.0,1367.32,0,0
+C101544,Wales,Premier,Mortgage,36,781,A,13561.31,624623.67,1712.87,0,0
+C101545,Scotland,Retail,Savings,41,850,A,2341.95,0.0,1148.99,0,0
+C101546,North West,Retail,Credit Card,31,710,B,4203.29,912.19,281.8,0,0
+C101547,South East,Retail,Current,39,644,C,1426.45,0.0,770.91,0,0
+C101548,Midlands,Wealth,Credit Card,58,500,E,15303.55,6387.79,6691.73,0,0
+C101549,Wales,Retail,Savings,55,771,A,2954.01,0.0,1997.63,0,0
+C101550,North West,Retail,Credit Card,43,540,D,2252.86,4171.24,970.9,90,1
+C101551,Wales,Retail,Credit Card,52,734,B,4994.3,3307.48,565.36,0,0
+C101552,Scotland,Premier,Savings,41,636,C,6595.73,0.0,3405.57,0,0
+C101553,Scotland,Wealth,Current,39,782,A,4879.32,0.0,4359.23,0,0
+C101554,London,Retail,Mortgage,56,706,B,6901.23,318213.09,497.98,0,0
+C101555,Scotland,Business,Current,43,564,D,3169.14,0.0,4051.94,0,0
+C101556,Midlands,Retail,Current,24,673,C,516.54,0.0,2163.29,0,0
+C101557,North West,Retail,Credit Card,44,552,D,1458.5,953.99,784.06,0,0
+C101558,Scotland,Retail,Savings,38,726,B,1363.44,0.0,608.4,0,0
+C101559,Wales,Wealth,Savings,43,547,D,14755.23,0.0,6561.86,0,0
+C101560,Scotland,Retail,Savings,57,791,A,1267.39,0.0,435.93,0,0
+C101561,Midlands,Retail,Credit Card,47,716,B,4916.29,942.62,1367.88,0,0
+C101562,Midlands,Premier,Credit Card,42,790,A,2940.55,10569.1,3828.01,0,0
+C101563,Scotland,Retail,Savings,29,712,B,4932.26,0.0,1607.0,0,0
+C101564,Scotland,Retail,Personal Loan,44,766,A,2785.8,7239.61,629.76,0,0
+C101565,Midlands,Retail,Personal Loan,36,773,A,2142.36,6932.5,1646.52,0,0
+C101566,London,Retail,Personal Loan,39,687,B,2414.8,7068.49,752.09,0,0
+C101567,Wales,Retail,Mortgage,35,682,B,5237.4,163909.23,1068.55,0,0
+C101568,Wales,Retail,Current,43,664,C,2052.68,0.0,1194.28,0,0
+C101569,South East,Retail,Savings,40,690,B,4654.04,0.0,1708.66,0,0
+C101570,South East,Premier,Savings,43,640,C,50357.58,0.0,3987.41,0,0
+C101571,Scotland,Business,Savings,51,724,B,61820.99,0.0,4116.6,0,0
+C101572,South East,Retail,Savings,49,709,B,1969.86,0.0,602.7,0,0
+C101573,London,Retail,Savings,28,826,A,3610.64,0.0,1801.78,0,0
+C101574,South East,Retail,Mortgage,24,731,B,1155.61,145810.94,1024.05,0,0
+C101575,London,Retail,Mortgage,41,695,B,254.12,135637.59,517.78,0,0
+C101576,South East,Retail,Current,51,715,B,560.08,0.0,971.8,0,0
+C101577,Scotland,Retail,Credit Card,34,534,D,1560.81,1372.89,1332.49,0,0
+C101578,Wales,Retail,Current,59,725,B,4825.36,0.0,1929.5,0,0
+C101579,Wales,Wealth,Savings,62,717,B,66529.02,0.0,3869.74,0,0
+C101580,Midlands,Retail,Savings,31,574,D,1515.96,0.0,824.96,0,0
+C101581,London,Premier,Personal Loan,18,699,B,3076.95,81803.64,1971.46,0,0
+C101582,South East,Retail,Current,42,711,B,2096.68,0.0,1180.33,0,0
+C101583,Midlands,Retail,Mortgage,27,549,D,5244.97,74001.0,1197.28,0,0
+C101584,South East,Retail,Savings,26,850,A,913.7,0.0,1335.92,0,0
+C101585,Midlands,Premier,Current,56,850,A,16821.16,0.0,2627.94,0,0
+C101586,Wales,Retail,Savings,50,783,A,773.1,0.0,1321.35,0,0
+C101587,Wales,Retail,Savings,39,776,A,1921.38,0.0,1235.96,0,0
+C101588,Wales,Premier,Savings,50,599,D,3191.71,0.0,1224.0,0,0
+C101589,South East,Retail,Current,37,681,B,1524.97,0.0,1013.03,0,0
+C101590,Midlands,Retail,Personal Loan,33,578,D,1971.37,7815.6,790.88,0,0
+C101591,London,Business,Credit Card,22,637,C,8222.48,5849.8,2034.88,0,0
+C101592,North West,Retail,Current,52,591,D,816.32,0.0,810.04,0,0
+C101593,Wales,Retail,Current,30,624,C,5314.18,0.0,1037.87,0,0
+C101594,Scotland,Business,Mortgage,44,639,C,33348.11,293118.56,2980.31,90,1
+C101595,South East,Retail,Savings,54,658,C,7425.3,0.0,1338.2,0,0
+C101596,Scotland,Retail,Savings,18,545,D,691.81,0.0,1038.25,0,0
+C101597,Midlands,Retail,Mortgage,28,706,B,999.82,182946.04,1591.43,30,0
+C101598,Wales,Premier,Savings,43,690,B,3016.16,0.0,2761.63,0,0
+C101599,London,Retail,Credit Card,28,659,C,1537.82,3466.71,493.22,0,0
+C101600,Midlands,Retail,Mortgage,32,752,A,3602.26,132489.43,1430.46,0,0
+C101601,London,Retail,Personal Loan,18,736,B,1603.06,10955.66,1046.34,0,0
+C101602,Wales,Retail,Personal Loan,44,674,C,5719.43,6494.79,1889.0,0,0
+C101603,Midlands,Retail,Current,30,772,A,1964.01,0.0,1104.85,0,0
+C101604,South East,Business,Current,58,598,D,8249.22,0.0,2782.15,0,0
+C101605,Scotland,Retail,Personal Loan,26,735,B,1548.42,10882.81,1385.5,0,0
+C101606,North West,Retail,Savings,28,565,D,5200.04,0.0,1310.47,0,0
+C101607,London,Wealth,Mortgage,40,735,B,10083.89,319659.0,4866.84,0,0
+C101608,Scotland,Retail,Savings,31,592,D,10653.36,0.0,967.98,0,0
+C101609,Midlands,Retail,Current,46,713,B,8613.09,0.0,1326.38,0,0
+C101610,London,Retail,Savings,29,459,E,1392.4,0.0,960.36,0,0
+C101611,Wales,Business,Savings,33,730,B,9922.59,0.0,5424.7,0,0
+C101612,Midlands,Wealth,Savings,18,738,B,83929.16,0.0,7866.82,0,0
+C101613,London,Retail,Credit Card,37,692,B,2614.28,1430.33,1558.44,0,0
+C101614,Scotland,Business,Mortgage,42,785,A,2201.7,409172.8,1514.0,0,0
+C101615,Wales,Retail,Mortgage,49,774,A,4998.4,341919.1,753.79,0,0
+C101616,Wales,Retail,Savings,38,479,E,5042.6,0.0,518.46,0,0
+C101617,Wales,Premier,Personal Loan,62,598,D,9638.81,26340.2,5081.18,0,0
+C101618,Scotland,Retail,Credit Card,52,670,C,1307.4,1699.32,1023.06,0,0
+C101619,Midlands,Retail,Savings,32,802,A,990.41,0.0,1657.95,0,0
+C101620,Scotland,Business,Credit Card,43,616,C,6391.78,6123.64,3781.71,0,0
+C101621,Scotland,Wealth,Mortgage,41,731,B,40863.88,556698.41,4833.08,0,0
+C101622,Wales,Retail,Savings,48,667,C,3681.11,0.0,1232.41,0,0
+C101623,London,Business,Mortgage,32,554,D,78393.19,154347.34,4001.1,0,0
+C101624,Scotland,Retail,Mortgage,32,692,B,3037.17,323890.04,684.43,0,0
+C101625,Scotland,Retail,Credit Card,36,782,A,305.91,7891.93,1593.38,0,0
+C101626,Wales,Retail,Credit Card,41,636,C,2277.75,1825.91,1363.38,0,0
+C101627,London,Premier,Savings,36,773,A,25182.67,0.0,2402.66,0,0
+C101628,London,Retail,Credit Card,38,657,C,2964.22,2600.25,271.06,0,0
+C101629,South East,Retail,Current,37,669,C,607.02,0.0,749.45,90,1
+C101630,Scotland,Retail,Current,35,848,A,3912.27,0.0,764.52,0,0
+C101631,London,Business,Savings,48,762,A,23274.71,0.0,4052.58,0,0
+C101632,North West,Retail,Savings,45,648,C,5063.66,0.0,769.05,0,0
+C101633,Scotland,Business,Savings,55,850,A,5549.62,0.0,3579.55,0,0
+C101634,North West,Retail,Savings,25,827,A,3258.76,0.0,2919.51,0,0
+C101635,Scotland,Retail,Savings,36,720,B,194.4,0.0,995.84,0,0
+C101636,London,Premier,Current,36,850,A,1691.99,0.0,2142.39,0,0
+C101637,Scotland,Premier,Savings,29,627,C,6968.91,0.0,3382.99,0,0
+C101638,Scotland,Retail,Mortgage,46,701,B,1887.35,818313.51,945.03,0,0
+C101639,Wales,Premier,Savings,45,583,D,3923.64,0.0,1686.02,0,0
+C101640,North West,Wealth,Savings,35,785,A,11149.58,0.0,8582.74,0,0
+C101641,Scotland,Retail,Savings,52,778,A,2123.41,0.0,750.47,0,0
+C101642,London,Retail,Savings,18,805,A,1052.08,0.0,321.96,0,0
+C101643,South East,Retail,Savings,34,685,B,749.44,0.0,1364.2,0,0
+C101644,London,Business,Mortgage,53,774,A,13220.22,231463.52,2655.75,0,0
+C101645,South East,Wealth,Credit Card,36,662,C,29807.29,10711.27,6769.31,0,0
+C101646,North West,Business,Mortgage,47,658,C,1245.06,343896.64,3566.34,0,0
+C101647,London,Retail,Mortgage,30,673,C,776.4,173456.6,1709.41,0,0
+C101648,London,Retail,Personal Loan,33,757,A,2781.48,17433.03,992.36,60,0
+C101649,Wales,Retail,Credit Card,57,720,B,1326.57,3767.12,1222.04,0,0
+C101650,North West,Retail,Savings,42,766,A,1197.99,0.0,1850.63,0,0
+C101651,Midlands,Business,Current,27,597,D,22729.56,0.0,5938.17,0,0
+C101652,Wales,Retail,Personal Loan,59,665,C,483.83,4445.69,544.01,90,1
+C101653,London,Retail,Mortgage,18,651,C,5607.1,235218.22,626.32,0,0
+C101654,Scotland,Business,Current,32,640,C,35020.41,0.0,2624.08,0,0
+C101655,London,Premier,Current,18,635,C,29069.45,0.0,1719.39,0,0
+C101656,Wales,Business,Current,44,767,A,29462.8,0.0,5292.48,0,0
+C101657,Wales,Premier,Current,77,733,B,41041.26,0.0,2458.49,0,0
+C101658,South East,Business,Savings,46,700,B,16663.04,0.0,4332.93,0,0
+C101659,London,Premier,Savings,32,744,B,703.38,0.0,1344.46,0,0
+C101660,Wales,Wealth,Mortgage,35,778,A,10232.05,1315448.84,6239.67,0,0
+C101661,London,Business,Mortgage,27,755,A,50387.35,762009.5,2884.25,0,0
+C101662,London,Retail,Credit Card,51,554,D,1556.53,1868.37,614.17,90,1
+C101663,Wales,Business,Personal Loan,64,782,A,90294.72,22177.17,5590.4,90,1
+C101664,London,Retail,Credit Card,53,691,B,4630.99,1142.98,1983.86,0,0
+C101665,South East,Retail,Personal Loan,23,759,A,875.13,10176.54,655.54,0,0
+C101666,Midlands,Retail,Current,44,599,D,700.85,0.0,1979.18,0,0
+C101667,Midlands,Retail,Savings,55,619,C,1028.18,0.0,1084.29,0,0
+C101668,London,Retail,Current,21,718,B,2574.21,0.0,890.67,0,0
+C101669,Midlands,Retail,Mortgage,54,689,B,2007.11,208475.95,1478.64,0,0
+C101670,Scotland,Retail,Credit Card,53,633,C,2696.85,1911.92,721.3,0,0
+C101671,South East,Retail,Credit Card,24,689,B,6406.5,3581.82,495.8,0,0
+C101672,South East,Retail,Personal Loan,42,777,A,3635.53,9310.33,1117.09,0,0
+C101673,Scotland,Retail,Credit Card,18,446,E,11445.06,2159.26,987.21,0,0
+C101674,North West,Retail,Credit Card,26,699,B,958.81,4078.25,1632.74,0,0
+C101675,Scotland,Retail,Credit Card,31,450,E,526.06,2848.04,691.38,0,0
+C101676,South East,Business,Current,36,771,A,24989.08,0.0,1704.29,0,0
+C101677,Wales,Retail,Personal Loan,18,693,B,3493.16,14610.23,1068.89,0,0
+C101678,Midlands,Retail,Mortgage,23,780,A,1299.32,220606.84,370.92,0,0
+C101679,Scotland,Retail,Savings,34,595,D,1443.81,0.0,1085.53,0,0
+C101680,South East,Wealth,Personal Loan,30,642,C,72421.1,40909.63,4773.13,0,0
+C101681,Wales,Retail,Savings,47,674,C,1708.4,0.0,1581.37,0,0
+C101682,Wales,Retail,Credit Card,56,690,B,650.73,2108.94,261.53,0,0
+C101683,Midlands,Premier,Current,54,695,B,7946.51,0.0,2033.28,0,0
+C101684,South East,Premier,Savings,51,850,A,3339.43,0.0,748.37,0,0
+C101685,Scotland,Premier,Current,33,803,A,15513.58,0.0,4908.71,0,0
+C101686,Wales,Retail,Credit Card,44,715,B,1218.07,1760.85,819.36,0,0
+C101687,Wales,Retail,Current,24,783,A,1577.0,0.0,1414.39,0,0
+C101688,North West,Wealth,Credit Card,68,740,B,11578.65,15536.22,5154.35,0,0
+C101689,Scotland,Retail,Savings,67,592,D,560.54,0.0,1595.87,0,0
+C101690,London,Retail,Personal Loan,43,637,C,2813.57,8175.48,396.28,0,0
+C101691,London,Retail,Mortgage,46,747,B,2326.18,194390.8,949.71,0,0
+C101692,Wales,Retail,Current,33,744,B,1746.18,0.0,999.28,0,0
+C101693,Scotland,Retail,Credit Card,40,633,C,5914.41,2854.74,1139.98,0,0
+C101694,Midlands,Retail,Mortgage,27,674,C,2731.73,449128.94,2290.69,0,0
+C101695,Midlands,Retail,Savings,26,572,D,5204.07,0.0,2640.68,90,1
+C101696,North West,Retail,Current,26,743,B,3947.15,0.0,1050.7,0,0
+C101697,Scotland,Premier,Savings,45,768,A,4844.02,0.0,1102.85,0,0
+C101698,North West,Business,Savings,54,830,A,26308.99,0.0,1651.12,0,0
+C101699,Scotland,Retail,Current,26,788,A,5632.1,0.0,1517.8,0,0
+C101700,Wales,Business,Current,38,712,B,7635.33,0.0,2067.6,0,0
+C101701,Wales,Retail,Personal Loan,30,662,C,2241.27,10029.85,975.28,0,0
+C101702,London,Retail,Current,66,783,A,1302.42,0.0,402.03,0,0
+C101703,London,Retail,Current,49,562,D,1833.32,0.0,2306.14,0,0
+C101704,Scotland,Retail,Savings,48,850,A,2896.72,0.0,975.09,0,0
+C101705,Wales,Wealth,Savings,76,688,B,19787.44,0.0,7207.26,0,0
+C101706,Midlands,Retail,Current,34,671,C,3927.13,0.0,477.26,0,0
+C101707,Scotland,Business,Credit Card,53,850,A,17831.76,7247.22,2842.17,0,0
+C101708,London,Retail,Mortgage,36,804,A,177.91,157726.09,917.77,0,0
+C101709,North West,Premier,Current,41,814,A,7346.33,0.0,3248.93,0,0
+C101710,Wales,Premier,Personal Loan,36,828,A,60447.37,12729.44,4735.81,0,0
+C101711,North West,Retail,Personal Loan,18,574,D,1772.26,5892.13,1891.69,0,0
+C101712,Midlands,Retail,Personal Loan,30,716,B,1689.74,25004.11,1538.73,0,0
+C101713,London,Premier,Savings,47,728,B,2329.36,0.0,3630.18,0,0
+C101714,London,Retail,Savings,18,703,B,3364.42,0.0,541.19,0,0
+C101715,Scotland,Retail,Credit Card,47,553,D,1221.51,3986.09,1340.64,0,0
+C101716,London,Retail,Savings,34,661,C,1524.88,0.0,1060.05,0,0
+C101717,Midlands,Retail,Mortgage,68,632,C,309.66,110301.39,1256.03,0,0
+C101718,London,Retail,Current,43,850,A,1556.14,0.0,1164.96,0,0
+C101719,Scotland,Retail,Savings,23,849,A,420.34,0.0,1911.05,0,0
+C101720,London,Retail,Current,35,706,B,1639.57,0.0,695.15,0,0
+C101721,London,Premier,Current,39,645,C,35133.39,0.0,1921.11,0,0
+C101722,North West,Retail,Personal Loan,45,660,C,10008.02,16973.3,1877.75,0,0
+C101723,Scotland,Business,Credit Card,44,850,A,4997.91,3560.57,1300.13,0,0
+C101724,Midlands,Premier,Current,34,610,C,3771.2,0.0,3118.42,0,0
+C101725,North West,Business,Current,65,632,C,14391.6,0.0,3819.51,0,0
+C101726,Midlands,Retail,Current,41,597,D,1911.2,0.0,986.85,0,0
+C101727,North West,Premier,Credit Card,49,639,C,18385.57,3364.05,3459.44,30,0
+C101728,South East,Retail,Mortgage,29,665,C,2377.71,320407.02,803.95,30,0
+C101729,North West,Retail,Savings,39,621,C,3818.27,0.0,1238.03,0,0
+C101730,Midlands,Premier,Savings,47,773,A,3157.57,0.0,2045.67,0,0
+C101731,Midlands,Retail,Mortgage,59,730,B,2360.38,271864.29,936.23,0,0
+C101732,Wales,Retail,Mortgage,38,668,C,522.72,191231.14,1315.13,0,0
+C101733,South East,Retail,Credit Card,40,639,C,615.0,3810.27,594.64,0,0
+C101734,London,Premier,Current,36,733,B,10220.74,0.0,4025.59,0,0
+C101735,North West,Retail,Savings,39,783,A,7370.84,0.0,258.39,0,0
+C101736,North West,Retail,Mortgage,28,688,B,5204.07,157254.07,1062.99,0,0
+C101737,Wales,Business,Savings,76,850,A,105755.22,0.0,4794.02,0,0
+C101738,London,Retail,Current,40,824,A,6853.11,0.0,2028.83,0,0
+C101739,Scotland,Retail,Personal Loan,58,691,B,4331.44,5891.17,579.11,0,0
+C101740,South East,Wealth,Savings,56,817,A,33656.06,0.0,2230.22,0,0
+C101741,London,Retail,Personal Loan,45,621,C,1551.79,10292.64,638.39,30,0
+C101742,London,Retail,Current,50,772,A,4344.42,0.0,599.03,0,0
+C101743,Scotland,Premier,Personal Loan,34,663,C,5658.96,81082.33,2213.49,90,1
+C101744,Wales,Retail,Savings,18,678,C,1138.1,0.0,1081.12,0,0
+C101745,South East,Retail,Credit Card,29,576,D,4977.3,1969.51,1100.97,30,0
+C101746,North West,Business,Current,63,694,B,134354.28,0.0,3433.02,0,0
+C101747,North West,Premier,Savings,60,784,A,3845.57,0.0,2284.19,0,0
+C101748,Wales,Business,Personal Loan,59,729,B,78113.88,43502.95,4287.63,90,1
+C101749,South East,Retail,Current,35,612,C,2343.56,0.0,759.92,0,0
+C101750,Scotland,Business,Personal Loan,41,781,A,4278.59,28589.25,2453.47,0,0
+C101751,Scotland,Premier,Current,49,797,A,12680.67,0.0,4366.43,0,0
+C101752,Scotland,Retail,Current,44,576,D,508.6,0.0,1638.43,0,0
+C101753,Midlands,Retail,Current,25,597,D,17084.97,0.0,1168.45,0,0
+C101754,Midlands,Retail,Savings,20,850,A,26514.64,0.0,590.19,0,0
+C101755,London,Business,Savings,57,784,A,38572.07,0.0,1562.02,0,0
+C101756,London,Retail,Current,19,605,C,2065.51,0.0,1237.66,0,0
+C101757,South East,Premier,Current,31,720,B,5655.92,0.0,619.45,0,0
+C101758,North West,Retail,Personal Loan,41,761,A,4470.3,10258.14,925.61,0,0
+C101759,North West,Business,Savings,30,740,B,27583.7,0.0,3191.12,0,0
+C101760,London,Premier,Mortgage,29,714,B,1625.01,458397.0,2785.17,30,0
+C101761,Scotland,Premier,Current,50,666,C,1788.25,0.0,2483.64,0,0
+C101762,London,Retail,Savings,45,720,B,1596.99,0.0,1144.75,0,0
+C101763,Wales,Retail,Current,27,693,B,2674.17,0.0,1712.9,0,0
+C101764,Wales,Retail,Personal Loan,53,514,E,4193.38,17107.37,1283.38,30,0
+C101765,South East,Retail,Current,27,611,C,2056.11,0.0,2054.55,0,0
+C101766,London,Premier,Current,56,704,B,6919.12,0.0,2962.53,0,0
+C101767,London,Premier,Personal Loan,41,709,B,5397.54,10373.74,1812.53,0,0
+C101768,Scotland,Retail,Credit Card,37,643,C,413.25,2860.84,565.17,0,0
+C101769,South East,Retail,Savings,39,744,B,6954.56,0.0,907.81,0,0
+C101770,Midlands,Retail,Savings,18,552,D,4104.27,0.0,3449.84,0,0
+C101771,North West,Retail,Credit Card,36,775,A,732.72,3175.75,1436.1,0,0
+C101772,North West,Premier,Savings,21,627,C,43152.01,0.0,2762.15,0,0
+C101773,London,Retail,Current,24,678,C,2691.72,0.0,831.49,0,0
+C101774,Scotland,Retail,Personal Loan,44,708,B,1492.75,9599.26,568.6,0,0
+C101775,London,Premier,Savings,53,776,A,13708.45,0.0,2955.8,0,0
+C101776,London,Retail,Mortgage,28,753,A,1011.5,193144.25,442.62,0,0
+C101777,Scotland,Retail,Current,26,712,B,952.87,0.0,2229.67,0,0
+C101778,Wales,Retail,Mortgage,18,768,A,4902.81,248556.67,1395.75,0,0
+C101779,Midlands,Retail,Current,35,654,C,1774.33,0.0,1576.37,0,0
+C101780,Midlands,Premier,Current,50,659,C,710.63,0.0,5263.4,0,0
+C101781,Midlands,Retail,Current,47,626,C,766.2,0.0,1076.03,0,0
+C101782,London,Retail,Credit Card,32,642,C,3020.64,4300.98,907.12,0,0
+C101783,Scotland,Retail,Savings,57,641,C,3352.75,0.0,585.79,0,0
+C101784,Wales,Retail,Savings,18,733,B,6758.44,0.0,796.2,0,0
+C101785,London,Retail,Current,35,768,A,1400.28,0.0,1475.28,0,0
+C101786,London,Premier,Credit Card,26,712,B,3595.73,3927.83,5117.87,0,0
+C101787,London,Retail,Personal Loan,42,723,B,976.88,10875.74,1159.84,0,0
+C101788,North West,Retail,Savings,27,481,E,89.53,0.0,786.8,0,0
+C101789,North West,Retail,Savings,37,805,A,2095.66,0.0,723.75,0,0
+C101790,Midlands,Premier,Personal Loan,63,793,A,5264.02,12962.77,6175.97,0,0
+C101791,Wales,Premier,Credit Card,44,769,A,15707.95,2911.09,1199.81,0,0
+C101792,Wales,Retail,Current,47,659,C,463.1,0.0,1065.65,0,0
+C101793,Wales,Retail,Credit Card,33,850,A,5438.64,3109.31,630.55,0,0
+C101794,South East,Retail,Mortgage,25,559,D,935.14,801008.97,540.0,90,1
+C101795,Scotland,Retail,Current,50,722,B,38094.48,0.0,1952.61,0,0
+C101796,London,Retail,Mortgage,46,751,A,4187.73,355126.94,384.0,0,0
+C101797,Midlands,Business,Personal Loan,40,621,C,17160.11,8603.72,5206.91,0,0
+C101798,North West,Business,Savings,26,727,B,6779.21,0.0,1416.22,0,0
+C101799,North West,Premier,Current,36,638,C,10955.52,0.0,3138.83,0,0
+C101800,South East,Retail,Savings,18,609,C,3885.71,0.0,1731.65,0,0
+C101801,Wales,Business,Savings,18,763,A,1786.41,0.0,1268.03,0,0
+C101802,Midlands,Premier,Current,62,597,D,2848.99,0.0,2475.53,0,0
+C101803,Scotland,Retail,Current,56,595,D,337.62,0.0,1678.62,0,0
+C101804,London,Business,Personal Loan,38,616,C,28571.34,33192.67,3928.25,0,0
+C101805,Midlands,Wealth,Credit Card,55,467,E,21732.29,8424.74,4371.04,0,0
+C101806,Scotland,Premier,Savings,30,810,A,5155.35,0.0,1557.23,0,0
+C101807,North West,Retail,Credit Card,41,567,D,461.3,3869.98,932.81,0,0
+C101808,Wales,Retail,Mortgage,50,743,B,2222.56,99496.57,1324.08,0,0
+C101809,Scotland,Retail,Current,43,826,A,442.58,0.0,449.95,0,0
+C101810,London,Retail,Mortgage,18,792,A,4883.87,398505.4,672.95,0,0
+C101811,South East,Retail,Current,27,666,C,1086.43,0.0,689.83,0,0
+C101812,London,Retail,Current,52,614,C,2029.16,0.0,1906.42,0,0
+C101813,London,Business,Personal Loan,18,547,D,18411.0,74021.65,3355.18,0,0
+C101814,Scotland,Retail,Mortgage,21,675,C,7984.17,100060.81,357.35,0,0
+C101815,London,Premier,Current,26,674,C,3190.31,0.0,1378.24,0,0
+C101816,Scotland,Retail,Current,35,588,D,1544.63,0.0,1230.63,0,0
+C101817,Scotland,Premier,Personal Loan,34,645,C,6386.38,5971.22,2056.14,0,0
+C101818,Wales,Retail,Current,29,694,B,1269.82,0.0,940.59,0,0
+C101819,North West,Retail,Current,37,648,C,2208.72,0.0,1321.59,0,0
+C101820,Midlands,Retail,Savings,28,832,A,1697.66,0.0,1580.81,0,0
+C101821,Wales,Retail,Personal Loan,41,629,C,2184.18,7437.36,1338.96,0,0
+C101822,London,Retail,Current,42,678,C,908.1,0.0,907.09,0,0
+C101823,South East,Retail,Savings,50,740,B,3402.18,0.0,390.1,0,0
+C101824,Wales,Premier,Credit Card,29,665,C,37035.16,2816.11,3173.83,0,0
+C101825,Midlands,Business,Current,18,784,A,14106.36,0.0,1506.56,0,0
+C101826,Midlands,Retail,Mortgage,47,836,A,1895.86,296218.33,1699.38,0,0
+C101827,Wales,Retail,Mortgage,35,728,B,1519.61,130214.55,2334.24,0,0
+C101828,Wales,Premier,Personal Loan,41,554,D,2601.48,6669.2,6049.03,0,0
+C101829,Wales,Business,Current,79,667,C,33578.97,0.0,2563.34,0,0
+C101830,Wales,Retail,Current,50,683,B,2124.5,0.0,1073.58,0,0
+C101831,Scotland,Premier,Current,55,655,C,9400.27,0.0,3287.32,0,0
+C101832,Scotland,Retail,Credit Card,33,619,C,5443.83,2244.27,735.14,60,0
+C101833,Scotland,Retail,Personal Loan,62,720,B,2288.41,7556.67,1035.16,0,0
+C101834,London,Retail,Personal Loan,23,637,C,167.33,6790.07,458.01,0,0
+C101835,London,Retail,Personal Loan,26,691,B,855.73,12182.98,1725.35,0,0
+C101836,Scotland,Premier,Savings,45,850,A,14279.19,0.0,2943.99,0,0
+C101837,Midlands,Premier,Credit Card,54,710,B,25448.58,8089.84,5370.45,0,0
+C101838,North West,Retail,Current,28,770,A,3973.71,0.0,1590.95,0,0
+C101839,Midlands,Retail,Current,37,603,C,3690.5,0.0,1064.04,0,0
+C101840,North West,Premier,Current,25,760,A,2141.53,0.0,1085.51,0,0
+C101841,North West,Retail,Savings,18,765,A,5443.15,0.0,1260.88,0,0
+C101842,South East,Retail,Savings,29,537,D,12874.58,0.0,686.79,0,0
+C101843,North West,Wealth,Personal Loan,61,693,B,4756.01,25726.63,10675.32,0,0
+C101844,Scotland,Retail,Credit Card,52,826,A,1768.71,4496.97,1714.95,0,0
+C101845,London,Premier,Savings,58,689,B,822.09,0.0,3019.74,0,0
+C101846,Midlands,Retail,Current,48,779,A,15084.77,0.0,769.04,0,0
+C101847,South East,Wealth,Credit Card,44,701,B,25839.85,11344.85,9810.68,30,0
+C101848,Wales,Premier,Mortgage,23,746,B,5472.12,397148.05,1936.21,0,0
+C101849,South East,Premier,Mortgage,41,850,A,1718.62,261141.8,1562.39,0,0
+C101850,Midlands,Retail,Current,58,726,B,2212.44,0.0,654.74,0,0
+C101851,South East,Retail,Current,29,467,E,2089.21,0.0,823.92,0,0
+C101852,London,Retail,Savings,29,507,E,19837.61,0.0,853.39,0,0
+C101853,Scotland,Wealth,Savings,42,850,A,42763.58,0.0,6610.46,0,0
+C101854,London,Retail,Current,72,770,A,3132.85,0.0,1779.82,0,0
+C101855,Midlands,Retail,Current,34,716,B,1778.66,0.0,1465.59,0,0
+C101856,Midlands,Business,Personal Loan,64,807,A,41302.98,27522.71,4145.38,30,0
+C101857,North West,Retail,Credit Card,39,822,A,3147.09,1560.73,1052.77,0,0
+C101858,North West,Retail,Savings,69,822,A,996.44,0.0,1192.16,0,0
+C101859,North West,Retail,Current,40,567,D,329.31,0.0,666.65,0,0
+C101860,South East,Retail,Savings,30,733,B,6519.28,0.0,1419.32,0,0
+C101861,London,Retail,Personal Loan,26,680,B,577.52,15278.63,589.91,0,0
+C101862,Midlands,Business,Current,40,697,B,6576.59,0.0,1706.05,0,0
+C101863,Scotland,Retail,Current,47,573,D,257.53,0.0,1076.13,0,0
+C101864,Scotland,Wealth,Savings,43,795,A,127361.67,0.0,8334.71,0,0
+C101865,North West,Retail,Credit Card,50,747,B,1180.21,1470.54,1330.85,0,0
+C101866,London,Business,Mortgage,41,553,D,6152.06,1543742.88,921.97,0,0
+C101867,Midlands,Business,Credit Card,50,619,C,39370.52,3760.73,2221.58,0,0
+C101868,North West,Retail,Savings,41,850,A,7368.39,0.0,731.9,0,0
+C101869,London,Retail,Savings,18,602,C,516.83,0.0,1542.83,0,0
+C101870,Scotland,Retail,Credit Card,48,723,B,15326.51,3167.31,562.18,60,0
+C101871,Wales,Retail,Savings,49,717,B,8714.01,0.0,1045.72,0,0
+C101872,Scotland,Retail,Current,34,624,C,1976.89,0.0,1102.51,0,0
+C101873,Scotland,Retail,Savings,40,672,C,2110.01,0.0,599.67,0,0
+C101874,South East,Retail,Savings,35,850,A,3358.39,0.0,1133.32,0,0
+C101875,Midlands,Retail,Current,44,645,C,1631.17,0.0,1088.41,0,0
+C101876,South East,Premier,Savings,44,668,C,19142.57,0.0,2449.2,0,0
+C101877,North West,Retail,Personal Loan,45,735,B,6672.51,4818.48,745.4,0,0
+C101878,Scotland,Retail,Savings,39,707,B,826.25,0.0,601.56,0,0
+C101879,South East,Retail,Credit Card,22,696,B,4208.19,2279.31,1052.14,0,0
+C101880,Scotland,Premier,Savings,31,697,B,3404.17,0.0,3816.99,0,0
+C101881,Wales,Retail,Savings,28,702,B,848.66,0.0,1589.75,0,0
+C101882,London,Retail,Current,55,681,B,811.28,0.0,718.47,0,0
+C101883,Wales,Retail,Current,39,734,B,3789.76,0.0,803.83,0,0
+C101884,Scotland,Wealth,Savings,29,823,A,90040.88,0.0,5077.1,0,0
+C101885,South East,Retail,Current,20,671,C,3926.71,0.0,3045.69,0,0
+C101886,Midlands,Wealth,Mortgage,34,701,B,6132.17,210297.52,3706.84,90,1
+C101887,North West,Business,Savings,61,648,C,6025.54,0.0,4942.68,0,0
+C101888,Midlands,Premier,Current,61,654,C,866.2,0.0,2985.88,0,0
+C101889,Wales,Retail,Savings,18,658,C,1145.17,0.0,1991.23,0,0
+C101890,Wales,Premier,Personal Loan,47,728,B,27585.46,14951.44,1400.91,0,0
+C101891,South East,Premier,Mortgage,58,811,A,19518.39,170645.75,3560.43,0,0
+C101892,London,Retail,Personal Loan,43,703,B,1825.69,6525.73,1043.72,0,0
+C101893,North West,Premier,Current,43,599,D,10707.94,0.0,2082.32,0,0
+C101894,North West,Premier,Personal Loan,32,631,C,8261.51,5465.47,1071.28,0,0
+C101895,South East,Premier,Mortgage,59,701,B,6895.04,222320.85,2108.78,0,0
+C101896,Wales,Retail,Mortgage,28,670,C,1007.11,252204.5,1747.13,0,0
+C101897,South East,Premier,Mortgage,54,704,B,5501.04,386765.1,1575.62,0,0
+C101898,Midlands,Premier,Savings,33,711,B,13688.31,0.0,3463.26,0,0
+C101899,North West,Retail,Mortgage,56,827,A,6437.54,155717.09,1429.62,0,0
+C101900,Wales,Retail,Credit Card,45,725,B,4858.97,1678.7,899.81,0,0
+C101901,North West,Retail,Current,21,836,A,424.01,0.0,1324.78,0,0
+C101902,Wales,Retail,Savings,40,576,D,651.12,0.0,785.5,0,0
+C101903,Midlands,Premier,Current,65,647,C,26105.71,0.0,2540.76,0,0
+C101904,Wales,Premier,Savings,50,805,A,7004.61,0.0,1916.27,0,0
+C101905,South East,Retail,Personal Loan,32,705,B,5238.19,8100.59,962.61,0,0
+C101906,Wales,Premier,Personal Loan,71,770,A,2632.89,9220.51,3542.18,0,0
+C101907,North West,Business,Savings,38,578,D,10192.78,0.0,2301.12,90,1
+C101908,Scotland,Retail,Current,51,850,A,10622.12,0.0,1003.55,0,0
+C101909,London,Retail,Current,27,758,A,2274.89,0.0,1302.48,0,0
+C101910,London,Retail,Mortgage,59,754,A,19421.52,114518.66,1118.36,0,0
+C101911,Wales,Retail,Savings,36,655,C,1769.9,0.0,1360.91,0,0
+C101912,South East,Premier,Mortgage,43,695,B,7499.23,255178.07,7313.08,0,0
+C101913,North West,Premier,Savings,41,657,C,32948.2,0.0,2608.32,0,0
+C101914,Wales,Retail,Current,49,570,D,7046.57,0.0,763.53,0,0
+C101915,London,Premier,Current,59,652,C,3822.96,0.0,2417.94,0,0
+C101916,North West,Wealth,Credit Card,26,751,A,25853.57,7456.94,5166.3,0,0
+C101917,London,Retail,Mortgage,33,718,B,753.49,250907.81,1099.38,0,0
+C101918,Wales,Wealth,Credit Card,23,796,A,5207.43,8411.75,6171.08,0,0
+C101919,Midlands,Retail,Personal Loan,50,668,C,2162.93,9146.34,1283.14,0,0
+C101920,South East,Retail,Savings,68,524,D,6461.4,0.0,701.81,0,0
+C101921,Scotland,Premier,Personal Loan,45,770,A,2020.44,10530.47,5109.07,0,0
+C101922,London,Business,Credit Card,50,680,B,8738.95,5534.63,2893.08,0,0
+C101923,Wales,Retail,Savings,24,644,C,1468.37,0.0,1240.13,0,0
+C101924,South East,Retail,Current,18,738,B,3701.85,0.0,706.39,0,0
+C101925,London,Retail,Mortgage,32,675,C,1040.77,168886.04,717.47,0,0
+C101926,London,Retail,Credit Card,37,678,C,2038.63,886.32,1754.46,30,0
+C101927,Wales,Premier,Credit Card,44,562,D,1270.32,6164.43,2645.97,0,0
+C101928,North West,Retail,Current,33,612,C,1987.58,0.0,1319.65,0,0
+C101929,North West,Retail,Current,18,724,B,2796.76,0.0,705.45,0,0
+C101930,Midlands,Retail,Current,37,678,C,2501.88,0.0,2491.03,0,0
+C101931,London,Retail,Current,46,698,B,1513.81,0.0,1234.81,0,0
+C101932,North West,Retail,Current,36,632,C,976.78,0.0,1142.59,0,0
+C101933,North West,Premier,Savings,41,706,B,4260.09,0.0,2442.25,0,0
+C101934,London,Wealth,Current,38,560,D,13528.73,0.0,9306.61,0,0
+C101935,Midlands,Retail,Current,18,806,A,584.73,0.0,3928.73,0,0
+C101936,North West,Retail,Mortgage,21,792,A,5641.19,126924.07,582.35,0,0
+C101937,Scotland,Retail,Current,21,711,B,1893.48,0.0,1563.87,0,0
+C101938,London,Retail,Mortgage,35,569,D,6904.67,121952.15,1335.75,0,0
+C101939,Scotland,Retail,Credit Card,45,719,B,1737.85,1766.98,1042.04,0,0
+C101940,Scotland,Business,Current,39,681,B,77772.72,0.0,2874.51,0,0
+C101941,London,Premier,Savings,47,826,A,672.96,0.0,2192.5,0,0
+C101942,Wales,Premier,Mortgage,44,768,A,2007.84,704186.3,1071.54,0,0
+C101943,North West,Business,Current,45,632,C,2325.16,0.0,2985.14,0,0
+C101944,South East,Retail,Credit Card,64,748,B,2546.49,3022.1,1398.61,30,0
+C101945,Midlands,Business,Current,51,617,C,9013.72,0.0,3395.82,0,0
+C101946,Wales,Wealth,Credit Card,24,646,C,47780.05,4347.39,4126.03,0,0
+C101947,South East,Premier,Current,40,803,A,3589.11,0.0,4137.37,0,0
+C101948,Scotland,Premier,Current,43,663,C,13470.2,0.0,3664.17,0,0
+C101949,South East,Business,Mortgage,48,605,C,53959.15,537446.23,2637.97,0,0
+C101950,Wales,Wealth,Savings,44,628,C,16749.13,0.0,9554.19,0,0
+C101951,London,Premier,Personal Loan,62,731,B,78879.29,10060.68,2455.63,0,0
+C101952,Scotland,Business,Current,36,665,C,10168.08,0.0,2977.59,0,0
+C101953,Scotland,Premier,Credit Card,46,686,B,14718.43,5117.59,1694.42,30,0
+C101954,London,Retail,Personal Loan,40,714,B,3299.36,6907.74,762.12,0,0
+C101955,Midlands,Retail,Credit Card,36,627,C,1787.95,1501.87,2467.5,0,0
+C101956,Wales,Premier,Current,61,806,A,19139.61,0.0,1971.17,0,0
+C101957,Scotland,Premier,Personal Loan,67,675,C,3090.91,16407.74,1306.21,30,0
+C101958,Scotland,Retail,Credit Card,34,850,A,831.68,3497.19,893.77,0,0
+C101959,North West,Retail,Current,45,805,A,1120.32,0.0,1323.62,0,0
+C101960,South East,Premier,Mortgage,32,850,A,3353.01,345668.69,2742.17,0,0
+C101961,Scotland,Retail,Mortgage,41,703,B,375.42,336164.98,1410.03,0,0
+C101962,Midlands,Premier,Savings,48,850,A,17639.24,0.0,3241.93,0,0
+C101963,Midlands,Retail,Savings,46,717,B,1468.71,0.0,1408.0,0,0
+C101964,Midlands,Premier,Savings,46,731,B,23974.44,0.0,3019.89,0,0
+C101965,South East,Retail,Current,72,755,A,140.5,0.0,476.52,0,0
+C101966,Wales,Retail,Current,39,703,B,1970.96,0.0,1062.17,0,0
+C101967,Midlands,Retail,Current,19,623,C,3159.78,0.0,791.54,0,0
+C101968,Scotland,Business,Savings,45,693,B,22129.93,0.0,2176.24,0,0
+C101969,Wales,Business,Savings,37,640,C,1239.18,0.0,3932.02,0,0
+C101970,South East,Business,Current,52,690,B,2033.13,0.0,3170.05,0,0
+C101971,London,Retail,Current,19,683,B,828.61,0.0,257.26,0,0
+C101972,North West,Retail,Savings,30,670,C,613.42,0.0,716.29,0,0
+C101973,South East,Retail,Savings,18,679,C,5027.82,0.0,1326.34,0,0
+C101974,Midlands,Retail,Savings,45,563,D,6756.9,0.0,2076.78,0,0
+C101975,North West,Premier,Savings,37,626,C,4979.1,0.0,2153.03,0,0
+C101976,Scotland,Retail,Current,44,738,B,14727.46,0.0,769.75,0,0
+C101977,Scotland,Retail,Savings,21,764,A,4742.22,0.0,2395.03,0,0
+C101978,Scotland,Retail,Savings,51,561,D,5915.7,0.0,949.19,0,0
+C101979,North West,Wealth,Mortgage,50,847,A,133249.9,621913.84,8227.68,0,0
+C101980,South East,Retail,Current,19,722,B,1813.3,0.0,563.45,0,0
+C101981,Wales,Retail,Personal Loan,60,625,C,1220.77,8385.96,773.97,0,0
+C101982,Scotland,Retail,Savings,45,548,D,2352.04,0.0,1742.96,0,0
+C101983,North West,Business,Current,31,708,B,6960.84,0.0,4646.18,0,0
+C101984,Midlands,Retail,Personal Loan,30,642,C,604.52,14608.59,872.77,90,1
+C101985,London,Retail,Current,41,722,B,3461.85,0.0,2061.79,0,0
+C101986,Wales,Premier,Current,53,651,C,15624.5,0.0,2148.81,0,0
+C101987,North West,Business,Savings,61,724,B,13872.33,0.0,3069.53,0,0
+C101988,South East,Business,Current,38,627,C,16255.35,0.0,4844.47,0,0
+C101989,Wales,Premier,Mortgage,33,597,D,7382.28,1072033.79,3238.41,90,1
+C101990,South East,Retail,Current,60,640,C,1590.29,0.0,968.98,0,0
+C101991,London,Premier,Personal Loan,42,720,B,2508.32,6456.3,2061.14,0,0
+C101992,Wales,Business,Current,32,701,B,15117.72,0.0,3544.08,0,0
+C101993,North West,Retail,Savings,71,675,C,5370.52,0.0,1403.12,0,0
+C101994,North West,Retail,Credit Card,36,718,B,2449.34,856.57,4067.3,30,0
+C101995,Scotland,Wealth,Credit Card,51,678,C,155384.45,7545.93,2584.16,0,0
+C101996,London,Retail,Savings,18,615,C,3681.78,0.0,1037.41,0,0
+C101997,London,Retail,Personal Loan,29,743,B,1558.51,21249.9,1300.1,0,0
+C101998,Wales,Premier,Personal Loan,53,693,B,2552.29,16656.23,1913.04,30,0
+C101999,Wales,Premier,Savings,46,805,A,11202.68,0.0,976.18,0,0

@@ -4,15 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agniya"
-version = "1.0.0"
-description = "High-performance homomorphic encryption library with RNS compression and intelligent caching"
+version = "2.0.0"
+description = "Paillier-2048 encrypted aggregation (SUM/AVG/COUNT) with packing and an offline randomness pool"
 readme = "README.md"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "AGNIYA Team", email = "agniya@example.com"}
 ]
-keywords = ["homomorphic", "encryption", "paillier", "privacy", "cryptography", "rns", "compression"]
+keywords = ["homomorphic", "encryption", "paillier", "privacy", "cryptography"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -63,7 +63,7 @@ Repository = "https://github.com/adityakale838/agniya"
 agniya-test = "test_suite:main"
 
 [tool.setuptools]
-packages = ["agniya", "agniya.core", "agniya.compression", "agniya.storage", "agniya.hybrid", "agniya.benchmarks"]
+packages = ["agniya", "agniya.core", "agniya.hybrid"]
 
 [tool.setuptools.package-data]
 agniya = ["py.typed"]

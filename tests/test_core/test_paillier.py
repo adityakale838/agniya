@@ -1,5 +1,5 @@
 """
-Tests for Paillier cryptosystem with adaptive bit-length optimization.
+Tests for the Paillier cryptosystem.
 """
 
 import pytest
@@ -7,7 +7,7 @@ import numpy as np
 from agniya.core.paillier import (
     generate_keypair, encrypt, decrypt, decrypt_crt,
     homomorphic_add, homomorphic_multiply,
-    PaillierCryptosystem, AdaptiveKeySelector
+    PaillierCryptosystem
 )
 
 
@@ -232,54 +232,6 @@ class TestHomomorphicOperations:
         assert result == 35
 
 
-class TestAdaptiveKeySelector:
-    """Test adaptive key size selection."""
-    
-    def test_small_values_512bit(self):
-        """Test that small values recommend 512-bit keys."""
-        values = [10, 20, 30, 100, 255]  # All fit in 8-bit
-        
-        analysis = AdaptiveKeySelector.analyze_dataset(values)
-        
-        # Small values should recommend 512 or 1024-bit
-        assert analysis['recommended_key_size'] <= 1024
-        assert analysis['abs_max'] == 255
-    
-    def test_medium_values_1024bit(self):
-        """Test that medium values recommend 1024-bit keys."""
-        values = [10000, 50000, 100000, 1000000]  # Up to 1 million
-        
-        analysis = AdaptiveKeySelector.analyze_dataset(values)
-        
-        assert analysis['recommended_key_size'] == 1024
-    
-    def test_large_values_2048bit(self):
-        """Test that large values recommend 2048-bit keys."""
-        values = [2**40, 2**50, 2**60]  # Very large values
-        
-        analysis = AdaptiveKeySelector.analyze_dataset(values)
-        
-        assert analysis['recommended_key_size'] == 2048
-    
-    def test_min_security_override(self):
-        """Test that min_security is respected."""
-        values = [10, 20, 30]  # Would normally suggest 512-bit
-        
-        key_size = AdaptiveKeySelector.select_key_size(max(values), min_security=1024)
-        
-        assert key_size == 1024  # Enforced minimum
-    
-    def test_storage_reduction_calculation(self):
-        """Test storage reduction calculation."""
-        values = [100, 200, 300]  # Should recommend smaller key
-        
-        analysis = AdaptiveKeySelector.analyze_dataset(values)
-        
-        # Should show some storage reduction vs 2048-bit default
-        assert analysis['storage_reduction_percent'] >= 0
-        assert analysis['recommended_key_size'] < analysis['default_key_size']
-
-
 class TestPaillierCryptosystem:
     """Test high-level PaillierCryptosystem interface."""
     
@@ -290,24 +242,19 @@ class TestPaillierCryptosystem:
         assert crypto.bit_length == 2048
         assert crypto.public_key.bit_length == 2048
     
-    def test_init_custom_size(self):
-        """Test custom key size."""
-        crypto = PaillierCryptosystem(bit_length=1024)
-        
-        assert crypto.bit_length == 1024
-    
-    def test_from_dataset_small_values(self):
-        """Test creating system from small value dataset."""
-        dataset = [65, 72, 80, 98, 105, 120]  # Heart rates
-        
-        crypto = PaillierCryptosystem.from_dataset(dataset, min_security=512)
-        
-        # Should select small key size for small values
-        assert crypto.bit_length <= 1024
-    
+    def test_rejects_insecure_key_size(self):
+        """Keys below 2048 bits are refused by the high-level API."""
+        with pytest.raises(ValueError):
+            PaillierCryptosystem(bit_length=1024)
+
+    def test_keygen_exact_bit_length(self):
+        for _ in range(5):
+            pub, _ = generate_keypair(1024)
+            assert pub.n.bit_length() == 1024
+
     def test_encrypt_decrypt_interface(self):
         """Test high-level encrypt/decrypt interface."""
-        crypto = PaillierCryptosystem(1024)
+        crypto = PaillierCryptosystem(2048)
         
         plaintext = 42
         ciphertext = crypto.encrypt(plaintext)
@@ -317,7 +264,7 @@ class TestPaillierCryptosystem:
     
     def test_decrypt_with_without_crt(self):
         """Test that both decryption methods work."""
-        crypto = PaillierCryptosystem(1024)
+        crypto = PaillierCryptosystem(2048)
         
         plaintext = 123
         ciphertext = crypto.encrypt(plaintext)
@@ -330,7 +277,7 @@ class TestPaillierCryptosystem:
     
     def test_homomorphic_add_interface(self):
         """Test high-level homomorphic addition."""
-        crypto = PaillierCryptosystem(1024)
+        crypto = PaillierCryptosystem(2048)
         
         ct1 = crypto.encrypt(10)
         ct2 = crypto.encrypt(20)
@@ -340,7 +287,7 @@ class TestPaillierCryptosystem:
     
     def test_homomorphic_multiply_interface(self):
         """Test high-level homomorphic multiplication."""
-        crypto = PaillierCryptosystem(1024)
+        crypto = PaillierCryptosystem(2048)
         
         ct = crypto.encrypt(7)
         ct_mult = crypto.multiply(ct, 6)
@@ -349,14 +296,14 @@ class TestPaillierCryptosystem:
     
     def test_sum_encrypted_empty(self):
         """Test sum of empty list."""
-        crypto = PaillierCryptosystem(1024)
+        crypto = PaillierCryptosystem(2048)
         
         result = crypto.sum_encrypted([])
         assert crypto.decrypt(result) == 0
     
     def test_sum_encrypted_single(self):
         """Test sum of single value."""
-        crypto = PaillierCryptosystem(1024)
+        crypto = PaillierCryptosystem(2048)
         
         ct = crypto.encrypt(42)
         result = crypto.sum_encrypted([ct])
@@ -365,7 +312,7 @@ class TestPaillierCryptosystem:
     
     def test_sum_encrypted_multiple(self):
         """Test sum of multiple values."""
-        crypto = PaillierCryptosystem(1024)
+        crypto = PaillierCryptosystem(2048)
         
         values = [10, 20, 30, 40, 50]
         ciphertexts = [crypto.encrypt(v) for v in values]
@@ -380,7 +327,7 @@ class TestRealWorldScenarios:
     
     def test_healthcare_vital_signs(self):
         """Test with realistic healthcare data."""
-        crypto = PaillierCryptosystem(1024)
+        crypto = PaillierCryptosystem(2048)
         
         # Heart rates from multiple patients
         heart_rates = [65, 72, 80, 68, 95, 88, 76]
@@ -409,7 +356,7 @@ class TestRealWorldScenarios:
     
     def test_sensor_readings(self):
         """Test with IoT sensor data."""
-        crypto = PaillierCryptosystem(1024)
+        crypto = PaillierCryptosystem(2048)
         
         # Temperature readings in tenths of degrees
         temperatures = [200, 215, 225, 210, 205, 220]  # 20.0°C to 22.5°C

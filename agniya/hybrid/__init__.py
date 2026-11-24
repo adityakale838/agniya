@@ -6,7 +6,7 @@ This module implements a hybrid encryption protocol combining:
 - Paillier: Homomorphic encryption for data requiring encrypted computation
 
 Architecture:
-1. AES Layer: Encrypts bulk data (names, emails, addresses) - 100x faster than Paillier
+1. AES Layer: Encrypts bulk data (names, emails, addresses)
 2. Paillier Layer: Encrypts computational fields (salaries, ages) - supports SUM/AVG
 3. Key Wrapper: Paillier-encrypts AES keys for secure key management
 4. Schema System: Declarative field type annotations (plaintext/AES/Paillier)
@@ -16,11 +16,8 @@ Use Cases:
 - HR Systems: Employee names (AES) + salaries (Paillier for payroll analytics)
 - Financial: Customer info (AES) + transaction amounts (Paillier for fraud detection)
 
-Benefits:
-- 50-100x faster insertion/query for non-computational fields
-- 10-20x smaller storage size for bulk data
-- Still supports encrypted aggregations on Paillier fields
-- Stronger security: Server can't decrypt AES keys without Paillier private key
+Measured by scripts/benchmark_hybrid_vs_pure.py (50 records, versus Paillier on every field): inserts 2.4x
+faster, queries 2.3x faster, storage 2.7x smaller. Paillier fields still support encrypted aggregation.
 """
 
 from .aes_cipher import AESCipher

@@ -5,7 +5,7 @@ Tests for Batch Packing optimization.
 import pytest
 from agniya.core.paillier import generate_keypair
 from agniya.core.batch_packing import (
-    BatchPacker, BatchOperations, BatchedAggregator
+    BatchPacker, BatchOperations, BatchedAggregator, decrypt_sorted_groups, group_pages, range_plan
 )
 
 
@@ -298,3 +298,94 @@ class TestBatchPerformance:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+class TestPackingHeadroom:
+    """Slot sums must never overflow into neighbouring slots."""
+
+    @pytest.fixture(scope="class")
+    @classmethod
+    def aggregator(cls):
+        pub, priv = generate_keypair(2048)
+        return BatchedAggregator(pub, priv)
+
+    def test_large_sums_exact(self, aggregator):
+        import random
+        rng = random.Random(7)
+        values = [rng.randint(3_000_000, 15_000_000) for _ in range(5_000)]  # salaries in cents
+        assert aggregator.sum_values(values) == sum(values)
+
+    def test_max_values_exact(self, aggregator):
+        values = [2**32 - 1] * 3_000  # every slot saturated
+        assert aggregator.sum_values(values) == sum(values)
+
+    def test_layout_has_headroom(self, aggregator):
+        bits, slots = aggregator.layout(max_value=10**6, count=100_000)
+        per_slot = -(-100_000 // slots)
+        assert per_slot * 10**6 < 2**bits
+        assert slots * bits < aggregator.public_key.n.bit_length()
+
+    def test_negative_values_exact(self, aggregator):
+        values = [5, -20, 300, -7, 0] * 50
+        assert aggregator.sum_values(values) == sum(values)
+
+    def test_rejects_floats(self, aggregator):
+        with pytest.raises(ValueError):
+            aggregator.sum_values([1.5, 2.0])
+
+    @pytest.mark.parametrize("k,n,lo,hi", [(1, 50, 0, 10), (4, 1338, -5_000, 640_000_000), (6, 999, 0, 2**32 - 1),
+                                           (30, 300, -3, 3), (3, 0, 0, 1), (47, 1338, 0, 640_000_000),
+                                           (300, 600, -9, 2**40)])
+    def test_sum_groups_exact(self, aggregator, k, n, lo, hi):
+        import random
+        rng = random.Random(k * 1000 + n)
+        groups = [rng.choice(range(k)) if rng.random() < 0.5 else 0 for _ in range(n)]  # skewed: group 0 is big
+        values = [rng.randint(lo, hi) for _ in range(n)]
+        col = aggregator.encrypt_groups(values, [f"g{g}" for g in groups])
+        want = {}
+        for v, g in zip(values, groups):
+            s, c = want.get(f"g{g}", (0, 0))
+            want[f"g{g}"] = (s + v, c + 1)
+        assert aggregator.sum_groups(col) == want
+        assert col['slots'] * col['slot_bits'] < aggregator.public_key.n.bit_length()
+        assert col['pages'] == 1 or k >= 30  # one decryption unless the groups cannot share a plaintext
+        assert len({len(cts) for cts in group_pages(col)}) == 1  # pages are the same size
+
+    @pytest.mark.parametrize("k,n,lo,hi", [(1, 50, 0, 10), (4, 1338, -5_000, 640_000_000), (16, 300, -3, 3), (3, 1, 0, 0),
+                                           (47, 400, 0, 640_000_000)])
+    def test_sorted_groups_every_row_range(self, aggregator, k, n, lo, hi):
+        """Every range i..j of rows (including ones cutting ciphertexts) gives exact per-group sums."""
+        import random
+        rng = random.Random(k * 7 + n)
+        values = [rng.randint(lo, hi) for _ in range(n)]
+        groups = [rng.choice(range(k)) if rng.random() < 0.5 else 0 for _ in range(n)]
+        col = aggregator.encrypt_sorted_groups(values, groups)
+        lanes, pub, priv = col['lanes'], aggregator.public_key, aggregator.private_key
+        assert col['slots'] * col['slot_bits'] < pub.n.bit_length()
+        cuts = sorted({0, n, 1, n - 1, lanes, lanes + 1, n // 2, *(rng.randint(0, n) for _ in range(6))} & set(range(n + 1)))
+        for i in cuts:
+            for j in cuts:
+                if i >= j:
+                    continue
+                want = {}
+                for v, g in zip(values[i:j], groups[i:j]):
+                    s, c = want.get(g, (0, 0))
+                    want[g] = (s + v, c + 1)
+                plans = [range_plan(pub, cts, lanes, n, i, j) for cts in group_pages(col)]
+                assert decrypt_sorted_groups(pub, priv, plans, col) == want, (i, j)
+        assert k < 47 or col['pages'] > 1
+
+    def test_values_too_large(self, aggregator):
+        with pytest.raises(ValueError, match="too large"):
+            aggregator.encrypt_groups([2**1100, 1], ["a", "b"])
+
+    def test_sum_range_exact(self, aggregator):
+        import random
+        rng = random.Random(11)
+        values = sorted(rng.randint(-5_000, 10**9) for _ in range(500))
+        col = aggregator.encrypt_column(values)
+        s = col['slots']
+        cuts = [0, 1, s - 1, s, s + 1, 2 * s, 250, 499, 500, 600]
+        for i in cuts:
+            for j in cuts:
+                assert aggregator.sum_range(col, i, j) == sum(values[max(i, 0):j]), (i, j)

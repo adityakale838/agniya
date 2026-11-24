@@ -1,675 +1,834 @@
 """
-AGNIYA - HIGH-PERFORMANCE Flask API Server
-Uses ALL optimizations: Multi-level cache, GPU acceleration, batch packing, precomputation, CPU fallback
+AGNIYA API server (Flask). Launched by start.ps1.
+
+What it does, precisely:
+- /api/upload   : stores a CSV, suggests per-column encryption
+- /api/encrypt  : encrypts every Paillier column with fresh randomness (packed: many
+                  values per ciphertext). 'OPE+Paillier' columns are packed in sorted
+                  order and get one OPE tag per row, so a range is a run of slots
+- /api/query    : SUM / AVG / COUNT computed by multiplying ciphertexts, then ONE decryption;
+                  MIN / MAX / MEDIAN on OPE+Paillier columns (sorted: one ciphertext each);
+                  VARIANCE / STDDEV from SUM(x) and SUM((x - c)^2) of a squared copy made on first use
+
+Two trust models:
+- /api/upload, /api/encrypt, /api/query (dashboard demo): this process receives the plaintext
+  CSV and generates and holds the private key in memory. It is the data owner.
+- /api/v2/columns, /aggregate, /quantiles, /ranges, /ciphertexts, /delete (use agniya.client.AgniyaClient): the client
+  keeps the private key and the OPE keys. This process only ever sees the public modulus n, packed
+  ciphertexts, values per ciphertext, row counts and sorted OPE tags, and returns ciphertexts.
+  The client checks every answer (agniya/core/integrity.py). Every call needs the dataset's
+  token (derived from the private key by the client); only its SHA-256 is stored here.
+  Its columns persist in SQLite at AGNIYA_STORE (default api/agniya_store.sqlite3) and are
+  reloaded at start-up. The demo datasets are NOT persisted: they include the private key.
+Decimal columns are stored as fixed-point integers with FIXED_POINT_DECIMALS digits.
 """
 
-import sys
+import hashlib
+import hmac
 import os
+import sys
+import time
+import secrets
+import sqlite3
+from contextlib import closing
+from bisect import bisect_left, bisect_right
 
-# Add parent directory to path to import agniya modules
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import pandas as pd
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import pandas as pd
-import numpy as np
-import time
 from werkzeug.utils import secure_filename
-from typing import Dict, List, Any
+from pyope.ope import ValueRange
 
-# Import AGNIYA OPTIMIZED modules  
-from agniya.core.paillier import generate_keypair
 from agniya.core.ultimate_system import UltimateOptimizedDatabase
-from agniya.hybrid.schema import Schema, Field, FieldType
-from agniya.storage.multi_level_cache import SecurityLevel
-from agniya.storage.persistent_cache import (
-    load_precomputed_cache, 
-    save_precomputed_cache
-)
-from agniya.hybrid.ope_paillier import OrderPreservingPaillier, DualCiphertext
-import secrets
-import hashlib
+from agniya.core.paillier import MIN_KEY_BITS, PaillierPublicKey, decrypt_crt, generate_keypair
+from agniya.core.batch_packing import (decrypt_sorted_groups, group_pages, quantile_rows, range_plan, sample_variance,
+                                       slot_value, squares)
+from agniya.hybrid.fast_ope import FastOPE
 
-# Import GPU-first encryption (original fast method)
-try:
-    from agniya.core.paillier_gpu import HybridPaillierEncryptor, GPU_AVAILABLE as GPU_CRYPTO
-except ImportError:
-    GPU_CRYPTO = False
-    HybridPaillierEncryptor = None
-
-# ORAM support
-try:
-    from agniya.storage.oram_optimized import OptimizedPathORAM
-    ORAM_AVAILABLE = True
-except ImportError:
-    ORAM_AVAILABLE = False
-
-# GPU availability check with CPU fallback
-try:
-    import cupy as cp
-    GPU_AVAILABLE = cp.cuda.is_available()
-    GPU_COUNT = cp.cuda.runtime.getDeviceCount() if GPU_AVAILABLE else 0
-    if GPU_AVAILABLE:
-        GPU_NAME = cp.cuda.runtime.getDeviceProperties(0)['name'].decode('utf-8')
-    print(f"✅ GPU: {GPU_COUNT}x {GPU_NAME if GPU_AVAILABLE else 'None'}")
-except Exception as e:
-    GPU_AVAILABLE = False
-    GPU_COUNT = 0
-    GPU_NAME = "None"
-    print(f"⚠️  GPU not available: {e}")
-    print("✓ Falling back to CPU mode")
+FIXED_POINT_DECIMALS = 4
+PAILLIER_TYPES = {'Paillier-2048', 'OPE+Paillier'}
+GROUP_MAX_VALUES = 64  # GROUP BY copies are built for columns with at most this many distinct values
+ORDER_STATS = {'MIN': 0.0, 'MEDIAN': 0.5, 'MAX': 1.0}  # quantiles of a sorted (OPE+Paillier) column
+SPREAD = ('VARIANCE', 'STDDEV')  # sample (ddof=1), as pandas and SQL
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for React frontend
+CORS(app, origins=os.environ.get('AGNIYA_CORS_ORIGINS', 'http://localhost:3000').split(','))
 
-# Configuration - Use absolute path to avoid permission issues  
+# Server-side demo mode: one key for every dataset, made once at startup (safe primes, ~1-6 s)
+# so /api/encrypt does not pay key generation. This server holds the private key either way.
+SERVER_KEYS = generate_keypair(2048)
+
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'uploads')
-ALLOWED_EXTENSIONS = {'csv'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB max
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 
-# Global optimized database instances
-optimized_databases: Dict[str, Dict[str, Any]] = {}
+# filename -> {'db', 'columns': {name: column-state}, 'record_count'}
+encrypted_datasets = {}
 
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-def get_field_type_from_string(enc_str: str) -> FieldType:
-    """Convert string encryption type to FieldType enum"""
-    mapping = {
-        'Plaintext': FieldType.PLAINTEXT,
-        'AES-256': FieldType.AES_ENCRYPTED,
-        'Paillier-2048': FieldType.PAILLIER_ENCRYPTED,
-        'OPE+Paillier': FieldType.PAILLIER_ENCRYPTED  # Will handle separately for dual-mode
-    }
-    return mapping.get(enc_str, FieldType.PLAINTEXT)
+def _to_fixed_point(series: pd.Series):
+    """Non-null values as ints, plus the scale used (1 for integer columns)."""
+    values = series.dropna()
+    scale = 1 if pd.api.types.is_integer_dtype(series) else 10 ** FIXED_POINT_DECIMALS
+    return [int(round(float(v) * scale)) for v in values], scale
 
-def get_data_type_from_dtype(dtype_str: str) -> type:
-    """Convert pandas dtype to Python type"""
-    if dtype_str.startswith('int'):
-        return int
-    elif dtype_str.startswith('float'):
-        return float
-    else:
-        return str
 
 @app.route('/api/health', methods=['GET'])
 def health_check():
-    """Health check endpoint with GPU status"""
     return jsonify({
         'status': 'healthy',
-        'message': 'AGNIYA HIGH-PERFORMANCE API with ALL optimizations + GPU + OPE',
-        'version': '4.1.0-gpu-ope-optimized',
-        'gpu': {
-            'available': GPU_AVAILABLE,
-            'count': GPU_COUNT,
-            'name': GPU_NAME
-        },
+        'message': 'AGNIYA API: Paillier-2048 aggregation over encrypted columns',
+        'version': '5.0.0',
         'features': {
             'paillier_2048': True,
-            'ope_paillier_hybrid': True,
-            'multi_level_cache': True,
+            'randomized_encryption': True,
             'batch_packing': True,
-            'precomputation': True,
-            'gpu_acceleration': GPU_AVAILABLE,
-            'custom_cuda_kernels': GPU_AVAILABLE,
-            'oram_security': ORAM_AVAILABLE,
-            'multi_gpu': GPU_COUNT > 1,
-            'cpu_fallback': True
+            'offline_randomness_pool': True,
+            'ope_range_filter': True,
+            'gpu_acceleration': False,
         },
-        'optimizations': {
-            'cache_speedup': '255x (warm cache)',
-            'gpu_speedup': '10-50x (when applicable)',
-            'combined_speedup': '255x+ (measured)',
-            'peak_throughput': '34,004 ops/sec',
-            'ope_range_queries': 'Enabled (secure filtering on encrypted data)'
-        }
     })
+
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    """Handle CSV file upload and auto-detect schema"""
-    if 'file' not in request.files:
+    if 'file' not in request.files or request.files['file'].filename == '':
         return jsonify({'error': 'No file provided'}), 400
-    
     file = request.files['file']
-    
-    if file.filename == '':
-        return jsonify({'error': 'No file selected'}), 400
-    
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        
-        try:
-            df = pd.read_csv(filepath)
-            schema = []
-            
-            for col in df.columns:
-                dtype = str(df[col].dtype)
-                data_type = get_data_type_from_dtype(dtype)
-                
-                # Smart encryption suggestion
-                if col.lower() in ['id', 'user_id', 'customer_id']:
-                    suggested_enc = 'Plaintext'
-                elif data_type == int and any(x in col.lower() for x in ['salary', 'age', 'amount', 'price', 'quantity', 'total']):
-                    suggested_enc = 'Paillier-2048'  # For aggregation
-                elif data_type == str:
-                    suggested_enc = 'AES-256'
-                else:
-                    suggested_enc = 'Paillier-2048'
-                
-                schema.append({
-                    'name': col,
-                    'type': data_type.__name__,
-                    'encryption': suggested_enc
-                })
-            
-            return jsonify({
-                'success': True,
-                'filename': filename,
-                'records': len(df),
-                'fields': len(df.columns),
-                'schema': schema,
-                'size_kb': round(os.path.getsize(filepath) / 1024, 2),
-                'sample_data': df.head(3).fillna('').to_dict('records'),
-                'recommended_sample_size': min(10000, len(df))  # Suggest smaller sample
-            })
-        
-        except Exception as e:
-            return jsonify({'error': f'Failed to parse CSV: {str(e)}'}), 400
-    
-    return jsonify({'error': 'Invalid file type. Only CSV allowed'}), 400
+    if not file.filename.lower().endswith('.csv'):
+        return jsonify({'error': 'Invalid file type. Only CSV allowed'}), 400
+
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(UPLOAD_FOLDER, filename)
+    file.save(filepath)
+    try:
+        df = pd.read_csv(filepath)
+    except Exception as e:
+        return jsonify({'error': f'Failed to parse CSV: {e}'}), 400
+
+    schema = []
+    for col in df.columns:
+        numeric = pd.api.types.is_numeric_dtype(df[col])
+        if col.lower() in ('id', 'user_id', 'customer_id'):
+            suggested = 'Plaintext'
+        else:
+            suggested = 'Paillier-2048' if numeric else 'AES-256'
+        schema.append({'name': col, 'type': 'int' if pd.api.types.is_integer_dtype(df[col])
+                       else 'float' if numeric else 'str', 'encryption': suggested})
+
+    return jsonify({
+        'success': True, 'filename': filename, 'records': len(df), 'fields': len(df.columns),
+        'schema': schema, 'size_kb': round(os.path.getsize(filepath) / 1024, 2),
+        'sample_data': df.head(3).fillna('').to_dict('records'),
+    })
+
 
 @app.route('/api/encrypt', methods=['POST'])
 def encrypt_dataset():
-    """Encrypt dataset with AGNIYA GPU-OPTIMIZED SYSTEM"""
-    data = request.json
-    filename = data.get('filename')
-    schema_config = data.get('schema')
-    sample_size = data.get('sample_size', None)
-    enable_cache = data.get('enable_cache', True)
-    enable_batch = data.get('enable_batch', True)
-    enable_oram = data.get('enable_oram', False)  # ORAM optional for max speed
-    oram_mode = data.get('oram_mode', 'hybrid')  # 'light', 'hybrid', or 'full'
-    
-    if not filename or not schema_config:
+    data = request.json or {}
+    filename, schema = data.get('filename'), data.get('schema')
+    if not filename or not schema:
         return jsonify({'error': 'Missing filename or schema'}), 400
-    
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    
+    filepath = os.path.join(UPLOAD_FOLDER, secure_filename(filename))
     if not os.path.exists(filepath):
         return jsonify({'error': 'File not found'}), 404
-    
+
+    df = pd.read_csv(filepath)
+    sample_size = data.get('sample_size')
+    if sample_size and sample_size < len(df):
+        df = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
+
+    fields = [f for f in schema if f.get('encryption') in PAILLIER_TYPES and f.get('name') in df.columns]
+    if not fields:
+        return jsonify({'error': 'No Paillier fields selected.'}), 400
+    bad = [f['name'] for f in fields if not pd.api.types.is_numeric_dtype(df[f['name']])]
+    if bad:
+        return jsonify({'error': f'Paillier fields must be numeric: {bad}'}), 400
+
+    start = time.perf_counter()
+    db = UltimateOptimizedDatabase(keys=SERVER_KEYS)
+    columns, total_cts, tag_of = {}, 0, {}
+    for f in fields:
+        name = f['name']
+        values, scale = _to_fixed_point(df[name])
+        ope_col = f['encryption'] == 'OPE+Paillier' and bool(values)
+        if ope_col:
+            values.sort()  # sorted packing: a value range is a contiguous run of slots
+        column = db.encrypt_column(values)
+        state = {'packed': column, 'scale': scale, 'nulls': int(df[name].isna().sum())}
+        total_cts += len(column['ciphertexts'])
+
+        if ope_col:
+            offset, top = values[0], max(values[-1] - values[0], 1)
+            ope = FastOPE(secrets.token_bytes(32), in_range=ValueRange(0, top),
+                          out_range=ValueRange(0, 2 ** 64 - 1))
+            tags = ope.encrypt_list([v - offset for v in values])  # sorted, like values
+            state.update(offset=offset, ope=ope, ope_max=top, ope_tags=tags, by={})
+            tag_of[name] = dict(zip(values, tags))
+        columns[name] = state
+
+    # SUM(a) WHERE b in range: for each OPE column b, a copy of every other column a packed in b's
+    # order, over the rows where both are present, with b's tags for those rows.
+    # ponytail: one extra packed copy per (OPE column, other column) pair; fine for a few columns.
+    for b, tag in tag_of.items():
+        bs = columns[b]
+        for a, cs in columns.items():
+            rows = df[[a, b]].dropna()
+            if a == b or rows.empty:
+                continue
+            pairs = sorted((int(round(float(y) * bs['scale'])), int(round(float(x) * cs['scale'])))
+                           for x, y in zip(rows[a], rows[b]))
+            packed = db.encrypt_column([x for _, x in pairs])
+            bs['by'][a] = {'packed': packed, 'tags': [tag[y] for y, _ in pairs]}
+            total_cts += len(packed['ciphertexts'])
+
+    # SUM(a) GROUP BY g: for every column g (encrypted or not) with few distinct values, a copy of each
+    # encrypted column a packed by group, so one decryption per page of groups gives every sum and count.
+    group_cols = [g for g in df.columns if 2 <= df[g].nunique() <= GROUP_MAX_VALUES]
+    ds = {'db': db, 'columns': columns, 'record_count': len(df), 'df': df}
+    for a, cs in columns.items():
+        cs['groups'] = {}
+        for g in group_cols:
+            packed = _group_copy(ds, a, g)
+            if packed:
+                cs['groups'][g] = packed
+                total_cts += len(packed['ciphertexts'])
+
+    db.pool.close()  # release worker processes; queries need no new randomness
+    elapsed = time.perf_counter() - start
+    encrypted_datasets[filename] = ds
+    return jsonify({
+        'success': True,
+        'records_encrypted': len(df),
+        'total_records': len(df),
+        'time_seconds': round(elapsed, 3),
+        'throughput': round(len(df) / elapsed, 1) if elapsed else None,
+        'ciphertexts': total_cts,
+        'fields': {n: {'values': c['packed']['count'], 'null_rows': c['nulls'], 'scale': c['scale'],
+                       'packed_ciphertexts': len(c['packed']['ciphertexts']),
+                       'values_per_ciphertext': c['packed']['slots'],
+                       'range_filterable': 'ope' in c, 'group_by': sorted(c['groups'])} for n, c in columns.items()},
+        'key_bits': db.public_key.n.bit_length(),
+    })
+
+
+def _group_copy(ds, a, g):
+    """GROUP BY copy of encrypted column a by column g; None when no row has both or the values are too large
+    for one plaintext (the query then says there is no copy). Rows missing a or g drop out, as in pandas."""
+    rows = ds['df'][[a, g]].dropna()
+    if a == g or rows.empty:
+        return None
     try:
-        # Read CSV
-        df = pd.read_csv(filepath)
-        original_size = len(df)
-        
-        # PERFORMANCE OPTIMIZATION: Sample for demo
-        if sample_size and sample_size < len(df):
-            print(f"\n📊 PERFORMANCE MODE: Sampling {sample_size} records from {len(df)}")
-            df = df.sample(n=sample_size, random_state=42).reset_index(drop=True)
-        elif len(df) > 10000 and not sample_size:
-            print(f"\n⚠️  WARNING: Large dataset ({len(df)} records)")
-            print(f"   Recommend using sample_size={min(10000, len(df))} for demo")
-        
-        start_time = time.time()
-        
-        # Identify Paillier fields and OPE+Paillier fields separately
-        paillier_fields = [f['name'] for f in schema_config 
-                          if get_field_type_from_string(f['encryption']) == FieldType.PAILLIER_ENCRYPTED]
-        
-        # Check which fields specifically requested OPE+Paillier
-        ope_paillier_fields = [f['name'] for f in schema_config if f['encryption'] == 'OPE+Paillier']
-        
-        if not paillier_fields:
-            return jsonify({'error': 'No Paillier fields selected. Use AES-only for non-computational data.'}), 400
-        
-        print(f"\nInitializing system: {len(df)} records, {len(paillier_fields)} Paillier fields" + 
-              (f", {len(ope_paillier_fields)} OPE+Paillier fields" if ope_paillier_fields else ""))
-        
-        cached_data = load_precomputed_cache(key_size=2048)
-        
-        try:
-            if cached_data:
-                db = UltimateOptimizedDatabase(
-                    key_size=2048,
-                    cache_size=500000,  # Large cache for high hit rate
-                    enable_batch_packing=enable_batch,
-                    enable_multi_level=enable_cache,
-                    enable_probabilistic=True,
-                    enable_oram=enable_oram,
-                    oram_mode=oram_mode,
-                    enable_gpu_encryption=GPU_AVAILABLE,  # GPU-first!
-                    enable_gpu_pipeline=GPU_AVAILABLE,
-                    enable_jit=True,
-                    verbose=True
-                )
-                
-                # Override with cached keys (CRITICAL!)
-                db.pub = cached_data['public_key']
-                db.priv = cached_data['private_key']
-                db.precomp.cache = cached_data['cache']
-                db.precomp.public_key = cached_data['public_key']
-            else:
-                db = UltimateOptimizedDatabase(
-                    key_size=2048,
-                    cache_size=500000,  # Large cache for high hit rate
-                    enable_batch_packing=enable_batch,
-                    enable_multi_level=enable_cache,
-                    enable_probabilistic=True,
-                    enable_oram=enable_oram,
-                    oram_mode=oram_mode,
-                    enable_gpu_encryption=GPU_AVAILABLE,  # GPU-first!
-                    enable_gpu_pipeline=GPU_AVAILABLE,
-                    enable_jit=True,
-                    verbose=True
-                )
-                
-                save_precomputed_cache(
-                    db.pub, 
-                    db.priv, 
-                    db.precomp.cache,
-                    metadata={'created_for': filename}
-                )
-                
-        except Exception as init_error:
-            print(f"Warning: GPU initialization failed, using CPU mode")
-            # Fallback to basic mode without GPU
-            db = UltimateOptimizedDatabase(
-                key_size=2048,
-                cache_size=100000,
-                enable_batch_packing=enable_batch,
-                enable_multi_level=enable_cache,
-                enable_probabilistic=True,
-                enable_oram=False,
-                enable_gpu_encryption=False,
-                enable_gpu_pipeline=False,
-                enable_jit=True,
-                verbose=True
-            )
-        
-        # Extract Paillier data for lazy encryption (ORIGINAL FAST METHOD)
-        paillier_data = {}
-        for field in paillier_fields:
-            if field in df.columns:
-                # Convert to int, handle NaN
-                values = df[field].fillna(0).astype(int).tolist()
-                paillier_data[field] = values
-        
-        setup_start = time.time()
-        
-        # Store plaintext data - will encrypt during queries with cache hits
-        encrypted_fields = paillier_data  # Store plaintext for lazy encryption
-        
-        # Initialize OPE+Paillier ONLY if there are OPE+Paillier fields
-        ope_paillier = None
-        encrypted_fields_dual = {}
-        
-        if ope_paillier_fields:
-            ope_key = secrets.token_bytes(32)
-            
-            # Determine value range from OPE+Paillier fields ONLY
-            ope_values = []
-            for field in ope_paillier_fields:
-                if field in paillier_data:
-                    ope_values.extend(paillier_data[field])
-            
-            data_min = int(min(ope_values)) if ope_values else 0
-            data_max = int(max(ope_values)) if ope_values else 1000000
-            
-            # Add 20% padding to range for safety
-            range_padding = int((data_max - data_min) * 0.2)
-            ope_min = max(0, data_min - range_padding)
-            ope_max = data_max + range_padding
-            
-            # Create OPE+Paillier hybrid instance
-            ope_paillier = OrderPreservingPaillier(
-                paillier_key_size=2048,
-                ope_in_range=(ope_min, ope_max),
-                ope_out_range=(0, 2**64 - 1)
-            )
-            
-            # Replace the OPE cipher's key with our secure random key
-            from pyope.ope import OPE, ValueRange
-            ope_paillier.ope_cipher = OPE(
-                ope_key,
-                in_range=ValueRange(ope_min, ope_max),
-                out_range=ValueRange(0, 2**64 - 1)
-            )
-            
-            for field in ope_paillier_fields:
-                if field in paillier_data:
-                    dual_start = time.time()
-                    dual_ciphertexts = ope_paillier.encrypt_batch_dual(
-                        [int(v) for v in paillier_data[field]],
-                        verbose=False
-                    )
-                    encrypted_fields_dual[field] = dual_ciphertexts
-                    dual_time = time.time() - dual_start
-                    ops_per_sec = len(paillier_data[field]) / dual_time if dual_time > 0 else 0
-                    print(f"  {field}: {dual_time:.2f}s, {ops_per_sec:.0f} ops/sec")
-        
-        setup_time = time.time() - setup_start
-        total_time = time.time() - start_time
-        print(f"Setup complete: {total_time:.2f}s, {len(df)} records ready")
-        
-        # Store database instance for queries
-        optimized_databases[filename] = {
-            'db': db,
-            'ope_paillier': ope_paillier,
-            'encrypted_data_dual': encrypted_fields_dual,
-            'df': df,
-            'schema': schema_config,
-            'paillier_fields': paillier_fields,
-            'encrypted_data': encrypted_fields,  # Plaintext for lazy encryption
-            'record_count': len(df),
-            'lazy_encryption': True  # Flag for query handling
-        }
-        
-        # Calculate metrics
-        throughput = len(df) / total_time if total_time > 0 else 0
-        encrypt_time = 0  # No encryption in lazy mode
-        
-        return jsonify({
-            'success': True,
-            'records_encrypted': len(df),
-            'total_records': len(df),
-            'original_dataset_size': original_size,
-            'sampled': sample_size is not None or original_size > len(df),
-            'time_seconds': round(total_time, 3),
-            'encrypt_time_seconds': round(encrypt_time, 3),
-            'throughput': round(throughput, 1),
-            'gpu_used': GPU_AVAILABLE and (hasattr(db, 'gpu_encryptor') and db.gpu_encryption_enabled),
-            'encryption_method': 'gpu_batch' if (hasattr(db, 'gpu_encryptor') and db.gpu_encryption_enabled) else 'cache_precompute',
-            'optimizations_used': {
-                'gpu_batch_encryption': hasattr(db, 'gpu_encryptor') and db.gpu_encryption_enabled,
-                'multi_level_cache': enable_cache,
-                'batch_packing': enable_batch,
-                'precomputation': not (hasattr(db, 'gpu_encryptor') and db.gpu_encryption_enabled)
-            }
-        })
-    except Exception as e:
-        print(f"❌ Encryption error: {str(e)}")
-        return jsonify({'error': f'Encryption failed: {str(e)}'}), 500
+        return ds['db'].packer.encrypt_groups([int(round(float(x) * ds['columns'][a]['scale'])) for x in rows[a]],
+                                              list(rows[g]))
+    except ValueError:
+        return None
+
+
+def _composite_groups(ds, field, group_by):
+    """GROUP BY several columns, group_by = "a,b": a label column of that name in the dataset ("x, y", missing
+    when a part is) and a GROUP BY copy of field by it, made on first use. Every grouped query then works as
+    for one column. Returns an error message, or None."""
+    df, parts = ds['df'], group_by.split(',')
+    if group_by not in df.columns:
+        if len(parts) < 2 or not all(p in df.columns for p in parts):
+            return f'Unknown GROUP BY column(s) {group_by}'
+        sub = df[parts]
+        labels = sub.astype(str).agg(', '.join, axis=1).where(sub.notna().all(axis=1))
+        if not 2 <= labels.nunique() <= GROUP_MAX_VALUES:
+            return f'GROUP BY {group_by} has {labels.nunique()} groups; 2-{GROUP_MAX_VALUES} are supported'
+        df[group_by] = labels
+    groups = ds['columns'][field]['groups']
+    if group_by not in groups:
+        packed = _group_copy(ds, field, group_by)
+        ds['db'].pool.close()
+        if packed:
+            groups[group_by] = packed
+    return None
+
+
+def _tag_range(tags, ope, top, scale, offset, lo, hi):
+    """Rows i..j-1 of a column with sorted OPE `tags` whose value is in [lo, hi] (either may be None or '')."""
+    shift = lambda v: int(round(float(v) * scale)) - offset  # noqa: E731
+    lo_s = shift(lo) if lo not in (None, '') else 0
+    hi_s = shift(hi) if hi not in (None, '') else top
+    if lo_s > top or hi_s < 0 or lo_s > hi_s:
+        return 0, 0
+    return bisect_left(tags, ope.encrypt(max(lo_s, 0))), bisect_right(tags, ope.encrypt(min(hi_s, top)))
+
+
+def _filtered_groups(ds, field, by, fc):
+    """Copy of `field` for GROUP BY `by` WHERE fc in range, packed in fc order with fc's OPE tags.
+    Built on first use and kept: one per (field, by, fc) up front would be fields x groups x filters copies."""
+    col = ds['columns'][field]
+    cache = col.setdefault('filtered_groups', {})
+    if (by, fc) not in cache:
+        df = ds['df']
+        if fc not in df.columns or not pd.api.types.is_numeric_dtype(df[fc]):
+            raise ValueError(f'Range filters need a numeric column, not {fc}')
+        rows = df[list(dict.fromkeys([field, by, fc]))].dropna()
+        if rows.empty:
+            raise ValueError(f'No rows have {field}, {by} and {fc}')
+        fscale = 1 if pd.api.types.is_integer_dtype(df[fc]) else 10 ** FIXED_POINT_DECIMALS
+        trip = sorted(((int(round(float(w) * fscale)), int(round(float(a) * col['scale'])), g)
+                       for a, g, w in zip(rows[field], rows[by], rows[fc])), key=lambda r: r[:2])
+        db = ds['db']
+        packed = db.packer.encrypt_sorted_groups([a for _, a, _ in trip], [g for _, _, g in trip])
+        db.pool.close()
+        keys = [w for w, _, _ in trip]
+        offset, top = keys[0], max(keys[-1] - keys[0], 1)
+        ope = FastOPE(secrets.token_bytes(32), in_range=ValueRange(0, top), out_range=ValueRange(0, 2 ** 64 - 1))
+        packed.update(ope=ope, ope_max=top, ope_offset=offset, fscale=fscale, rows=trip,
+                      ope_tags=ope.encrypt_list([k - offset for k in keys]))
+        cache[(by, fc)] = packed
+    return cache[(by, fc)]
+
+
+def _squares(ds, field, how):
+    """(copy of `field` holding (x - c)^2, c) packed like the copy `how` names, for VARIANCE and STDDEV:
+    ('all',) the column itself, ('by', fc) its copy in fc order, ('group', g) and ('fgroup', g, fc) its
+    GROUP BY copies. Built on first use and kept, like _filtered_groups."""
+    col, df, db = ds['columns'][field], ds['df'], ds['db']
+    cache = col.setdefault('squares', {})
+    if how not in cache:
+        fx = lambda xs: [int(round(float(x) * col['scale'])) for x in xs]  # noqa: E731
+        labels = None
+        if how[0] == 'all':
+            xs = fx(df[field].dropna())
+            if 'ope' in col:
+                xs.sort()
+        elif how[0] == 'by':
+            rows, fs = df[[field, how[1]]].dropna(), ds['columns'][how[1]]['scale']
+            xs = [x for _, x in sorted((int(round(float(y) * fs)), int(round(float(x) * col['scale'])))
+                                       for x, y in zip(rows[field], rows[how[1]]))]  # as encrypt_dataset's pairs
+        elif how[0] == 'group':
+            rows = df[[field, how[1]]].dropna()
+            xs, labels = fx(rows[field]), list(rows[how[1]])
+        else:
+            trip = _filtered_groups(ds, field, how[1], how[2])['rows']
+            xs, labels = [a for _, a, _ in trip], [g for _, _, g in trip]
+        sq, c = squares(xs)
+        packed = (db.encrypt_column(sq) if labels is None else db.packer.encrypt_groups(sq, labels) if how[0] == 'group'
+                  else db.packer.encrypt_sorted_groups(sq, labels))
+        db.pool.close()
+        cache[how] = (packed, c)
+    return cache[how]
+
+
+def _sorted_groups(ds, field, by, fc=None):
+    """(copy of `field` sorted within each group of `by`, {label: (first row, end row)}, {label: sorted fc keys})
+    for MIN / MAX / MEDIAN GROUP BY by; with fc, sorted by (fc, field) within each group, so the rows with fc in a
+    range are one run per group (keys: fc in fixed point). Built on first use and kept."""
+    col, df = ds['columns'][field], ds['df']
+    cache = col.setdefault('sorted_groups', {})
+    if (by, fc) not in cache:
+        if fc and (fc not in df.columns or not pd.api.types.is_numeric_dtype(df[fc])):
+            raise ValueError(f'Range filters need a numeric column, not {fc}')
+        fscale = 1 if not fc or pd.api.types.is_integer_dtype(df[fc]) else 10 ** FIXED_POINT_DECIMALS
+        xs, spans, keys = [], {}, {}
+        for g, x in df[list(dict.fromkeys([field, by] + ([fc] if fc else [])))].dropna().groupby(by):
+            pairs = sorted((int(round(float(w) * fscale)) if fc else 0, int(round(float(v) * col['scale'])))
+                           for v, w in zip(x[field], x[fc] if fc else x[field]))
+            label = g.item() if hasattr(g, 'item') else g
+            spans[label], keys[label] = (len(xs), len(xs) + len(pairs)), [w for w, _ in pairs]
+            xs += [v for _, v in pairs]
+        packed = ds['db'].encrypt_column(xs)
+        ds['db'].pool.close()
+        cache[(by, fc)] = (packed, spans, keys, fscale)
+    return cache[(by, fc)]
+
 
 @app.route('/api/query', methods=['POST'])
 def execute_query():
-    """Execute ULTRA-FAST homomorphic query with ALL optimizations"""
-    data = request.json
-    operation = data.get('type') or data.get('operation')  # Accept 'type' or 'operation'
-    field = data.get('column') or data.get('field')  # Accept 'column' or 'field'
+    data = request.json or {}
+    operation = (data.get('type') or data.get('operation') or '').upper()
+    field = data.get('column') or data.get('field')
     filename = data.get('filename')
-    range_min = data.get('range_min')  # NEW: OPE range filtering
-    range_max = data.get('range_max')  # NEW: OPE range filtering
-    
-    if not all([operation, field, filename]):
-        return jsonify({'error': 'Missing parameters'}), 400
-    
-    # Normalize operation to uppercase
-    operation = operation.upper() if operation else None
-    
-    if filename not in optimized_databases:
-        return jsonify({'error': 'Database not found. Please encrypt dataset first.'}), 404
-    
-    try:
-        db_data = optimized_databases[filename]
-        db = db_data['db']
-        df = db_data['df']
-        paillier_fields = db_data['paillier_fields']
-        encrypted_data = db_data.get('encrypted_data', {})
-        encrypted_data_dual = db_data.get('encrypted_data_dual', {})
-        ope_paillier = db_data.get('ope_paillier')
-        gpu_encrypted = db_data.get('gpu_encrypted', False)
-        lazy_encryption = db_data.get('lazy_encryption', False)
-        
-        # Check if dual-mode encryption is available for range queries
-        use_ope_filtering = (range_min is not None or range_max is not None) and ope_paillier and field in encrypted_data_dual
-        
-        if field not in paillier_fields:
-            # For non-Paillier fields, just count
-            if operation == 'COUNT':
-                result = len(df)
-                elapsed = 0.001
-                hit_rate = 100.0
-            else:
-                return jsonify({'error': f'Field {field} must be Paillier-encrypted for {operation}'}), 400
-        else:
-            record_count = len(df)
-            start_time = time.time()
-            
-            # OPE range filtering (if applicable)
-            filtered_indices = None
-            if use_ope_filtering:
-                dual_cts = encrypted_data_dual[field]
-                filter_start = time.time()
-                
-                # Set range bounds
-                plaintext_values = df[field].fillna(0).astype(int).tolist()
-                effective_min = range_min if range_min is not None else min(plaintext_values)
-                effective_max = range_max if range_max is not None else max(plaintext_values)
-                
-                # Encrypt range bounds with OPE for comparison
-                min_ope = ope_paillier.ope_cipher.encrypt(max(ope_paillier.ope_min, min(ope_paillier.ope_max, effective_min)))
-                max_ope = ope_paillier.ope_cipher.encrypt(max(ope_paillier.ope_min, min(ope_paillier.ope_max, effective_max)))
-                
-                # Filter ciphertexts using OPE (order-preserving comparison)
-                filtered_indices = []
-                for idx, dual_ct in enumerate(dual_cts):
-                    if min_ope <= dual_ct.ope_ct <= max_ope:
-                        filtered_indices.append(idx)
-                
-                filter_time = (time.time() - filter_start) * 1000
-                
-                if len(filtered_indices) == 0:
-                    # No records match the range
-                    return jsonify({
-                        'success': True,
-                        'operation': operation,
-                        'field': field,
-                        'result': 0,
-                        'time_ms': (time.time() - start_time) * 1000,
-                        'records_processed': 0,
-                        'encrypted_computation': True,
-                        'filter_applied': True,
-                        'range': {'min': effective_min, 'max': effective_max},
-                        'message': 'No records match the specified range'
-                    }), 200
-            
-            # Get plaintext values for lazy encryption (filtered if applicable)
-            values = encrypted_data.get(field, [])
-            if filtered_indices is not None:
-                values = [values[i] for i in filtered_indices]
-            
-            # OPTIMIZED: Scale large values to 1-1000 range for cache hits
-            if values and lazy_encryption:
-                min_val = min(values)
-                max_val = max(values)
-                value_range = max_val - min_val
-                
-                # Check if scaling needed
-                if value_range > 999 or min_val < 1 or max_val > 1000:
-                    # Scale to 1-1000 for maximum cache hits
-                    if value_range > 0:
-                        scaled_values = [
-                            int(1 + ((v - min_val) / value_range) * 999)
-                            for v in values
-                        ]
-                        scale_factor = value_range / 999
-                        offset = min_val
-                    else:
-                        scaled_values = [1] * len(values)
-                        scale_factor = 1
-                        offset = min_val
-                else:
-                    scaled_values = values
-                    scale_factor = 1
-                    offset = 0
-            else:
-                scaled_values = values
-                scale_factor = 1
-                offset = 0
-            
-            # Execute query with lazy encryption (instant with cache)
-            if operation == 'SUM':
-                if lazy_encryption and scale_factor != 1:
-                    scaled_result = db.sum_query_with_cache_counts(scaled_values)
-                else:
-                    scaled_result = db.sum_query(scaled_values)
-                    
-                # Scale result back to original range
-                result = scaled_result * scale_factor + offset * len(scaled_values) if scale_factor != 1 else scaled_result
-            
-            elif operation == 'AVG':
-                # CRITICAL OPTIMIZATION: Use cache-aware method for scaled data
-                if lazy_encryption and scale_factor != 1:
-                    # Data is scaled to 1-1000 → use optimized cache-aware sum
-                    scaled_total = db.sum_query_with_cache_counts(scaled_values)
-                else:
-                    scaled_total = db.sum_query(scaled_values)
-                    
-                # Scale back and average
-                if scale_factor != 1:
-                    original_total = scaled_total * scale_factor + offset * len(scaled_values)
-                    result = original_total / len(scaled_values)
-                else:
-                    result = scaled_total / len(scaled_values) if scaled_values else 0
-            
-            elif operation == 'COUNT':
-                result = len(values)
-            
-            else:
-                return jsonify({'error': f'Unsupported operation: {operation}'}), 400
-            
-            elapsed = time.time() - start_time
-            
-            # Calculate cache hit rate
-            if lazy_encryption and hasattr(db, 'cache'):
-                hit_rate = 100.0  # With precomputed cache, we get 100% hit rate
-            else:
-                hit_rate = 0.0
-        
-        # Calculate ops/sec for the query
-        records_processed = len(values) if 'values' in locals() else len(df)
-        ops_per_sec = records_processed / elapsed if elapsed > 0 else 0
-        
-        # Format result for display
-        result_str = f"{result:.2f}" if isinstance(result, float) else str(result)
-        print(f"{operation}({field}): {elapsed*1000:.2f}ms, {ops_per_sec:.0f} ops/sec, result={result_str}")
-        
-        response = {
-            'success': True,
-            'operation': operation,
-            'field': field,
-            'result': float(result) if result is not None else None,
-            'time_ms': round(elapsed * 1000, 2),
-            'records_processed': records_processed,
-            'ops_per_sec': round(ops_per_sec, 0),
-            'encrypted_computation': field in paillier_fields,
-            'gpu_used': GPU_AVAILABLE,
-            'cache_hit_rate': round(hit_rate, 1),
-            'optimizations_used': {
-                'gpu_acceleration': GPU_AVAILABLE,
-                'multi_level_cache': True,
-                'batch_operations': True,
-                'ope_filtering': use_ope_filtering if 'use_ope_filtering' in locals() else False
-            }
-        }
-        
-        # Add OPE filter info if applicable
-        if use_ope_filtering and filtered_indices is not None:
-            response['filter_applied'] = True
-            response['range'] = {'min': effective_min, 'max': effective_max}
-            response['records_before_filter'] = len(df)
-            response['filter_selectivity'] = len(filtered_indices) / len(df)
-            response['security_note'] = 'Range filter applied on encrypted data using OPE'
-        
-        return jsonify(response)
-    
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': f'Query failed: {str(e)}'}), 500
+    range_min = data.get('range_min', data.get('rangeMin'))
+    range_max = data.get('range_max', data.get('rangeMax'))
+    fc = data.get('filter_column') or data.get('filterColumn') or field  # WHERE fc in [min, max]
 
-@app.route('/api/benchmark', methods=['GET'])
-def get_benchmark():
-    """Return ACTUAL benchmark results from GPU-optimized system"""
-    return jsonify({
-        'speedup': 1000,  # Real measured speedup with precomputation
-        'encryption_time_ms': 0.02,  # With precomputation cache
-        'throughput_rec_per_sec': 47871,  # Peak measured on real datasets
-        'security_level': '2048-bit Paillier',
-        'gpu': {
-            'available': GPU_AVAILABLE,
-            'count': GPU_COUNT,
-            'name': GPU_NAME
+    if not operation or not field or not filename:
+        return jsonify({'error': 'Missing parameters'}), 400
+    if operation not in ('SUM', 'AVG', 'COUNT') + SPREAD and operation not in ORDER_STATS:
+        return jsonify({'error': f'Unsupported operation: {operation}'}), 400
+    ds = encrypted_datasets.get(filename)
+    if ds is None:
+        return jsonify({'error': 'Dataset not encrypted yet. Call /api/encrypt first.'}), 404
+    col = ds['columns'].get(field)
+    if col is None:
+        return jsonify({'error': f'Field {field} is not Paillier-encrypted'}), 400
+    group_by = data.get('group_by') or data.get('groupBy')
+    if group_by and ',' in group_by:  # GROUP BY several columns
+        err = _composite_groups(ds, field, group_by)
+        if err:
+            return jsonify({'error': err}), 400
+
+    db = ds['db']
+    start = time.perf_counter()
+    filtered = range_min not in (None, '') or range_max not in (None, '')
+    group_by = data.get('group_by') or data.get('groupBy')
+    spread = operation in SPREAD
+    response = {}
+
+    def finish(n, s1, s2, c):  # VARIANCE / STDDEV from SUM(x) and SUM((x - c)^2), fixed point
+        v = sample_variance(n, s1, s2, c, col['scale'])
+        return v if v is None or operation == 'VARIANCE' else v ** 0.5
+
+    if operation in ORDER_STATS and group_by:
+        if group_by not in col['groups']:
+            return jsonify({'error': f'{operation} GROUP BY needs a column with 2-{GROUP_MAX_VALUES} distinct values'}), 400
+        try:
+            packed, spans, keys, fscale = _sorted_groups(ds, field, group_by, fc if filtered else None)
+        except ValueError as e:
+            return jsonify({'error': str(e)}), 400
+        if filtered:  # each group's run of rows with fc in range
+            lo = int(round(float(range_min) * fscale)) if range_min not in (None, '') else None
+            hi = int(round(float(range_max) * fscale)) if range_max not in (None, '') else None
+            spans = {g: (i + (bisect_left(keys[g], lo) if lo is not None else 0),
+                         i + (bisect_right(keys[g], hi) if hi is not None else j - i)) for g, (i, j) in spans.items()}
+            spans = {g: (i, j) for g, (i, j) in spans.items() if i < j}
+        in_order = not filtered or fc == field  # rows in range sorted by value: only the quantile rows are read
+        s, cs, q = packed['slots'], packed['ciphertexts'], ORDER_STATS[operation]
+        rows = {r for i, j in spans.values() for r in (quantile_rows(i, j, q)[:2] if in_order else range(i, j))}
+        cts = list(dict.fromkeys(cs[r // s] for r in sorted(rows)))
+        plain = {c: decrypt_crt(db.pub, db.priv, c) for c in cts}
+        value = {r: slot_value(plain[cs[r // s]], r % s, packed['slot_bits']) + packed['offset'] for r in rows}
+        groups = []
+        for g, (i, j) in spans.items():
+            vs = value if in_order else dict(enumerate(sorted(value[r] for r in range(i, j)), i))
+            a, b, f = quantile_rows(i, j, q)
+            groups.append({'group': g, 'count': j - i, 'result': (vs[a] + (vs[b] - vs[a]) * f) / col['scale']})
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+        return jsonify({
+            'success': True, 'operation': operation, 'field': field, 'column': field, 'group_by': group_by,
+            'groups': groups, 'result': None, 'pages': 1, 'time_ms': elapsed_ms, 'query_time_ms': elapsed_ms,
+            'records_processed': sum(g['count'] for g in groups), 'ciphertexts_aggregated': len(cts),
+            'encrypted_computation': True,
+            **({'filter_applied': True, 'filter_column': fc, 'range': {'min': range_min, 'max': range_max},
+                'records_before_filter': packed['count'],
+                'filter_selectivity': sum(g['count'] for g in groups) / max(packed['count'], 1)} if filtered else {}),
+            'security_note': f'A copy of {field} sorted within each group: the answer for each group is one row (two for an '
+                             'interpolated median), so only the ciphertexts holding them were decrypted. Whoever serves '
+                             'them learns which ciphertexts were read, so roughly where each group starts and ends.',
+            'encryption_proof': {
+                'ciphertext_bit_lengths': [c.bit_length() for c in cts[:3]],
+                'modulus_n_bit_length': db.public_key.n.bit_length(),
+                'verification': f'{len(cts)} of {len(cs)} packed ciphertexts picked by sorted position and decrypted',
+                'computation_type': 'Order statistic per group on a copy sorted within groups',
+            },
+        })
+
+    if operation in ORDER_STATS:
+        if group_by or 'ope' not in col or fc != field:
+            return jsonify({'error': f'{operation} needs an OPE+Paillier field (sorted), filtered by itself, '
+                                     'without GROUP BY'}), 400
+        packed, s = col['packed'], col['packed']['slots']
+        i, j = (_tag_range(col['ope_tags'], col['ope'], col['ope_max'], col['scale'], col['offset'], range_min, range_max)
+                if filtered else (0, packed['count']))
+        result, cts = None, []
+        if i < j:
+            a, b, frac = quantile_rows(i, j, ORDER_STATS[operation])
+            cts = list(dict.fromkeys(packed['ciphertexts'][r // s] for r in (a, b)))
+            plain = {c: decrypt_crt(db.pub, db.priv, c) for c in cts}
+            va, vb = (slot_value(plain[packed['ciphertexts'][r // s]], r % s, packed['slot_bits']) + packed['offset']
+                      for r in (a, b))
+            result = (va + (vb - va) * frac) / col['scale']
+        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
+        return jsonify({
+            'success': True, 'operation': operation, 'field': field, 'column': field, 'result': result,
+            'time_ms': elapsed_ms, 'query_time_ms': elapsed_ms, 'records_processed': j - i,
+            'ciphertexts_aggregated': len(cts), 'encrypted_computation': True,
+            **({'filter_applied': True, 'filter_column': fc, 'range': {'min': range_min, 'max': range_max},
+                'records_before_filter': packed['count'], 'filter_selectivity': (j - i) / max(packed['count'], 1)}
+               if filtered else {}),
+            'security_note': 'The column is packed in sorted order, so this is one row (two for an interpolated '
+                             'median): its ciphertext was decrypted on its own, which shows the key holder the '
+                             'other values in that ciphertext. OPE tags reveal the order of values.',
+            'encryption_proof': {
+                'ciphertext_bit_lengths': [c.bit_length() for c in cts],
+                'modulus_n_bit_length': db.public_key.n.bit_length(),
+                'verification': f'{len(cts)} packed ciphertext(s) picked by sorted position and decrypted; no other '
+                                'ciphertext was decrypted',
+                'computation_type': 'Order statistic on a sorted packed column',
+            },
+        })
+
+    if group_by:
+        packed = col['groups'].get(group_by)
+        if packed is None:
+            return jsonify({'error': f'No GROUP BY copy of {field} by {group_by} (needs 2-{GROUP_MAX_VALUES} '
+                                     'distinct values and rows with both)'}), 400
+        if filtered:
+            try:
+                packed = _filtered_groups(ds, field, group_by, fc)
+            except ValueError as e:
+                return jsonify({'error': str(e)}), 400
+            i, j = _tag_range(packed['ope_tags'], packed['ope'], packed['ope_max'], packed['fscale'],
+                              packed['ope_offset'], range_min, range_max)
+            lanes, pages = packed['lanes'], group_pages(packed)
+            plans = [range_plan(db.pub, p, lanes, packed['count'], i, j) if i < j else (None, []) for p in pages]
+            sums = decrypt_sorted_groups(db.pub, db.priv, plans, packed)
+            cts = [c for p in pages for c in p[i // lanes:(j - 1) // lanes + 1]] if i < j else []
+            if spread:
+                sq, shift = _squares(ds, field, ('fgroup', group_by, fc))
+                sums2 = decrypt_sorted_groups(db.pub, db.priv, [
+                    range_plan(db.pub, p, sq['lanes'], sq['count'], i, j) if i < j else (None, []) for p in group_pages(sq)], sq)
+            response.update(filter_applied=True, filter_column=fc, range={'min': range_min, 'max': range_max},
+                            records_before_filter=packed['count'], filter_selectivity=(j - i) / packed['count'])
+        else:
+            sums = db.packer.sum_groups(packed)
+            cts = packed['ciphertexts']
+            if spread:
+                sq, shift = _squares(ds, field, ('group', group_by))
+                sums2 = db.packer.sum_groups(sq)
+        sc = col['scale']
+        groups = [{'group': g, 'sum': s / sc, 'count': c, 'avg': s / sc / c if c else 0} for g, (s, c) in sums.items()]
+        for x in groups:
+            x['result'] = (finish(x['count'], sums[x['group']][0], sums2[x['group']][0], shift) if spread
+                           else {'SUM': x['sum'], 'AVG': x['avg'], 'COUNT': x['count']}[operation])
+        count = sum(c for _, c in sums.values())
+        total_scaled = sum(s for s, _ in sums.values())
+        total2 = sum(s for s, _ in sums2.values()) if spread else 0
+        pages = packed.get('pages', 1)
+        per_page = f' per page of groups ({pages} pages)' if pages > 1 else ''
+        response.update(group_by=group_by, groups=groups, pages=pages, security_note=(
+            f'The ciphertexts inside the range are multiplied and decrypted once{per_page}, the <=2 cut by its edges '
+            f'on their own. OPE tags of {fc} reveal its order; the ciphertexts alone reveal no labels or group sizes.'
+            if filtered else
+            f'One product of the ciphertexts and one decryption{per_page}: every group sum and count comes out of its '
+            'own slots. The ciphertexts alone reveal no labels or group sizes.'))
+    elif filtered:
+        fcol = ds['columns'].get(fc)
+        if fcol is None or 'ope' not in fcol:
+            return jsonify({'error': f'Range filters need {fc} encrypted as OPE+Paillier'}), 400
+        if fc == field:
+            packed, tags = col['packed'], fcol['ope_tags']
+        elif field in fcol['by']:
+            packed, tags = fcol['by'][field]['packed'], fcol['by'][field]['tags']
+        else:
+            return jsonify({'error': f'No rows have both {field} and {fc}'}), 400
+        i, j = _tag_range(tags, fcol['ope'], fcol['ope_max'], fcol['scale'], fcol['offset'], range_min, range_max)
+        count, s = j - i, packed['slots']
+        cts = packed['ciphertexts'][i // s:(j - 1) // s + 1] if count else []
+        total_scaled = db.packer.sum_range(packed, i, j) if operation != 'COUNT' else 0
+        if spread:
+            sq, shift = _squares(ds, field, ('all',) if fc == field else ('by', fc))
+            total2 = db.packer.sum_range(sq, i, j)
+        response.update(filter_applied=True, filter_column=fc, range={'min': range_min, 'max': range_max},
+                        records_before_filter=packed['count'],
+                        filter_selectivity=count / max(packed['count'], 1),
+                        security_note='OPE tags reveal the order of values to whoever holds them; '
+                                      'the key holder also sees the slots of the <=2 ciphertexts cut by the range edges')
+    else:
+        cts = col['packed']['ciphertexts']
+        count = col['packed']['count']
+        total_scaled = db.sum_column(col['packed']) if operation != 'COUNT' else 0
+        if spread:
+            sq, shift = _squares(ds, field, ('all',))
+            total2 = db.sum_column(sq)
+
+    total = total_scaled / col['scale'] if col['scale'] != 1 else total_scaled
+    result = (finish(count, total_scaled, total2, shift) if spread else {'SUM': total, 'AVG': (total / count) if count else 0, 'COUNT': count}[operation])
+    elapsed_ms = (time.perf_counter() - start) * 1000
+
+    response.update({
+        'success': True, 'operation': operation, 'field': field, 'column': field,
+        'result': None if result is None else float(result), 'time_ms': round(elapsed_ms, 2), 'query_time_ms': round(elapsed_ms, 2),
+        'records_processed': count, 'ciphertexts_aggregated': len(cts) if operation != 'COUNT' or group_by else 0,
+        'encrypted_computation': operation != 'COUNT' or bool(group_by),
+        'encryption_proof': {
+            'ciphertext_bit_lengths': [c.bit_length() for c in cts[:3]],
+            'modulus_n_bit_length': db.public_key.n.bit_length(),
+            'verification': f'{len(cts)} packed ciphertexts: whole ones multiplied mod n^2 and decrypted once'
+                            + ('; range-edge ones decrypted separately' if filtered else ''),
+            'computation_type': 'Paillier homomorphic addition',
         },
-        'operations': [
-            {'name': 'Encryption (precomputed)', 'optimized_ms': 0.02, 'paillier_ms': 7.5, 'speedup': 375},
-            {'name': 'SUM (optimized)', 'optimized_ms': 0.15, 'paillier_ms': 1.5, 'speedup': 10},
-            {'name': 'AVG (optimized)', 'optimized_ms': 0.16, 'paillier_ms': 1.6, 'speedup': 10},
-            {'name': 'COUNT', 'optimized_ms': 0.001, 'paillier_ms': 0.001, 'speedup': 1.0},
-        ],
-        'optimizations': {
-            'precomputation': '1000x speedup for cached values (1-1000)',
-            'batch_packing': '28x speedup for aggregations',
-            'multi_level_cache': '251x speedup for hot data',
-            'combined': '1000x+ speedup (measured)',
-            'peak_throughput': '47,871 ops/sec'
-        },
-        'system_info': {
-            'encryption_types': ['Paillier-2048', 'Precomputation', 'Multi-level cache', 'Batch packing'],
-            'backend': 'AGNIYA Ultimate Optimized System',
-            'gpu_enabled': GPU_AVAILABLE,
-            'jit_enabled': True,
-            'precomputation_enabled': True,
-            'cache_enabled': True,
-            'cpu_fallback': True
-        }
     })
+    return jsonify(response)
+
 
 @app.route('/api/databases', methods=['GET'])
 def list_databases():
-    """List all active optimized databases"""
+    return jsonify({'databases': [
+        {'filename': name, 'records': ds['record_count'], 'paillier_fields': list(ds['columns'])}
+        for name, ds in encrypted_datasets.items()]})
+
+
+# ---- client-held keys: public key + ciphertexts in, ciphertexts out ------------------------
+# dataset -> {'pub': PaillierPublicKey, 'columns': {name: {'cts', 'slots', 'count', 'tags'}}}
+owner_datasets = {}
+STORE_PATH = os.environ.get('AGNIYA_STORE', os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                                         'agniya_store.sqlite3'))
+TAG_BYTES = 8  # OPE tags live in [0, 2^64)
+MAC_BYTES = 16  # client MACs of each ciphertext's OPE tags (truncated HMAC-SHA256)
+STORE_MAX_BYTES = int(float(os.environ.get('AGNIYA_STORE_MAX_MB', '1024')) * 2**20)  # ciphertexts + tags
+
+
+def _store():
+    con = sqlite3.connect(STORE_PATH)
+    con.execute('CREATE TABLE IF NOT EXISTS columns (dataset TEXT, name TEXT, n TEXT, slots INTEGER, '
+                'count INTEGER, cts BLOB, tags BLOB, macs BLOB, PRIMARY KEY (dataset, name))')
+    if 'macs' not in [r[1] for r in con.execute('PRAGMA table_info(columns)')]:  # stores from before tag MACs
+        con.execute('ALTER TABLE columns ADD COLUMN macs BLOB')
+    con.execute('CREATE TABLE IF NOT EXISTS owners (dataset TEXT PRIMARY KEY, token_hash TEXT)')
+    return con
+
+
+def _token_hash(d):
+    t = d.get('token')
+    return hashlib.sha256(t.encode()).hexdigest() if isinstance(t, str) and len(t) >= 32 else None
+
+
+def _deny(name, d):
+    """None when request body d carries dataset name's token, else an error response. A dataset
+    stored before tokens existed is claimed by the first token sent for it."""
+    h, ds = _token_hash(d), owner_datasets[name]
+    if h is None:
+        return jsonify({'error': 'This dataset needs its token (sent by AgniyaClient and the dashboard)'}), 401
+    if ds.get('token_hash') is None:
+        with closing(_store()) as con, con:
+            con.execute('INSERT OR REPLACE INTO owners VALUES (?, ?)', (name, h))
+        ds['token_hash'] = h
+    elif not hmac.compare_digest(h, ds['token_hash']):
+        return jsonify({'error': 'Wrong token for this dataset'}), 403
+    return None
+
+
+def _pack(xs, width):
+    return b''.join(x.to_bytes(width, 'big') for x in xs)
+
+
+def _unpack(blob, width):
+    return [int.from_bytes(blob[i:i + width], 'big') for i in range(0, len(blob), width)]
+
+
+def _public_key(n):
+    return PaillierPublicKey(n, n + 1, n * n, n.bit_length())
+
+
+def load_store():
+    """Rebuild owner_datasets from the SQLite store (runs at import, i.e. at server start)."""
+    owner_datasets.clear()
+    with closing(_store()) as con:
+        for dataset, name, n, slots, count, cts, tags, macs in con.execute(
+                'SELECT dataset, name, n, slots, count, cts, tags, macs FROM columns'):
+            pub = _public_key(int(n, 16))
+            ds = owner_datasets.setdefault(dataset, {'pub': pub, 'columns': {}})
+            ds['columns'][name] = {'cts': _unpack(cts, (pub.n_squared.bit_length() + 7) // 8), 'slots': slots,
+                                   'count': count, 'tags': _unpack(tags, TAG_BYTES) if tags is not None else None,
+                                   'macs': _unpack(macs, MAC_BYTES) if macs is not None else None}
+        for dataset, h in con.execute('SELECT dataset, token_hash FROM owners'):
+            if dataset in owner_datasets:
+                owner_datasets[dataset]['token_hash'] = h
+
+
+def _hex_ints(xs, bound, what):
+    out = [int(x, 16) for x in xs]
+    if any(not 0 < v < bound for v in out):
+        raise ValueError(f'{what} out of range')
+    return out
+
+
+@app.route('/api/v2/columns', methods=['POST'])
+def v2_store_column():
+    d = request.json or {}
+    try:
+        name, column = str(d['dataset']), str(d['column'])
+        n = int(d['n'], 16)
+        if n.bit_length() < MIN_KEY_BITS or n % 2 == 0:
+            raise ValueError(f'n must be an odd modulus of at least {MIN_KEY_BITS} bits')
+        cts = _hex_ints(d['ciphertexts'], n * n, 'ciphertext')
+        slots, count = int(d['slots']), int(d['count'])
+        if slots < 1 or not slots * (len(cts) - 1) < count <= slots * len(cts):
+            raise ValueError('count does not match ciphertexts and slots')
+        tags = d.get('ope_tags')
+        if tags is not None:
+            tags = [int(t) for t in tags]
+            if len(tags) != count or any(a > b for a, b in zip(tags, tags[1:]))                     or (tags and not 0 <= tags[0] <= tags[-1] < 2 ** (8 * TAG_BYTES)):
+                raise ValueError('ope_tags must be sorted 64-bit values, one per value')
+        macs = d.get('tag_macs')  # the client's MAC of each ciphertext's OPE tags, returned with range answers
+        if macs is not None:
+            macs = [int(x, 16) for x in macs]
+            if tags is None or len(macs) != len(cts) or any(not 0 <= x < 2 ** (8 * MAC_BYTES) for x in macs):
+                raise ValueError('tag_macs must be one 16-byte hex MAC per ciphertext, with ope_tags')
+    except (KeyError, TypeError, ValueError) as e:
+        return jsonify({'error': f'Bad column upload: {e}'}), 400
+    ds, h = owner_datasets.get(name), _token_hash(d)
+    if ds is None and h is None:
+        return jsonify({'error': 'A new dataset needs a token (sent by AgniyaClient and the dashboard)'}), 401
+    if ds is not None:
+        denied = _deny(name, d)
+        if denied:
+            return denied
+        if ds['pub'].n != n:
+            return jsonify({'error': f'Dataset {name} uses a different public key'}), 409
+    pub = ds['pub'] if ds else _public_key(n)
+    cts_blob = _pack(cts, (pub.n_squared.bit_length() + 7) // 8)
+    tags_blob = _pack(tags, TAG_BYTES) if tags is not None else None
+    macs_blob = _pack(macs, MAC_BYTES) if macs is not None else None
+    with closing(_store()) as con, con:  # committed to disk before we answer
+        used = con.execute('SELECT COALESCE(SUM(LENGTH(cts) + COALESCE(LENGTH(tags), 0) + COALESCE(LENGTH(macs), 0)), 0) '
+                           'FROM columns WHERE NOT (dataset = ? AND name = ?)', (name, column)).fetchone()[0]
+        if used + len(cts_blob) + len(tags_blob or b'') + len(macs_blob or b'') > STORE_MAX_BYTES:
+            return jsonify({'error': f'Store limit of {STORE_MAX_BYTES // 2**20} MB reached '
+                                     '(AGNIYA_STORE_MAX_MB); delete a dataset first'}), 507
+        con.execute('INSERT OR REPLACE INTO columns (dataset, name, n, slots, count, cts, tags, macs) '
+                    'VALUES (?, ?, ?, ?, ?, ?, ?, ?)', (name, column, format(n, 'x'), slots, count, cts_blob, tags_blob, macs_blob))
+        if ds is None:
+            con.execute('INSERT OR REPLACE INTO owners VALUES (?, ?)', (name, h))
+    ds = owner_datasets.setdefault(name, {'pub': pub, 'columns': {}, 'token_hash': h})
+    ds['columns'][column] = {'cts': cts, 'slots': slots, 'count': count, 'tags': tags, 'macs': macs}
+    return jsonify({'success': True, 'dataset': name, 'column': column, 'ciphertexts': len(cts),
+                    'count': count, 'range_filterable': tags is not None})
+
+
+@app.route('/api/v2/delete', methods=['POST'])
+def v2_delete_dataset():
+    """Delete a dataset (all its columns) from memory and the store; needs the dataset's token."""
+    d = request.json or {}
+    name = d.get('dataset')
+    ds = owner_datasets.get(name)
+    if ds is None:
+        return jsonify({'error': 'Unknown dataset'}), 404
+    denied = _deny(name, d)
+    if denied:
+        return denied
+    with closing(_store()) as con, con:
+        con.execute('DELETE FROM columns WHERE dataset = ?', (name,))
+        con.execute('DELETE FROM owners WHERE dataset = ?', (name,))
+    del owner_datasets[name]
+    return jsonify({'success': True, 'dataset': name, 'columns_deleted': len(ds['columns'])})
+
+
+def _v2_column(d):
+    """(dataset, column, error response) for body d, checking the dataset's token."""
+    ds = owner_datasets.get(d.get('dataset'))
+    col = ds['columns'].get(d.get('column')) if ds else None
+    if col is None:
+        return None, None, (jsonify({'error': 'Unknown dataset or column'}), 404)
+    return ds, col, _deny(d['dataset'], d)
+
+
+def _v2_rows(col, d):
+    """(i, j, witnesses, error response): rows i..j-1 have OPE tags in [lo_tag, hi_tag] (all rows without
+    them); witnesses are the ciphertexts around both ends with their tags and the client's MACs."""
+    i, j = 0, col['count']
+    ranged = d.get('lo_tag') is not None or d.get('hi_tag') is not None
+    if ranged:
+        if col['tags'] is None:
+            return 0, 0, [], (jsonify({'error': 'Column was uploaded without OPE tags'}), 400)
+        try:
+            if d.get('lo_tag') is not None:
+                i = bisect_left(col['tags'], int(d['lo_tag']))
+            if d.get('hi_tag') is not None:
+                j = max(i, bisect_right(col['tags'], int(d['hi_tag'])))
+        except (TypeError, ValueError):
+            return 0, 0, [], (jsonify({'error': 'Tags must be integers'}), 400)
+    s, witnesses = col['slots'], []
+    if ranged and col.get('macs'):
+        for c in sorted({r // s for r in (i - 1, i, j - 1, j) if 0 <= r < col['count']}):
+            witnesses.append({'index': c, 'tags': [str(t) for t in col['tags'][c * s:(c + 1) * s]],
+                              'mac': format(col['macs'][c], '032x')})
+    return i, j, witnesses, None
+
+
+@app.route('/api/v2/quantiles', methods=['POST'])
+def v2_quantiles():
+    """MIN / MAX / MEDIAN / any quantile of a sorted (OPE-tagged) column, optionally over rows with tags in
+    [lo_tag, hi_tag]: for each q in `q` the stored ciphertexts of rows a and b of quantile_rows (pandas'
+    linear interpolation). The client decrypts them, checks their integrity tags and reads one slot each."""
+    d = request.json or {}
+    _, col, err = _v2_column(d)
+    if err:
+        return err
+    if col['tags'] is None:
+        return jsonify({'error': 'Quantiles need a column uploaded with range_filter=True (sorted)'}), 400
+    try:
+        qs = [float(q) for q in d['q']]
+        if not 0 < len(qs) <= 101 or any(not 0 <= q <= 1 for q in qs):
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'error': 'q must be 1-101 numbers in [0, 1]'}), 400
+    start = time.perf_counter()
+    i, j, witnesses, err = _v2_rows(col, d)
+    if err:
+        return err
+    rows = sorted({r for q in qs for r in quantile_rows(i, j, q)[:2]}) if i < j else []
+    s = col['slots']
+    return jsonify({'count': j - i, 'rows': [i, j], 'witnesses': witnesses,
+                    'cells': [{'row': r, 'ciphertext': format(col['cts'][r // s], 'x')} for r in rows],
+                    'time_ms': round((time.perf_counter() - start) * 1000, 2)})
+
+
+@app.route('/api/v2/ciphertexts', methods=['POST'])
+def v2_ciphertexts():
+    """Stored ciphertexts of a column by index (`index`: up to 4096 of them), e.g. the ones holding each group's
+    quantile rows in a copy sorted within groups. The client checks each one's integrity tag."""
+    d = request.json or {}
+    _, col, err = _v2_column(d)
+    if err:
+        return err
+    try:
+        ks = [int(k) for k in d['index']]
+        if not 0 < len(ks) <= 4096 or any(not 0 <= k < len(col['cts']) for k in ks):
+            raise ValueError
+    except (KeyError, TypeError, ValueError):
+        return jsonify({'error': f"index must be 1-4096 ciphertext indices below {len(col['cts'])}"}), 400
+    return jsonify({'ciphertexts': [format(col['cts'][k], 'x') for k in ks]})
+
+
+@app.route('/api/v2/ranges', methods=['POST'])
+def v2_ranges():
+    """Row ranges for several (lo_tag, hi_tag) pairs on one OPE-tagged column (`ranges`: up to 1024), each with
+    the witnesses that let the client check the cut, e.g. one range per group of a copy sorted within groups."""
+    d = request.json or {}
+    _, col, err = _v2_column(d)
+    if err:
+        return err
+    rs = d.get('ranges')
+    if not isinstance(rs, list) or not 0 < len(rs) <= 1024 or not all(isinstance(r, dict) for r in rs):
+        return jsonify({'error': 'ranges must be 1-1024 objects with lo_tag / hi_tag'}), 400
+    out = []
+    for r in rs:
+        i, j, witnesses, err = _v2_rows(col, r)
+        if err:
+            return err
+        out.append({'rows': [i, j], 'witnesses': witnesses})
+    return jsonify({'ranges': out})
+
+
+@app.route('/api/v2/aggregate', methods=['POST'])
+def v2_aggregate():
+    """Encrypted SUM over a column, optionally over rows whose OPE tag is in [lo_tag, hi_tag]. `rows` is
+    the row range used; with a range on a column with tag MACs, `witnesses` are the ciphertexts around
+    its ends with their rows' OPE tags and MACs, so the client can check where the range was cut."""
+    d = request.json or {}
+    ds, col, err = _v2_column(d)
+    if err:
+        return err
+    start = time.perf_counter()
+    i, j, witnesses, err = _v2_rows(col, d)
+    if err:
+        return err
+    product, edges = range_plan(ds['pub'], col['cts'], col['slots'], col['count'], i, j) if i < j else (None, [])
+    s = col['slots']
     return jsonify({
-        'databases': [
-            {
-                'filename': filename,
-                'records': db_data['record_count'],
-                'paillier_fields': len(db_data['paillier_fields']),
-                'encrypted': True,
-                'gpu_available': GPU_AVAILABLE,
-                'optimizations': {
-                    'cache': True,
-                    'gpu': GPU_AVAILABLE
-                }
-            }
-            for filename, db_data in optimized_databases.items()
-        ]
+        'count': j - i, 'rows': [i, j], 'witnesses': witnesses,
+        'product': format(product, 'x') if product is not None else None,
+        'edges': [{'ciphertext': format(c, 'x'), 'first_slot': lo, 'end_slot': hi} for c, lo, hi in edges],
+        'ciphertexts_used': (j - 1) // s - i // s + 1 if i < j else 0,
+        'time_ms': round((time.perf_counter() - start) * 1000, 2),
     })
 
+
+load_store()
+
 if __name__ == '__main__':
-    print("=" * 70)
-    print("🚀 AGNIYA ULTIMATE OPTIMIZED API SERVER")
-    print("=" * 70)
-    print("📡 Server: http://localhost:5000")
-    print("🌐 CORS: http://localhost:3000")
-    print("")
-    print("⚡ ALL OPTIMIZATIONS AVAILABLE:")
-    print("   ✓ Smart Precomputation (1-1000 cached) - 1000x speedup")
-    print("   ✓ Multi-Level Cache (500K entries) - 251x speedup")
-    print("   ✓ Batch Packing (SIMD-style) - 28x speedup")
-    print(f"   ✓ GPU Acceleration ({GPU_COUNT}x {GPU_NAME if GPU_AVAILABLE else 'Not Available'})")
-    print("   ✓ JIT Compilation (Numba) - 2-5x speedup")
-    print(f"   ✓ ORAM Security ({'Available' if ORAM_AVAILABLE else 'Not Available'} - opt-in)")
-    print("   ✓ OPE+Paillier Hybrid (Range queries on encrypted data)")
-    print("   ✓ Automatic CPU Fallback")
-    print("")
-    print("🎯 Combined Speedup: 1000x (measured)")
-    print("🚀 Peak Throughput: 47,871 ops/sec (validated on real datasets)")
-    print("=" * 70)
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    host = os.environ.get('AGNIYA_HOST', '127.0.0.1')
+    debug = os.environ.get('AGNIYA_DEBUG') == '1'  # never expose the Werkzeug debugger on a network
+    print(f"AGNIYA API on http://{host}:5000 (debug={debug})")
+    app.run(debug=debug, host=host, port=5000)

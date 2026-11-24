@@ -1,5 +1,5 @@
 // API Service for AGNIYA Backend Integration
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
 export interface UploadResponse {
   success: boolean;
@@ -12,53 +12,24 @@ export interface UploadResponse {
     encryption: string;
   }>;
   size_kb: number;
+  sample_data?: Record<string, unknown>[];
 }
 
 export interface EncryptResponse {
   success: boolean;
   message?: string;
-  stats?: {
-    records: number;
-    original_records: number;
-    paillier_fields: number;
-    encryption_time_ms: number;
-    cache_warming_time_ms: number;
-    histogram_build_time_ms: number;
-    total_time_ms: number;
-    cache?: {
-      hits?: number;
-      misses?: number;
-      hit_rate?: number;
-    };
-    precomputation?: {
-      hit_count: number;
-      miss_count: number;
-      hit_rate: number;
-    };
-    compression?: {
-      original_size_bytes: number;
-      compressed_size_bytes: number;
-      compression_ratio: number;
-      bandwidth_reduction_pct: number;
-      compression_time_ms: number;
-    };
-    deduplication?: {
-      [field: string]: {
-        total_added: number;
-        unique_stored: number;
-        duplicates_found: number;
-        dedup_ratio: number;
-        storage_saved_pct: number;
-      };
-    };
-  };
+  records_encrypted?: number;
+  time_seconds?: number;
+  throughput?: number;
+  ciphertexts?: number;
+  fields?: Record<string, { group_by?: string[] }>;
 }
 
 export interface QueryResponse {
   success: boolean;
   operation: string;
   column: string;
-  result: number;
+  result: number | null;  // null: MIN / MAX / MEDIAN of no rows
   query_time_ms: number;
   records_processed: number;
   filter_applied?: boolean;
@@ -201,19 +172,23 @@ class APIService {
     field: string,
     filename: string,
     rangeMin?: number,
-    rangeMax?: number
+    rangeMax?: number,
+    filterColumn?: string,
+    groupBy?: string
   ): Promise<QueryResponse> {
-    const body: any = { 
+    const body: Record<string, unknown> = {
       type: operation,
-      column: field, 
-      filename 
+      column: field,
+      filename
     };
+    if (filterColumn) body.filter_column = filterColumn;
+    if (groupBy) body.group_by = groupBy;
     
     // Add range parameters if provided
-    if (rangeMin !== undefined && rangeMin !== null && rangeMin !== '') {
+    if (rangeMin !== undefined && rangeMin !== null) {
       body.rangeMin = rangeMin;
     }
-    if (rangeMax !== undefined && rangeMax !== null && rangeMax !== '') {
+    if (rangeMax !== undefined && rangeMax !== null) {
       body.rangeMax = rangeMax;
     }
     

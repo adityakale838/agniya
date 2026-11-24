@@ -11,7 +11,7 @@ Features:
 - Secure key generation using system CSPRNG
 
 Performance:
-- Encryption: ~100 MB/s (1000x faster than Paillier)
+- Encryption: AES-GCM, far cheaper per field than a Paillier ciphertext (see scripts/benchmark_hybrid_vs_pure.py)
 - Decryption: ~100 MB/s
 - Storage: 32-64 bytes overhead (vs 512 bytes for Paillier-2048)
 """

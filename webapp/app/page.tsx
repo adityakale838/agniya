@@ -111,9 +111,9 @@ export default function Home() {
             className="grid md:grid-cols-3 gap-6 mt-20"
           >
             {[
-              { icon: Zap, label: 'Performance', value: '143.9x', description: 'Speedup over pure Paillier' },
-              { icon: Shield, label: 'Security', value: '2048-bit', description: 'Military-grade encryption' },
-              { icon: Database, label: 'Throughput', value: '2,190/s', description: 'Records processed per second' },
+              { icon: Zap, label: 'Query latency', value: '~6 ms', description: 'Encrypted SUM over 1,338 rows (packed ciphertexts, laptop CPU)' },
+              { icon: Shield, label: 'Security', value: '2048-bit', description: 'Paillier with fresh randomness per ciphertext' },
+              { icon: Database, label: 'Packing', value: 'up to 200', description: 'Values per ciphertext, sized so sums cannot overflow' },
             ].map((stat, i) => (
               <motion.div
                 key={i}
@@ -230,7 +230,7 @@ export default function Home() {
               <span className="text-gradient">Unmatched Performance</span>
             </h2>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Our hybrid architecture delivers 143.9x speedup while maintaining military-grade security.
+              Numbers on this page are measured by tools/verify_claims.py; see docs/PROJECT_REVIEW.md.
             </p>
           </motion.div>
 

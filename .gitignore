@@ -87,3 +87,13 @@ htmlcov/
 data/real_world/*.csv
 backup/data_archive_20251122_191209/creditcard.csv
 data/real_world/creditcard.csv
+# Runtime state: never commit keys, ciphertext caches, uploads or logs
+cache/
+*.pkl
+*.log
+api/uploads/
+uploads/
+output/
+
+# API v2 ciphertext store
+*.sqlite3

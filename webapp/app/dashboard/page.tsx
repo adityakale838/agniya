@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Lock, ArrowLeft, FileText, Zap, Database, Search, Calculator, Filter, TrendingUp, AlertCircle, Shield } from 'lucide-react';
+import { Upload, Lock, ArrowLeft, FileText, Zap, Database, Search, Calculator, Filter, TrendingUp, AlertCircle, Shield, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
-import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,7 +24,40 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import Link from 'next/link';
-import { apiService } from '@/lib/api';
+import { apiService, API_BASE_URL } from '@/lib/api';
+import { parseCsv, type Spread } from '@/lib/agniya-browser';
+import { CryptoWorker } from '@/lib/agniya-worker-client';
+
+const PAILLIER: string[] = ['Paillier-2048', 'OPE+Paillier'];
+type Aggregate = 'SUM' | 'AVG' | 'COUNT';  // GROUP BY and SUM paths: order statistics are routed before them
+type Operation = Aggregate | 'MIN' | 'MAX' | 'MEDIAN' | 'VARIANCE' | 'STDDEV';
+const ORDER_STATS: Partial<Record<Operation, number>> = { MIN: 0, MEDIAN: 0.5, MAX: 1 };  // quantile q
+const SPREAD: Operation[] = ['VARIANCE', 'STDDEV'];  // need a "^2" copy (sum of squares), built on first use
+const GROUP_MAX_VALUES = 64;
+
+/** One-click questions a bank asks of its customer data (columns of data/bank_customers.csv, from
+ *  tools/make_bank_data.py); each runs as an ordinary encrypted query. */
+interface Preset { title: string; op: Operation; field: string; group?: string; group2?: string; filter?: string; min?: string; max?: string }
+const BANK_PRESETS: Preset[] = [
+  { title: 'Loan exposure by risk band', op: 'SUM', field: 'loan_amount', group: 'risk_band' },
+  { title: 'Default rate by segment', op: 'AVG', field: 'default_flag', group: 'segment' },
+  { title: 'Median balance by region', op: 'MEDIAN', field: 'balance', group: 'region' },
+  { title: 'Spend volatility by segment', op: 'STDDEV', field: 'monthly_spend', group: 'segment' },
+  { title: 'Sub-prime exposure by product', op: 'SUM', field: 'loan_amount', group: 'product', filter: 'credit_score', min: '300', max: '600' },
+  { title: 'Loan exposure by region and segment', op: 'SUM', field: 'loan_amount', group: 'region', group2: 'segment' },
+];
+const presetSql = (p: Preset) => `${p.op}(${p.field})` + (p.filter ? ` WHERE ${p.filter} BETWEEN ${p.min} AND ${p.max}` : '')
+  + (p.group ? ` GROUP BY ${p.group}${p.group2 ? `, ${p.group2}` : ''}` : '');  // as api/server_optimized.py: GROUP BY copies for columns with 2-64 distinct values
+
+/** {field: [group columns]} from stored column names, where "a#g" is a packed by g ("a#g|w" also filters on w). */
+const groupsFromNames = (names: string[]): Record<string, string[]> => {
+  const out: Record<string, string[]> = {};
+  for (const n of names) {
+    const i = n.indexOf('#');
+    if (i > 0 && !/[|@^]/.test(n.slice(i))) (out[n.slice(0, i)] ??= []).push(n.slice(i + 1));  // "@p": later pages, "^2": squares
+  }
+  return out;
+};
 
 interface Field {
   name: string;
@@ -38,69 +70,37 @@ interface UploadedData {
   records: number;
   fields: number;
   schema: Field[];
-  sample_data?: any[];
+  sample_data?: Record<string, unknown>[];
 }
 
 interface EncryptionResult {
+  success?: boolean;
+  message?: string;
   records_encrypted?: number;
   time_seconds?: number;
   throughput?: number;
-  speedup?: number;
-  encryption_breakdown?: {
-    plaintext_fields: number;
-    aes_fields: number;
-    paillier_fields: number;
-  };
-  // New fields from advanced server
-  success?: boolean;
-  message?: string;
-  stats?: {
-    records: number;
-    original_records: number;
-    paillier_fields: number;
-    encryption_time_ms: number;
-    cache_warming_time_ms: number;
-    histogram_build_time_ms: number;
-    total_time_ms: number;
-    cache?: {
-      hits?: number;
-      misses?: number;
-      hit_rate?: number;
-    };
-    precomputation?: {
-      hit_count: number;
-      miss_count: number;
-      hit_rate: number;
-    };
-    compression?: {
-      original_size_bytes: number;
-      compressed_size_bytes: number;
-      compression_ratio: number;
-      bandwidth_reduction_pct: number;
-      compression_time_ms: number;
-    };
-    deduplication?: {
-      [field: string]: {
-        total_added: number;
-        unique_stored: number;
-        duplicates_found: number;
-        dedup_ratio: number;
-        storage_saved_pct: number;
-      };
-    };
-  };
+  ciphertexts?: number;
 }
 
 interface QueryResult {
   operation?: string;
   field?: string;
-  result?: number;
+  result?: number | null;  // null: MIN / MAX / MEDIAN of no rows
   time_ms?: number;
   records_processed?: number;
   // New fields from advanced server
   success?: boolean;
   column?: string;
   query_time_ms?: number;
+  ciphertexts_aggregated?: number;
+  filter_applied?: boolean;
+  filter_column?: string;
+  group_by?: string;
+  groups?: Array<{ group: string | number; sum?: number; count: number; avg?: number; result: number | null }>;
+  range?: { min: number | null; max: number | null };
+  records_before_filter?: number;
+  filter_selectivity?: number;
+  security_note?: string;
   query_plan?: {
     strategy: string;
     estimated_cost_ms: number | null;
@@ -133,11 +133,310 @@ export default function Dashboard() {
   const [queries, setQueries] = useState<QueryResult[]>([]);
   const [isQuerying, setIsQuerying] = useState(false);
   const [selectedField, setSelectedField] = useState('');
-  const [selectedOperation, setSelectedOperation] = useState<'SUM' | 'AVG' | 'COUNT'>('SUM');
+  const [selectedOperation, setSelectedOperation] = useState<Operation>('SUM');
   const [rangeMin, setRangeMin] = useState('');
   const [rangeMax, setRangeMax] = useState('');
-  
+  const [filterBy, setFilterBy] = useState('');  // '' = filter on the queried field itself
+  const [groupBy, setGroupBy] = useState('');  // '' = no GROUP BY
+  const [groupBy2, setGroupBy2] = useState('');  // optional second GROUP BY column
+  const [groupable, setGroupable] = useState<Record<string, string[]>>({});  // field -> columns it can be grouped by
+  const groupOptions = groupable[selectedField] ?? [];
+  const thenOptions = groupOptions.filter(g => g !== groupBy && !g.includes(','));
+  // "a,b" = GROUP BY a, b: one label "x, y" per row, packed like any GROUP BY copy (built on first use)
+  const activeGroupBy = !groupOptions.includes(groupBy) ? ''
+    : thenOptions.includes(groupBy2) && !groupBy.includes(',') ? `${groupBy},${groupBy2}` : groupBy;
+
   const [error, setError] = useState<string | null>(null);
+
+  // Browser mode: the CSV is parsed here and encrypted in a Web Worker that holds the keys (/api/v2).
+  const [browserMode, setBrowserMode] = useState(true);
+  const csvRef = useRef<{ header: string[]; rows: string[][] } | null>(null);
+  const workerRef = useRef<CryptoWorker | null>(null);
+  const groupCopies = useRef(new Set<string>());
+  const byCopies = useRef(new Set<string>());  // "a|b" copies (a in b's order, for WHERE b in range)  // "a#g" GROUP BY copies the worker has (g may be "b,c")
+  const filteredCopies = useRef(new Set<string>());  // "a#g|w" copies the worker has (GROUP BY g WHERE w in range)
+  const squareCopies = useRef(new Set<string>());  // copies that also have "^2" (VARIANCE / STDDEV)
+  const sortedCopies = useRef(new Set<string>());  // "a#g^sorted" (and "...|w") copies: MIN / MAX / MEDIAN GROUP BY g
+
+  const dropWorker = () => { workerRef.current?.terminate(); workerRef.current = null; };  // drops the key
+  useEffect(() => () => workerRef.current?.terminate(), []);  // leaving the page drops the key too
+  const [presetRun, setPresetRun] = useState(0);  // a preset sets the builder, then this runs the query
+
+  // Key file: the worker encrypts its keys under scrypt(password) + AES-GCM (same format as agniya/client.py).
+  const [keyPassword, setKeyPassword] = useState('');
+  const [keyBusy, setKeyBusy] = useState(false);
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+
+  const downloadKeyFile = async () => {
+    if (!workerRef.current) return;
+    setKeyBusy(true); setError(null);
+    try {
+      const { text, dataset } = await workerRef.current.save(keyPassword);
+      const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${dataset}.agniya-key`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setKeyPassword('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
+  const restoreFromKeyFile = async () => {
+    if (!restoreFile) return;
+    setKeyBusy(true); setError(null);
+    const worker = new CryptoWorker();
+    try {
+      const info = await worker.load(API_BASE_URL, await restoreFile.text(), keyPassword);
+      dropWorker();
+      workerRef.current = worker;
+      // "a|b" = copy of a in b order, "a#g" = a packed by group g (Python client): not fields of their own
+      const restored: Field[] = info.columns.filter(c => !/[|#^]/.test(c.name)).map(c => ({
+        name: c.name, type: c.scale === 1 ? 'int' : 'float', encryption: c.rangeFilter ? 'OPE+Paillier' : 'Paillier-2048' }));
+      // GROUP BY copies "a#g" count whole ciphertexts (padding included), not rows
+      const records = Math.max(0, ...info.columns.filter(c => !/#[^|]*$/.test(c.name)).map(c => c.count));
+      setUploadData({ filename: info.dataset, records, fields: restored.length, schema: restored });
+      setSchema(restored);
+      setEncryptionResult({ success: true, records_encrypted: records, message: 'Restored from key file' });
+      setQueries([]);
+      setSelectedField(restored[0]?.name ?? ''); setFilterBy(''); setGroupBy(''); setGroupBy2('');
+      setGroupable(groupsFromNames(info.columns.map(c => c.name)));
+      filteredCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#.*\|/.test(n) && !n.endsWith('^2')));
+      groupCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#[^|@^]*$/.test(n)));
+      byCopies.current = new Set(info.columns.map(c => c.name).filter(n => /^[^#^]*\|[^#^]*$/.test(n)));
+      squareCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.endsWith('^2')).map(n => n.slice(0, -2)));
+      sortedCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.includes('^sorted')));
+      setKeyPassword(''); setRestoreFile(null);
+      setActiveTab('query');
+    } catch (err) {
+      worker.terminate();
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setKeyBusy(false);
+    }
+  };
+
+  const switchMode = (browser: boolean) => {
+    setBrowserMode(browser);
+    setFile(null); setUploadData(null); setEncryptionResult(null); setSchema([]); setQueries([]);
+    setSelectedField(''); setRangeMin(''); setRangeMax(''); setFilterBy(''); setGroupBy(''); setGroupBy2(''); setGroupable({});
+    csvRef.current = null;
+    dropWorker();
+    setActiveTab('upload');
+  };
+
+  const decimalsOf = (name: string) => (columnValues(name).every(Number.isInteger) ? 0 : 4);  // as encryptLocally
+  const columnValues = (name: string): number[] => {
+    const { header, rows } = csvRef.current!;
+    const i = header.indexOf(name);
+    return rows.map(r => (r[i] ?? '').trim()).filter(v => v !== '').map(Number);
+  };
+
+  /** One entry per CSV row (null where empty), so two columns line up row by row. */
+  const rowValues = (name: string): Array<number | null> => {
+    const { header, rows } = csvRef.current!;
+    const i = header.indexOf(name);
+    return rows.map(r => ((r[i] ?? '').trim() === '' ? null : Number(r[i])));
+  };
+
+  /** Raw CSV labels, one per row (null where empty), for GROUP BY. */
+  /** One label per row; for "a,b" (GROUP BY several columns) "x, y", or null when a part is missing. */
+  const rowLabels = (name: string): Array<string | null> => {
+    const { header, rows } = csvRef.current!;
+    const idx = name.split(',').map(n => header.indexOf(n));
+    return rows.map(r => {
+      const parts = idx.map(i => (r[i] ?? '').trim());
+      return parts.every(Boolean) ? parts.join(', ') : null;
+    });
+  };
+
+  const parseLocally = async (f: File): Promise<UploadedData> => {
+    const csv = parseCsv(await f.text());
+    csvRef.current = csv;
+    const schema: Field[] = csv.header.map(name => {
+      const vals = columnValues(name);
+      const numeric = vals.length > 0 && vals.every(Number.isFinite);
+      const integer = numeric && vals.every(Number.isInteger);
+      const id = ['id', 'user_id', 'customer_id'].includes(name.toLowerCase());
+      return { name, type: integer ? 'int' : numeric ? 'float' : 'str',
+               encryption: id ? 'Plaintext' : numeric ? 'Paillier-2048' : 'AES-256' };
+    });
+    const sample_data = csv.rows.slice(0, 3).map(r => Object.fromEntries(csv.header.map((h, i) => [h, r[i] ?? ''])));
+    return { filename: f.name, records: csv.rows.length, fields: csv.header.length, schema, sample_data };
+  };
+
+  const encryptLocally = async (): Promise<EncryptionResult> => {
+    const t0 = performance.now();
+    const fields = schema.filter(f => PAILLIER.includes(f.encryption));
+    if (!fields.length) throw new Error('Choose Paillier-2048 or OPE+Paillier for at least one numeric field.');
+    dropWorker();  // re-encrypting starts a fresh key pair
+    const worker = new CryptoWorker();
+    workerRef.current = worker;
+    filteredCopies.current = new Set();
+    groupCopies.current = new Set();
+    byCopies.current = new Set();
+    squareCopies.current = new Set();
+    sortedCopies.current = new Set();
+    await worker.init(API_BASE_URL, `${uploadData!.filename}-${crypto.randomUUID().slice(0, 8)}`);
+    let ciphertexts = 0;
+    const decimals: Record<string, number> = {};
+    for (const f of fields) {
+      const vals = columnValues(f.name);
+      if (!vals.every(Number.isFinite)) throw new Error(`${f.name} is not numeric`);
+      decimals[f.name] = vals.every(Number.isInteger) ? 0 : 4;
+      ciphertexts += (await worker.upload(f.name, vals, decimals[f.name], f.encryption === 'OPE+Paillier')).ciphertexts;
+    }
+    // Copies for "WHERE other column in range" and GROUP BY (columns with 2-64 distinct values) are built
+    // the first time a query needs them: building every pair up front made encryption slow on wide tables.
+    const groupCols = csvRef.current!.header.filter(g => {
+      const n = new Set(rowLabels(g).filter(v => v !== null)).size;
+      return n >= 2 && n <= GROUP_MAX_VALUES;
+    });
+    setGroupable(Object.fromEntries(fields.map(a => [a.name, groupCols.filter(g => g !== a.name)])));
+    const secs = (performance.now() - t0) / 1000;
+    const records = csvRef.current!.rows.length;
+    return { success: true, records_encrypted: records, time_seconds: secs, throughput: records / secs, ciphertexts };
+  };
+
+  /** GROUP BY several columns: at most GROUP_MAX_VALUES label combinations, as on the server. */
+  const checkGroups = () => {
+    const n = new Set(rowLabels(activeGroupBy).filter(v => v !== null)).size;
+    if (n > GROUP_MAX_VALUES) throw new Error(`GROUP BY ${activeGroupBy.replace(',', ', ')} has ${n} groups; up to ${GROUP_MAX_VALUES} are supported`);
+  };
+
+  const queryGroupsLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
+    const worker = workerRef.current!, fc = filterBy || selectedField;
+    const filtered = minVal !== undefined || maxVal !== undefined;
+    const spread = SPREAD.includes(selectedOperation);
+    const copy = `${selectedField}#${activeGroupBy}` + (filtered ? `|${fc}` : '');
+    if (filtered ? !filteredCopies.current.has(copy) || (spread && !squareCopies.current.has(copy))
+                 : !groupCopies.current.has(copy) || (spread && !squareCopies.current.has(copy))) {
+      // A copy packed in fc order (and/or with squares), built on first use: one per field x group x filter up front would be too many.
+      if (!csvRef.current) throw new Error(`${filtered ? `GROUP BY ${activeGroupBy} with a range on ${fc}` : selectedOperation} needs the CSV: upload it and encrypt again`);
+      checkGroups();
+      await worker.uploadGrouped(selectedField, rowValues(selectedField), activeGroupBy, rowLabels(activeGroupBy), decimalsOf(selectedField),
+                                 filtered ? fc : undefined, filtered ? rowValues(fc) : undefined, filtered ? decimalsOf(fc) : 0, spread);
+      if (filtered) filteredCopies.current.add(copy); else groupCopies.current.add(copy);
+      if (spread) squareCopies.current.add(copy);
+    }
+    const t0 = performance.now();
+    const a = await worker.queryGroups(selectedField, activeGroupBy, minVal, maxVal, filtered ? fc : undefined);
+    const pick = (g: Spread & { sum: number; count: number; avg: number }) =>
+      ({ SUM: g.sum, AVG: g.avg, COUNT: g.count, VARIANCE: g.variance ?? null, STDDEV: g.std ?? null })[selectedOperation as Aggregate | 'VARIANCE' | 'STDDEV'];
+    const sum = a.groups.reduce((s, g) => s + g.sum, 0), count = a.groups.reduce((s, g) => s + g.count, 0);
+    return {
+      operation: selectedOperation, field: selectedField, column: selectedField, group_by: activeGroupBy,
+      groups: a.groups.map(g => ({ ...g, result: pick(g) })),
+      result: spread ? null : pick({ sum, count, avg: count ? sum / count : 0 }),  // per group only
+      time_ms: performance.now() - t0, records_processed: count, ciphertexts_aggregated: a.ciphertextsUsed,
+      ...(filtered && { filter_applied: true, filter_column: fc, range: { min: minVal ?? null, max: maxVal ?? null },
+                        records_before_filter: a.total, filter_selectivity: a.total ? count / a.total : 0 }),
+      security_note: (filtered
+        ? `The server compared OPE tags of ${fc} (it learns their order) and multiplied ciphertexts; this browser decrypted the product once plus the <=2 edge ciphertexts`
+        : 'One product of the ciphertexts, one decryption in this browser')
+        + (a.pages > 1 ? ` for each of ${a.pages} pages of groups (they do not share one plaintext)` : '')
+        + (filtered ? '. ' : ': every group sum and count comes out of its own slots. ') + 'The server never saw the labels.',
+      encryption_proof: {
+        ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits, modulus_n_bit_length: 2048,
+        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`
+          + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
+        computation_type: 'Paillier homomorphic addition',
+      },
+    };
+  };
+
+  const queryOrderLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
+    const t0 = performance.now();
+    const a = await workerRef.current!.quantiles(selectedField, [ORDER_STATS[selectedOperation]!], minVal, maxVal);
+    const filtered = minVal !== undefined || maxVal !== undefined;
+    return {
+      operation: selectedOperation, field: selectedField, column: selectedField, filter_column: selectedField,
+      result: a.values[0], time_ms: performance.now() - t0, records_processed: a.count, ciphertexts_aggregated: a.ciphertextsUsed,
+      filter_applied: filtered, range: { min: minVal ?? null, max: maxVal ?? null },
+      records_before_filter: a.total, filter_selectivity: a.total ? a.count / a.total : 0,
+      security_note: `${selectedField} is packed in sorted order, so the server sent the ciphertext holding that row`
+        + ' (two for an interpolated median) and this browser decrypted it, which also shows the other values in it. OPE tags reveal the order of values.',
+      encryption_proof: {
+        ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits, modulus_n_bit_length: 2048,
+        verification: `Server picked ${a.ciphertextsUsed} ciphertext(s) by sorted position in ${a.serverMs} ms without any key; decrypted in this browser`
+          + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
+        computation_type: 'Order statistic on a sorted packed column',
+      },
+    };
+  };
+
+  const queryOrderGroupsLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
+    const worker = workerRef.current!, fc = filterBy || selectedField;
+    const filtered = minVal !== undefined || maxVal !== undefined;
+    const copy = `${selectedField}#${activeGroupBy}^sorted` + (filtered ? `|${fc}` : '');
+    if (!sortedCopies.current.has(copy)) {  // a copy sorted within each group (by fc with a range), built on first use
+      if (!csvRef.current) throw new Error(`${selectedOperation} GROUP BY ${activeGroupBy} needs the CSV: upload it and encrypt again`);
+      checkGroups();
+      await worker.uploadSortedGroups(selectedField, rowValues(selectedField), activeGroupBy, rowLabels(activeGroupBy), decimalsOf(selectedField),
+                                      filtered ? fc : undefined, filtered ? rowValues(fc) : undefined, filtered ? decimalsOf(fc) : 0);
+      sortedCopies.current.add(copy);
+    }
+    const t0 = performance.now();
+    const a = await worker.groupQuantiles(selectedField, activeGroupBy, [ORDER_STATS[selectedOperation]!], minVal, maxVal,
+                                          filtered ? fc : undefined);
+    return {
+      operation: selectedOperation, field: selectedField, column: selectedField, group_by: activeGroupBy,
+      groups: a.groups.map(g => ({ group: g.group, count: g.count, result: g.values[0] })), result: null,
+      time_ms: performance.now() - t0, records_processed: a.groups.reduce((n, g) => n + g.count, 0), ciphertexts_aggregated: a.ciphertextsUsed,
+      ...(filtered && { filter_applied: true, filter_column: fc, range: { min: minVal ?? null, max: maxVal ?? null },
+                        records_before_filter: a.total, filter_selectivity: a.total ? a.groups.reduce((n, g) => n + g.count, 0) / a.total : 0 }),
+      security_note: `A copy of ${selectedField} sorted within each group` + (filtered ? ` (by ${fc}, with OPE tags of group and ${fc})` : '') + `: the server sent the ciphertexts holding each group's answer`
+        + ' and this browser decrypted them. The labels and group sizes stay here, but the server sees which ciphertexts were read, so roughly where groups start and end.',
+      encryption_proof: {
+        ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits.slice(0, 3), modulus_n_bit_length: 2048,
+        verification: `Server sent ${a.ciphertextsUsed} stored ciphertext(s) without any key; decrypted in this browser`
+          + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
+        computation_type: 'Order statistic per group on a copy sorted within groups',
+      },
+    };
+  };
+
+  const queryLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
+    const fc = filterBy || selectedField, worker = workerRef.current!;
+    const cross = fc !== selectedField, spread = SPREAD.includes(selectedOperation);
+    const copy = cross ? `${selectedField}|${fc}` : selectedField;
+    if ((cross && !byCopies.current.has(copy)) || (spread && !squareCopies.current.has(copy))) {
+      // built on first use: a copy in fc's order and/or the "^2" copy (re-uploads the column with it)
+      if (!csvRef.current) throw new Error(`${cross ? `Filtering ${selectedField} by ${fc}` : selectedOperation} needs the CSV: upload it and encrypt again`);
+      if (cross) {
+        await worker.uploadBy(selectedField, rowValues(selectedField), fc, rowValues(fc), decimalsOf(selectedField), decimalsOf(fc), spread);
+        byCopies.current.add(copy);
+      } else {
+        await worker.upload(selectedField, columnValues(selectedField), decimalsOf(selectedField),
+                            schema.find(f => f.name === selectedField)?.encryption === 'OPE+Paillier', true);
+      }
+      if (spread) squareCopies.current.add(copy);
+    }
+    const t0 = performance.now();
+    const a = await worker.query(selectedField, minVal, maxVal, fc);
+    const time_ms = performance.now() - t0;
+    const total = a.total;
+    const filtered = minVal !== undefined || maxVal !== undefined;
+    return {
+      operation: selectedOperation, field: selectedField, column: selectedField, filter_column: fc,
+      result: { SUM: a.sum, AVG: a.avg, COUNT: a.count, VARIANCE: a.variance ?? null, STDDEV: a.std ?? null }[
+        selectedOperation as Aggregate | 'VARIANCE' | 'STDDEV'],
+      time_ms, records_processed: a.count, ciphertexts_aggregated: a.ciphertextsUsed,
+      filter_applied: filtered, range: { min: minVal ?? null, max: maxVal ?? null },
+      records_before_filter: total, filter_selectivity: total ? a.count / total : 0,
+      security_note: 'The server compared OPE tags (it learns their order) and multiplied ciphertexts; the edge ciphertexts were decrypted in this browser.',
+      encryption_proof: {
+        ciphertext_samples: [], ciphertext_bit_lengths: a.ciphertextBits.slice(0, 3), modulus_n_bit_length: 2048,
+        verification: `Server multiplied ${a.ciphertextsUsed} ciphertexts in ${a.serverMs} ms without any key; decrypted in this browser`
+          + (a.verified ? ', which also checked the integrity tags: this is the honest result over the uploaded data' : ''),
+        computation_type: 'Paillier homomorphic addition',
+      },
+    };
+  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -162,18 +461,26 @@ export default function Dashboard() {
     setError(null);
     
     try {
+      if (browserMode) {
+        const local = await parseLocally(fileToUpload);
+        setUploadData(local);
+        setSchema(local.schema);
+        setActiveTab('configure');
+        return;
+      }
       const response = await apiService.uploadFile(fileToUpload);
-      setUploadData(response as any);
       // Convert schema format to Field format
-      const convertedSchema = response.schema.map(s => ({
+      const convertedSchema: Field[] = response.schema.map(s => ({
         name: s.name,
-        type: s.type as any,
-        encryption: s.encryption as any
+        type: s.type,
+        encryption: s.encryption as Field['encryption']
       }));
-      setSchema(convertedSchema as any);
+      setUploadData({ filename: response.filename, records: response.records, fields: response.fields,
+                      schema: convertedSchema, sample_data: response.sample_data });
+      setSchema(convertedSchema);
       setActiveTab('configure');
-    } catch (err: any) {
-      setError(err.message || 'Upload failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setIsUploading(false);
     }
@@ -186,27 +493,42 @@ export default function Dashboard() {
     setError(null);
     
     try {
-      const response = await apiService.encryptDataset(
+      const response = browserMode ? await encryptLocally() : await apiService.encryptDataset(
         uploadData.filename,
         schema.map(f => ({ name: f.name, encryption: f.encryption }))
       );
       setEncryptionResult(response);
+      if (!browserMode && 'fields' in response && response.fields) {
+        setGroupable(Object.fromEntries(Object.entries(response.fields).map(([n, f]) => [n, f.group_by ?? []])));
+      }
       setActiveTab('query');
       
       // Set first numeric field for queries
-      const numericField = schema.find(f => {
-        const type = f.type.toLowerCase();
-        return type.includes('int') || type.includes('float');
-      });
+      const numericField = schema.find(f => PAILLIER.includes(f.encryption));
       if (numericField) {
         setSelectedField(numericField.name);
       }
-    } catch (err: any) {
-      setError(err.message || 'Encryption failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Encryption failed');
     } finally {
       setIsEncrypting(false);
     }
   };
+
+  // presets that fit the loaded columns; ones whose range needs an OPE+Paillier column say so
+  const encryptedAs = (n: string) => schema.find(f => f.name === n)?.encryption;
+  const presets = BANK_PRESETS.filter(p => [p.field, p.group, p.group2, p.filter].every(c => !c || schema.some(f => f.name === c))
+                                       && PAILLIER.includes(encryptedAs(p.field) ?? ''));
+  const presetBlocker = (p: Preset) => (p.filter && encryptedAs(p.filter) !== 'OPE+Paillier'
+    ? `Set ${p.filter} to OPE+Paillier (Configure) to filter on it` : null);
+  const runPreset = (p: Preset) => {
+    setSelectedOperation(p.op); setSelectedField(p.field); setGroupBy(p.group ?? ''); setGroupBy2(p.group2 ?? '');
+    setFilterBy(p.filter ?? ''); setRangeMin(p.min ?? ''); setRangeMax(p.max ?? '');
+    setPresetRun(n => n + 1);
+  };
+  useEffect(() => {
+    if (presetRun) void handleQuery();
+  }, [presetRun]);  // eslint-disable-line react-hooks/exhaustive-deps -- runs with the state the preset just set
 
   const handleQuery = async () => {
     if (!uploadData || !selectedField) return;
@@ -216,8 +538,8 @@ export default function Dashboard() {
     
     try {
       // Parse range values (convert to numbers or undefined)
-      const minVal = rangeMin.trim() !== '' ? parseInt(rangeMin) : undefined;
-      const maxVal = rangeMax.trim() !== '' ? parseInt(rangeMax) : undefined;
+      const minVal = rangeMin.trim() !== '' ? parseFloat(rangeMin) : undefined;
+      const maxVal = rangeMax.trim() !== '' ? parseFloat(rangeMax) : undefined;
       
       // Validate range if both are provided
       if (minVal !== undefined && maxVal !== undefined && minVal > maxVal) {
@@ -226,16 +548,29 @@ export default function Dashboard() {
         return;
       }
       
-      const response = await apiService.executeQuery(
+      const order = ORDER_STATS[selectedOperation] !== undefined;
+      if (order && !activeGroupBy && ((filterBy && filterBy !== selectedField)
+                                       || schema.find(f => f.name === selectedField)?.encryption !== 'OPE+Paillier')) {
+        setError(`${selectedOperation} needs an OPE+Paillier field filtered by itself, or a GROUP BY`);
+        setIsQuerying(false);
+        return;
+      }
+      const response = order && browserMode ? await (activeGroupBy ? queryOrderGroupsLocally(minVal, maxVal) : queryOrderLocally(minVal, maxVal))
+        : activeGroupBy
+        ? (browserMode ? await queryGroupsLocally(minVal, maxVal)
+                       : await apiService.executeQuery(selectedOperation, selectedField, uploadData.filename,
+                                                       minVal, maxVal, filterBy || undefined, activeGroupBy))
+        : browserMode ? await queryLocally(minVal, maxVal) : await apiService.executeQuery(
         selectedOperation,
         selectedField,
         uploadData.filename,
         minVal,
-        maxVal
+        maxVal,
+        filterBy || undefined
       );
-      setQueries([response as any, ...queries]);
-    } catch (err: any) {
-      setError(err.message || 'Query failed');
+      setQueries([response as QueryResult, ...queries]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Query failed');
     } finally {
       setIsQuerying(false);
     }
@@ -345,6 +680,50 @@ export default function Dashboard() {
 
             {/* UPLOAD TAB */}
             <TabsContent value="upload" className="space-y-6">
+              <Card className="p-4 glass-morphism">
+                <div className="flex flex-col md:flex-row md:items-center gap-3">
+                  <div className="flex gap-2">
+                    <Button size="sm" variant={browserMode ? 'default' : 'outline'} onClick={() => switchMode(true)}>
+                      <Shield className="w-4 h-4 mr-2" />
+                      Encrypt in this browser
+                    </Button>
+                    <Button size="sm" variant={browserMode ? 'outline' : 'default'} onClick={() => switchMode(false)}>
+                      <Database className="w-4 h-4 mr-2" />
+                      Server-side demo
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {browserMode
+                      ? 'The CSV is read and encrypted here. The server receives only ciphertexts and OPE tags; the private key stays in this tab unless you download a password-protected key file.'
+                      : 'The CSV is uploaded and the server generates and holds the private key: the server is the data owner.'}
+                  </p>
+                </div>
+              </Card>
+
+              {browserMode && (
+                <Card className="p-4 glass-morphism">
+                  <div className="flex flex-col md:flex-row md:items-end gap-3">
+                    <div className="flex-1">
+                      <Label htmlFor="restore-file">Restore from key file</Label>
+                      <Input id="restore-file" type="file" accept=".agniya-key,application/json"
+                             onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)} />
+                    </div>
+                    <div className="flex-1">
+                      <Label htmlFor="restore-password">Key file password</Label>
+                      <Input id="restore-password" type="password" value={keyPassword}
+                             onChange={(e) => setKeyPassword(e.target.value)} />
+                    </div>
+                    <Button onClick={restoreFromKeyFile} disabled={!restoreFile || !keyPassword || keyBusy}>
+                      <Lock className="w-4 h-4 mr-2" />
+                      {keyBusy ? 'Unlocking...' : 'Restore'}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Reopen data you encrypted earlier: the key file is decrypted in this browser; the ciphertexts are already on the server.
+                  </p>
+                </Card>
+              )}
+
               <Card
                 className={`p-12 border-2 border-dashed transition-all duration-300 glass-morphism ${
                   isDragging
@@ -432,7 +811,7 @@ export default function Dashboard() {
                             <tbody>
                               {uploadData.sample_data.slice(0, 3).map((row, i) => (
                                 <tr key={i} className="border-b">
-                                  {Object.values(row).map((val: any, j) => (
+                                  {Object.values(row).map((val, j) => (
                                     <td key={j} className="py-2 px-3 font-mono text-xs">{String(val)}</td>
                                   ))}
                                 </tr>
@@ -537,7 +916,7 @@ export default function Dashboard() {
                   {isEncrypting ? (
                     <>
                       <Zap className="w-5 h-5 mr-2 animate-pulse" />
-                      Encrypting with Paillier-2048...
+                      {browserMode ? 'Generating key and encrypting in this browser...' : 'Encrypting with Paillier-2048...'}
                     </>
                   ) : (
                     <>
@@ -567,35 +946,44 @@ export default function Dashboard() {
                     <div className="grid grid-cols-4 gap-4">
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
                         <div className="text-3xl font-bold text-primary">
-                          {encryptionResult.stats?.records || encryptionResult.records_encrypted || 0}
+                          {encryptionResult.records_encrypted || 0}
                         </div>
                         <div className="text-sm text-muted-foreground">Records Encrypted</div>
                       </div>
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
                         <div className="text-3xl font-bold text-primary">
-                          {encryptionResult.stats 
-                            ? (encryptionResult.stats.total_time_ms / 1000).toFixed(2)
-                            : encryptionResult.time_seconds?.toFixed(2) || 'N/A'}s
+                          {encryptionResult.time_seconds?.toFixed(2) ?? 'N/A'}s
                         </div>
                         <div className="text-sm text-muted-foreground">Time Taken</div>
                       </div>
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
                         <div className="text-3xl font-bold text-primary">
-                          {encryptionResult.stats
-                            ? ((encryptionResult.stats.records || 0) / (encryptionResult.stats.total_time_ms / 1000)).toFixed(0)
-                            : encryptionResult.throughput?.toFixed(0) || 'N/A'}/s
+                          {encryptionResult.throughput?.toFixed(0) ?? 'N/A'}/s
                         </div>
                         <div className="text-sm text-muted-foreground">Throughput</div>
                       </div>
                       <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
                         <div className="text-3xl font-bold text-green-600">
-                          {encryptionResult.stats
-                            ? ((1061 * (encryptionResult.stats.total_time_ms / 1000) / 3).toFixed(1))
-                            : encryptionResult.speedup?.toFixed(1) || 'N/A'}x
+                          {encryptionResult.ciphertexts ?? 'N/A'}
                         </div>
-                        <div className="text-sm text-muted-foreground">Speedup</div>
+                        <div className="text-sm text-muted-foreground">Ciphertexts stored</div>
                       </div>
                     </div>
+
+                    {browserMode && (
+                      <div className="mt-6 p-4 rounded-lg bg-white/50 dark:bg-black/20">
+                        <Label htmlFor="key-password">
+                          Save the key: without it the data cannot be decrypted after this tab closes
+                        </Label>
+                        <div className="flex gap-2 mt-2">
+                          <Input id="key-password" type="password" placeholder="Password for the key file"
+                                 value={keyPassword} onChange={(e) => setKeyPassword(e.target.value)} />
+                          <Button onClick={downloadKeyFile} disabled={!keyPassword || keyBusy} variant="outline">
+                            {keyBusy ? 'Encrypting key...' : 'Download key file'}
+                          </Button>
+                        </div>
+                      </div>
+                    )}
 
                     <Button
                       onClick={() => setActiveTab('query')}
@@ -613,6 +1001,30 @@ export default function Dashboard() {
 
             {/* QUERY TAB */}
             <TabsContent value="query" className="space-y-6">
+              {presets.length > 0 && (
+                <Card className="p-6 glass-morphism">
+                  <h3 className="text-xl font-semibold mb-1 flex items-center gap-2">
+                    <Shield className="w-5 h-5 text-primary" />
+                    Banking use cases
+                  </h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    One click runs the query on the encrypted data: the server computes without any key, this browser decrypts and checks the answer.
+                  </p>
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {presets.map(p => {
+                      const blocker = presetBlocker(p);
+                      return (
+                        <button key={p.title} type="button" disabled={!!blocker || isQuerying} onClick={() => runPreset(p)} title={blocker ?? undefined}
+                                className="text-left rounded-lg border border-primary/20 p-3 hover:bg-primary/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                          <div className="font-medium">{p.title}</div>
+                          <div className="font-mono text-xs text-muted-foreground mt-1">{presetSql(p)}</div>
+                          {blocker && <div className="text-xs text-amber-600 mt-1">{blocker}</div>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Card>
+              )}
               <div className="grid md:grid-cols-2 gap-6">
                 {/* Query Builder */}
                 <Card className="p-6 glass-morphism">
@@ -641,6 +1053,21 @@ export default function Dashboard() {
                           <DropdownMenuItem onClick={() => setSelectedOperation('COUNT')}>
                             COUNT - Number of records
                           </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSelectedOperation('MIN')}>
+                            MIN - Smallest value (OPE+Paillier, or per group)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSelectedOperation('MAX')}>
+                            MAX - Largest value (OPE+Paillier, or per group)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSelectedOperation('MEDIAN')}>
+                            MEDIAN - Middle value (OPE+Paillier, or per group)
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSelectedOperation('VARIANCE')}>
+                            VARIANCE - Sample variance
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={() => setSelectedOperation('STDDEV')}>
+                            STDDEV - Sample standard deviation
+                          </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </div>
@@ -655,10 +1082,7 @@ export default function Dashboard() {
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent className="w-full">
-                          {schema.filter(f => {
-                            const type = f.type.toLowerCase();
-                            return type.includes('int') || type.includes('float') || type.includes('int64') || type.includes('float64');
-                          }).map(field => (
+                          {schema.filter(f => PAILLIER.includes(f.encryption)).map(field => (
                             <DropdownMenuItem key={field.name} onClick={() => setSelectedField(field.name)}>
                               {field.name} ({field.encryption})
                             </DropdownMenuItem>
@@ -667,9 +1091,73 @@ export default function Dashboard() {
                       </DropdownMenu>
                     </div>
 
+                    {groupOptions.length > 0 && (
+                      <div>
+                        <Label>Group by (one decryption per plaintext of groups)</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between">
+                              {groupOptions.includes(groupBy) ? groupBy.replace(',', ', ') : 'No grouping'}
+                              <Layers className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-full">
+                            <DropdownMenuItem onClick={() => setGroupBy('')}>No grouping</DropdownMenuItem>
+                            {groupOptions.map(g => (
+                              <DropdownMenuItem key={g} onClick={() => setGroupBy(g)}>{g.replace(',', ', ')}</DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+
+                    {activeGroupBy && !groupBy.includes(',') && thenOptions.length > 0 && (
+                      <div>
+                        <Label>Then by (optional: GROUP BY both)</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between">
+                              {thenOptions.includes(groupBy2) ? groupBy2 : 'Only ' + groupBy}
+                              <Layers className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-full">
+                            <DropdownMenuItem onClick={() => setGroupBy2('')}>Only {groupBy}</DropdownMenuItem>
+                            {thenOptions.map(g => (
+                              <DropdownMenuItem key={g} onClick={() => setGroupBy2(g)}>{g}</DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+
+                    {schema.some(f => f.encryption === 'OPE+Paillier') && (
+                      <div>
+                        <Label>Filter by (range on an OPE+Paillier field)</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between">
+                              {filterBy && filterBy !== selectedField ? filterBy : `${selectedField || 'the field'} itself`}
+                              <Filter className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-full">
+                            <DropdownMenuItem onClick={() => setFilterBy('')}>
+                              {selectedField || 'The field'} itself
+                            </DropdownMenuItem>
+                            {schema.filter(f => f.encryption === 'OPE+Paillier' && f.name !== selectedField).map(f => (
+                              <DropdownMenuItem key={f.name} onClick={() => setFilterBy(f.name)}>
+                                {f.name}
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <Label>Min Value (optional)</Label>
+                        <Label>Min {filterBy || selectedField || 'value'} (optional)</Label>
                         <Input
                           type="number"
                           placeholder="25"
@@ -678,7 +1166,7 @@ export default function Dashboard() {
                         />
                       </div>
                       <div>
-                        <Label>Max Value (optional)</Label>
+                        <Label>Max {filterBy || selectedField || 'value'} (optional)</Label>
                         <Input
                           type="number"
                           placeholder="50"
@@ -687,6 +1175,9 @@ export default function Dashboard() {
                         />
                       </div>
                     </div>
+                    {activeGroupBy && (
+                      <p className="text-xs text-muted-foreground">With a range, the first query per filter column encrypts a copy of {selectedField} packed in that column&apos;s order.</p>
+                    )}
 
                     <Button
                       onClick={handleQuery}
@@ -742,15 +1233,31 @@ export default function Dashboard() {
                             <span className="text-muted-foreground">{query.operation || query.column}(</span>
                             <span className="font-semibold">{query.field || query.column}</span>
                             <span className="text-muted-foreground">)</span>
+                            {query.group_by && <span className="text-muted-foreground"> GROUP BY <span className="font-semibold text-foreground">{query.group_by.replace(',', ', ')}</span></span>}
                           </div>
+                          {query.groups ? (<>
+                            <table className="w-full text-sm my-2">
+                              <tbody>
+                                {[...query.groups].sort((x, y) => String(x.group).localeCompare(String(y.group), undefined, { numeric: true })).map(g => (
+                                  <tr key={String(g.group)} className="border-b border-primary/10 last:border-0">
+                                    <td className="py-1 font-mono">{String(g.group)}</td>
+                                    <td className="py-1 text-right font-bold text-primary">{g.result == null ? '—' : g.result.toLocaleString()}</td>
+                                    <td className="py-1 text-right text-xs text-muted-foreground">{g.count} rows</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {query.security_note && <div className="text-xs text-muted-foreground mb-1">🔐 {query.security_note}</div>}
+                          </>) : (
                           <div className="text-2xl font-bold text-primary">
-                            {(query.result || 0).toLocaleString()}
+                            {query.result == null ? '—' : query.result.toLocaleString()}
                           </div>
+                          )}
                           <div className="text-xs text-muted-foreground mt-1">
                             {query.records_processed || 0} records processed (encrypted)
                             {query.filter_applied && (
                               <div className="text-blue-600 dark:text-blue-400 mt-1">
-                                🔍 Range filter: [{query.range?.min} - {query.range?.max}] 
+                                🔍 WHERE {query.filter_column || query.field || query.column} in [{query.range?.min} - {query.range?.max}]
                                 ({Math.round((query.filter_selectivity || 0) * 100)}% of data)
                               </div>
                             )}
@@ -819,9 +1326,9 @@ export default function Dashboard() {
                             {query.operation || query.column}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-mono">{query.field || query.column}</TableCell>
+                        <TableCell className="font-mono">{query.field || query.column}{query.group_by && ` by ${query.group_by}`}</TableCell>
                         <TableCell className="text-right font-bold text-primary text-lg">
-                          {(query.result || 0).toLocaleString()}
+                          {query.result == null ? '—' : query.result.toLocaleString()}
                         </TableCell>
                         <TableCell className="text-right font-mono">{(query.time_ms || query.query_time_ms || 0).toFixed(2)}</TableCell>
                         <TableCell className="text-right">{query.records_processed || 0}</TableCell>
