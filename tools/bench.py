@@ -176,6 +176,11 @@ def main():
             assert r["records_processed"] == len(sel) and abs(r["result"] - sel.sum()) < len(sel) * 0.5e-4, r
             out.update(range_query={"column": rng_col, "min": lo, "max": hi, "rows_selected": len(sel),
                                     "ms": ms(stats(lambda: cl.post("/api/query", json=rbody), max(5, reps // 3)))})
+            mbody = {**rbody, "type": "MEDIAN"}  # sorted column: one or two ciphertexts
+            r = cl.post("/api/query", json=mbody).get_json()
+            assert abs(r["result"] - sel.median()) < 1e-3, r
+            out.update(median_range_query={"column": rng_col, "min": lo, "max": hi, "rows_selected": len(sel),
+                                           "ms": ms(stats(lambda: cl.post("/api/query", json=mbody), max(5, reps // 3)))})
         if schema_name == "packed":  # SUM(charges) GROUP BY region: one decryption for all groups
             gbody = {**body, "group_by": "region"}
             want = df.groupby("region")["charges"].sum()
@@ -190,6 +195,22 @@ def main():
             assert all(abs(got[k] - v) < len(df) * 0.5e-4 for k, v in want.items()) and len(got) == len(want), got
             out.update(group_by_age_query={"sum": "charges", "group_by": "age", "groups": len(want), "pages": r["pages"],
                                            "ms": ms(stats(lambda: cl.post("/api/query", json=abody), max(5, reps // 3)))})
+            vbody = {**body, "type": "VARIANCE"}  # the first query builds the squared copy
+            t = time.perf_counter()
+            r = cl.post("/api/query", json=vbody).get_json()
+            t_var = time.perf_counter() - t
+            assert abs(r["result"] / df["charges"].var() - 1) < 1e-6, r
+            out.update(variance_query={"of": "charges", "first_query_s": round(t_var, 3),
+                                       "ms": ms(stats(lambda: cl.post("/api/query", json=vbody), max(5, reps // 3)))})
+            mbody = {**body, "type": "MEDIAN", "group_by": "region"}  # the first query builds the sorted copy
+            t = time.perf_counter()
+            got = {g["group"]: g["result"] for g in cl.post("/api/query", json=mbody).get_json()["groups"]}
+            t_first = time.perf_counter() - t
+            mwant = df.groupby("region")["charges"].median()
+            assert got.keys() == set(mwant.index) and all(abs(got[k] - v) < 1e-3 for k, v in mwant.items()), got
+            out.update(median_group_by_query={"median": "charges", "group_by": "region", "groups": len(mwant),
+                                              "first_query_s": round(t_first, 3),
+                                              "ms": ms(stats(lambda: cl.post("/api/query", json=mbody), max(5, reps // 3)))})
         if schema_name == "packed+ope_age":  # SUM(charges) WHERE 30 <= age <= 45
             xbody = {**body, "filter_column": "age", "rangeMin": 30, "rangeMax": 45}
             xsel = df["charges"][(df["age"] >= 30) & (df["age"] <= 45)]
@@ -209,6 +230,18 @@ def main():
                                                 "group_by": "region", "groups": len(fwant), "rows_selected": len(xsel),
                                                 "first_query_s": round(t_first, 3),
                                                 "ms": ms(stats(lambda: cl.post("/api/query", json=fbody), max(5, reps // 3)))})
+            # MEDIAN(charges) WHERE 30 <= age <= 45 GROUP BY region: every row in range is read and sorted
+            qbody = {**fbody, "type": "MEDIAN"}
+            t = time.perf_counter()
+            got = {g["group"]: g["result"] for g in cl.post("/api/query", json=qbody).get_json()["groups"]}
+            t_first = time.perf_counter() - t
+            qwant = df[(df["age"] >= 30) & (df["age"] <= 45)].groupby("region")["charges"].median()
+            assert got.keys() == set(qwant.index) and all(abs(got[k] - v) < 1e-3 for k, v in qwant.items()), got
+            out.update(filtered_median_group_by_query={"median": "charges", "where": "age", "min": 30, "max": 45,
+                                                       "group_by": "region", "rows_selected": len(xsel),
+                                                       "first_query_s": round(t_first, 3),
+                                                       "ms": ms(stats(lambda: cl.post("/api/query", json=qbody),
+                                                                      max(5, reps // 3)))})
         section(f"api_insurance_{schema_name}", out)
 
     # Client-held keys (/api/v2): the client encrypts, tags and decrypts; the server sees only
@@ -254,7 +287,39 @@ def main():
     fwant = df[(df["age"] >= 30) & (df["age"] <= 45)].groupby("region")["charges"].sum()
     fq = oc.query_groups("charges", "region", 30, 45, where="age")
     assert all(abs(fq[k]["sum"] - v) < len(df) * 0.5e-4 for k, v in fwant.items()) and len(fq) == len(fwant), fq
+    t = time.perf_counter()
+    oc.upload("charges_v", df["charges"], decimals=4, range_filter=True, squares=True)
+    t_sq = time.perf_counter() - t
+    vq = oc.query("charges_v", 5000, 20000.5)
+    assert vq["count"] == len(sel) and abs(vq["var"] / sel.var() - 1) < 1e-6, vq
+    assert abs(oc.query("charges_v")["std"] / df["charges"].std() - 1) < 1e-6
+    mq = oc.quantiles("charges", [0.5], 5000, 20000.5)
+    assert abs(mq[0] - sel.median()) < 1e-3, mq
+    t = time.perf_counter()
+    oc.upload_sorted_groups("charges", df["charges"], by="region", by_values=df["region"], decimals=4)
+    t_sorted = time.perf_counter() - t
+    mwant = df.groupby("region")["charges"].median()
+    mg = oc.quantiles("charges", [0.5], by="region")
+    assert mg.keys() == set(mwant.index) and all(abs(mg[k][0] - v) < 1e-3 for k, v in mwant.items()), mg
+    t = time.perf_counter()
+    oc.upload_sorted_groups("charges", df["charges"], by="region", by_values=df["region"], decimals=4,
+                            where="age", where_values=df["age"])
+    t_fsorted = time.perf_counter() - t
+    qwant = df[(df["age"] >= 30) & (df["age"] <= 45)].groupby("region")["charges"].median()
+    fm = oc.quantiles("charges", [0.5], 30, 45, by="region", where="age")
+    assert fm.keys() == set(qwant.index) and all(abs(fm[k][0] - v) < 1e-3 for k, v in qwant.items()), fm
     section("split_insurance_charges_ope", {
+        "median_range_query": {"min": 5000, "max": 20000.5, "rows_selected": len(sel),
+                               "ms": ms(stats(lambda: oc.quantiles("charges", [0.5], 5000, 20000.5), max(5, reps // 3)))},
+        "variance_query": {"of": "charges", "upload_with_squares_s": round(t_sq, 3),
+                           "ms": ms(stats(lambda: oc.query("charges_v"), max(5, reps // 3)))},
+        "median_group_by_query": {"median": "charges", "group_by": "region", "groups": len(mwant),
+                                  "upload_sorted_groups_s": round(t_sorted, 3),
+                                  "ms": ms(stats(lambda: oc.quantiles("charges", [0.5], by="region"), max(5, reps // 3)))},
+        "filtered_median_group_by_query": {"median": "charges", "where": "age", "min": 30, "max": 45, "group_by": "region",
+                                           "upload_sorted_groups_s": round(t_fsorted, 3),
+                                           "ms": ms(stats(lambda: oc.quantiles("charges", [0.5], 30, 45, by="region",
+                                                                               where="age"), max(5, reps // 3)))},
         "group_by_query": {"sum": "charges", "group_by": "region", "groups": len(want), "upload_grouped_s": round(t_grp, 3),
                            "ms": ms(stats(lambda: oc.query_groups("charges", "region"), max(5, reps // 3)))},
         "group_by_age_query": {"sum": "charges", "group_by": "age", "groups": len(awant), "pages": apages,
@@ -365,6 +430,30 @@ def update_readme(results_path=None):
                      "server-side / client-held keys",
                      f"{fa['ms']['median']:.1f} ms / {fs['ms']['median']:.1f} ms (building the copy: server's first "
                      f"query {fa['first_query_s']:.2f} s, client `upload_grouped` {fs['upload_grouped_s']:.2f} s)"))
+    ma = (ope or {}).get("median_range_query")
+    ms_ = (sp or {}).get("median_range_query")
+    if ma and ms_:
+        rows.append((f"MEDIAN(charges) WHERE 5000 ≤ charges ≤ 20000.5 ({ma['rows_selected']} rows): server-side / "
+                     "client-held keys", f"{ma['ms']['median']:.1f} ms / {ms_['ms']['median']:.1f} ms"))
+    va = (api or {}).get("variance_query")
+    vs = (sp or {}).get("variance_query")
+    if va and vs:
+        rows.append((f"VARIANCE(charges), {api['rows']:,} rows (STDDEV alike): server-side / client-held keys",
+                     f"{va['ms']['median']:.1f} ms / {vs['ms']['median']:.1f} ms (building the squared copy: server's "
+                     f"first query {va['first_query_s']:.2f} s, client upload with `range_filter=True, squares=True` {vs['upload_with_squares_s']:.2f} s)"))
+    mga = (api or {}).get("median_group_by_query")
+    mgs = (sp or {}).get("median_group_by_query")
+    if mga and mgs:
+        rows.append((f"MEDIAN(charges) GROUP BY region ({mga['groups']} groups): server-side / client-held keys",
+                     f"{mga['ms']['median']:.1f} ms / {mgs['ms']['median']:.1f} ms (building the sorted copy: server's "
+                     f"first query {mga['first_query_s']:.2f} s, client `upload_sorted_groups` {mgs['upload_sorted_groups_s']:.2f} s)"))
+    fma = (r.get("api_insurance_packed+ope_age") or {}).get("filtered_median_group_by_query")
+    fms = (sp or {}).get("filtered_median_group_by_query")
+    if fma and fms:
+        rows.append((f"MEDIAN(charges) WHERE 30 ≤ age ≤ 45 GROUP BY region ({fma['rows_selected']} rows, all read): "
+                     "server-side / client-held keys",
+                     f"{fma['ms']['median']:.1f} ms / {fms['ms']['median']:.1f} ms (building the copy: server's first "
+                     f"query {fma['first_query_s']:.2f} s, client `upload_sorted_groups` {fms['upload_sorted_groups_s']:.2f} s)"))
     if "baseline_seal_bfv_4096_values" in r:
         rows.append(("Reference: SEAL BFV (TenSEAL), 4,096 values", f"{r['baseline_seal_bfv_4096_values']['us_per_value']} µs/value"))
     if "baseline_phe_encrypt_one_value_ms" in r:
