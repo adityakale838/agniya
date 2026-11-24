@@ -79,7 +79,9 @@ Where this fits in a bank:
 | Storage | 7–11 bytes per value (values packed into ciphertexts) |
 | GROUP BY region, 1,338 rows (4 groups, one decryption) | 3.5 ms (server-side) / 3.9 ms (keys on the client) |
 | MEDIAN with a range, 706 rows | 6.1 ms / 5.9 ms |
-| Reference: Microsoft SEAL (lattice FHE), same harness | 1.1 µs per value: about 6x faster than AGNIYA to encrypt |
+| Reference: Microsoft SEAL (lattice FHE), same laptop | encrypts at 1.1 µs per value, about 6x faster than AGNIYA |
+| SUM GROUP BY region, 1,338 rows: AGNIYA vs SEAL | 4.0 ms vs 478 ms: AGNIYA about 120x faster to query |
+| Storage: AGNIYA vs SEAL | 7–11 vs at least 53 bytes per value (one 432 KB SEAL ciphertext holds up to 8,192 values) |
 | Independent check: SEAL computes the same SUM and GROUP BY | identical totals (`tests/test_integration/test_seal_crosscheck.py`, and checked in every benchmark run) |
 
 AGNIYA is not the fastest homomorphic scheme at encrypting; it is exact, simple to operate, small per

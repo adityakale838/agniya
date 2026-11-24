@@ -353,7 +353,9 @@ def main():
         v = [random.randint(1, 200) for _ in range(4096)]
         assert ts.bfv_vector(ctx, v).decrypt() == v
         s = stats(lambda: ts.bfv_vector(ctx, v), max(5, reps // 3))
-        section("baseline_seal_bfv_4096_values", {"encrypt_ms": ms(s), "us_per_value": round(s["median"] / 4096 * 1e6, 3)})
+        size = len(ts.bfv_vector(ctx, v).serialize())  # the same for 1 to 8,192 values at N = 8192
+        section("baseline_seal_bfv_4096_values", {"encrypt_ms": ms(s), "us_per_value": round(s["median"] / 4096 * 1e6, 3),
+                                                  "ciphertext_bytes": size, "bytes_per_value_full": round(size / 8192, 1)})
         # Independent check: SEAL BFV computes the same SUM(charges) GROUP BY region as AGNIYA's client did above.
         # 41-bit prime plaintext modulus (= 1 mod 16384, for batching) so the fixed-point totals fit below t / 2.
         cctx = ts.context(ts.SCHEME_TYPE.BFV, poly_modulus_degree=8192, plain_modulus=1099511922689)
@@ -477,7 +479,10 @@ def update_readme(results_path=None):
                      f"identical totals in all {cx['groups']} groups; SEAL {cx['seal_ms']['median']:.0f} ms (masks in plaintext) "
                      f"vs AGNIYA {gs['ms']['median']:.1f} ms"))
     if "baseline_seal_bfv_4096_values" in r:
-        rows.append(("Reference: SEAL BFV (TenSEAL), 4,096 values", f"{r['baseline_seal_bfv_4096_values']['us_per_value']} µs/value"))
+        sb = r["baseline_seal_bfv_4096_values"]
+        rows.append(("Reference: SEAL BFV (TenSEAL), 4,096 values", f"{sb['us_per_value']} µs/value"
+                     + (f"; one ciphertext is {sb['ciphertext_bytes'] / 1024:.0f} KB, so at least {sb['bytes_per_value_full']} bytes/value"
+                        if "ciphertext_bytes" in sb else "")))
     if "baseline_phe_encrypt_one_value_ms" in r:
         rows.append(("Reference: python-paillier (phe), one value", f"{r['baseline_phe_encrypt_one_value_ms']['median']:.1f} ms"))
     table = "\n".join(["| Operation | Median |", "|---|---|"] + [f"| {k} | {v} |" for k, v in rows])
