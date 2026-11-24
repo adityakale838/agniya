@@ -382,8 +382,9 @@ def update_readme(results_path=None):
     r = R or json.load(open(results_path or os.path.join(ROOT, "tools", "bench_results.json")))
     meta = r["meta"]
     best = "djn" if "rn_djn" in r else "standard"
-    big = max((k for k in r if k.startswith(f"column_{best}_")), key=lambda k: r[k]["rows"])
-    col = r[big]
+    cols = sorted((r[k] for k in r if k.startswith(f"column_{best}_")), key=lambda c: c["rows"])
+    col = cols[-1]
+    shown = [c for c in cols if c["rows"] == 1_000_000 and c is not col] + [col]  # 1M as well when --scale ran
     rn = r[f"rn_{best}"]
     std = r["rn_standard"]
     rows = [
@@ -396,13 +397,16 @@ def update_readme(results_path=None):
     rows += [
         ("Encrypt with a precomputed rⁿ (online)", f"{rn['online_us_per_encryption']['median']:.1f} µs"),
         ("Homomorphic additions", f"{r['homomorphic_add']['adds_per_sec']:,} ciphertexts/s"),
-        (f"Packed column, {col['rows']:,} values: encrypt (all cores)",
-         f"{col['encrypt_s_all_cores']:.2f} s = {col['encrypt_us_per_value']:.1f} µs/value "
-         f"({col['values_per_ciphertext']} values/ciphertext)"),
-        (f"Packed column, {col['rows']:,} values: SUM",
-         f"{col['sum_ms']['median']:.1f} ms = {col['sum_values_per_sec']:,} values/s (exact)"),
-        ("Storage, packed", f"{col['storage_bytes_per_value']} bytes/value"),
     ]
+    for c in shown:
+        rows += [
+            (f"Packed column, {c['rows']:,} values: encrypt (all cores)",
+             f"{c['encrypt_s_all_cores']:.2f} s = {c['encrypt_us_per_value']:.1f} µs/value "
+             f"({c['values_per_ciphertext']} values/ciphertext)"),
+            (f"Packed column, {c['rows']:,} values: SUM",
+             f"{c['sum_ms']['median']:.1f} ms = {c['sum_values_per_sec']:,} values/s (exact)"),
+        ]
+    rows.append(("Storage, packed", " / ".join(f"{c['storage_bytes_per_value']} bytes/value at {c['rows']:,}" for c in shown)))
     api = r.get("api_insurance_packed")
     if api:
         rows.append((f"API, insurance_real.csv ({api['rows']:,} rows): encrypt / SUM query",

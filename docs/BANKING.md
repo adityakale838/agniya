@@ -72,12 +72,15 @@ Where this fits in a bank:
 
 | | |
 |---|---|
-| Encrypt 1,000,000 values (all cores) | 6.08 s = 6.1 µs per value |
-| SUM over 1,000,000 encrypted values | 123 ms = 8.1M values per second, exact |
-| Storage | 7–10 bytes per value (values packed into ciphertexts) |
+| Encrypt 1,000,000 values (all cores) | 6.39 s = 6.4 µs per value |
+| SUM over 1,000,000 encrypted values | 130 ms = 7.7M values per second, exact |
+| Encrypt 10,000,000 values (all cores) | 57.3 s = 5.7 µs per value |
+| SUM over 10,000,000 encrypted values | 1.32 s = 7.6M values per second, exact |
+| Storage | 7–11 bytes per value (values packed into ciphertexts) |
 | GROUP BY region, 1,338 rows (4 groups, one decryption) | 3.5 ms (server-side) / 3.9 ms (keys on the client) |
 | MEDIAN with a range, 706 rows | 6.1 ms / 5.9 ms |
-| Reference: Microsoft SEAL (lattice FHE), same harness | 0.97 µs per value: about 6x faster than AGNIYA to encrypt |
+| Reference: Microsoft SEAL (lattice FHE), same harness | 1.1 µs per value: about 6x faster than AGNIYA to encrypt |
+| Independent check: SEAL computes the same SUM and GROUP BY | identical totals (`tests/test_integration/test_seal_crosscheck.py`, and checked in every benchmark run) |
 
 AGNIYA is not the fastest homomorphic scheme at encrypting; it is exact, simple to operate, small per
 value, and has the query features above (filters, GROUP BY, statistics, integrity checks) built in.

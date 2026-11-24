@@ -56,30 +56,33 @@ every timed operation is checked for an exact result, and p10/p90 plus all datas
 <!-- BENCH:START -->
 | Operation | Median |
 |---|---|
-| Key generation (2048-bit) | 1016 ms (p10 558 ms, p90 2071 ms; random prime search) |
-| Decrypt (CRT) | 2.99 ms |
-| rⁿ generation, standard (1 core) | 11.01 ms |
-| rⁿ generation, DJN fixed-base (1 core) | 0.689 ms |
-| Encrypt with a precomputed rⁿ (online) | 20.4 µs |
-| Homomorphic additions | 182,483 ciphertexts/s |
-| Packed column, 1,000,000 values: encrypt (all cores) | 6.08 s = 6.1 µs/value (52 values/ciphertext) |
-| Packed column, 1,000,000 values: SUM | 122.8 ms = 8,142,514 values/s (exact) |
-| Storage, packed | 9.85 bytes/value |
-| API, insurance_real.csv (1,338 rows): encrypt / SUM query | 0.39 s / 3.6 ms |
-| API, insurance_real.csv charges as OPE+Paillier: encrypt / range SUM | 1.46 s / 12.8 ms |
-| Client-held keys (`/api/v2`), same column: encrypt + upload / SUM / range SUM | 1.30 s / 3.8 ms / 12.9 ms |
-| SUM(charges) WHERE 30 ≤ age ≤ 45 (421 rows): server-side / client-held keys | 10.9 ms / 11.0 ms (client `upload_by` 0.21 s) |
-| SUM(charges) GROUP BY region (4 groups, one decryption): server-side / client-held keys | 3.5 ms / 3.9 ms (client `upload_grouped` 0.22 s) |
-| SUM(charges) GROUP BY age (47 groups, 4 / 3 pages = 4 / 3 decryptions): server-side / client-held keys | 14.1 ms / 11.7 ms (client `upload_grouped` 0.30 s) |
-| SUM(charges) WHERE 30 ≤ age ≤ 45 GROUP BY region (421 rows): server-side / client-held keys | 11.2 ms / 11.3 ms (building the copy: server's first query 0.10 s, client `upload_grouped` 0.29 s) |
-| MEDIAN(charges) WHERE 5000 ≤ charges ≤ 20000.5 (706 rows): server-side / client-held keys | 6.1 ms / 5.9 ms |
-| VARIANCE(charges), 1,338 rows (STDDEV alike): server-side / client-held keys | 7.4 ms / 7.8 ms (building the squared copy: server's first query 0.04 s, client upload with `range_filter=True, squares=True` 1.30 s) |
-| MEDIAN(charges) GROUP BY region (4 groups): server-side / client-held keys | 13.7 ms / 13.6 ms (building the sorted copy: server's first query 0.04 s, client `upload_sorted_groups` 0.21 s) |
-| MEDIAN(charges) WHERE 30 ≤ age ≤ 45 GROUP BY region (421 rows, all read): server-side / client-held keys | 37.4 ms / 42.9 ms (building the copy: server's first query 0.06 s, client `upload_sorted_groups` 0.23 s) |
-| Reference: SEAL BFV (TenSEAL), 4,096 values | 0.97 µs/value |
-| Reference: python-paillier (phe), one value | 11.0 ms |
+| Key generation (2048-bit) | 689 ms (p10 137 ms, p90 4911 ms; random prime search) |
+| Decrypt (CRT) | 3.27 ms |
+| rⁿ generation, standard (1 core) | 11.59 ms |
+| rⁿ generation, DJN fixed-base (1 core) | 0.680 ms |
+| Encrypt with a precomputed rⁿ (online) | 20.9 µs |
+| Homomorphic additions | 167,801 ciphertexts/s |
+| Packed column, 1,000,000 values: encrypt (all cores) | 6.39 s = 6.4 µs/value (52 values/ciphertext) |
+| Packed column, 1,000,000 values: SUM | 129.9 ms = 7,696,088 values/s (exact) |
+| Packed column, 10,000,000 values: encrypt (all cores) | 57.32 s = 5.7 µs/value (48 values/ciphertext) |
+| Packed column, 10,000,000 values: SUM | 1316.6 ms = 7,595,359 values/s (exact) |
+| Storage, packed | 9.85 bytes/value at 1,000,000 / 10.67 bytes/value at 10,000,000 |
+| API, insurance_real.csv (1,338 rows): encrypt / SUM query | 0.39 s / 3.8 ms |
+| API, insurance_real.csv charges as OPE+Paillier: encrypt / range SUM | 1.48 s / 12.9 ms |
+| Client-held keys (`/api/v2`), same column: encrypt + upload / SUM / range SUM | 1.32 s / 3.9 ms / 14.2 ms |
+| SUM(charges) WHERE 30 ≤ age ≤ 45 (421 rows): server-side / client-held keys | 10.7 ms / 11.1 ms (client `upload_by` 0.22 s) |
+| SUM(charges) GROUP BY region (4 groups, one decryption): server-side / client-held keys | 3.5 ms / 4.0 ms (client `upload_grouped` 0.23 s) |
+| SUM(charges) GROUP BY age (47 groups, 4 / 3 pages = 4 / 3 decryptions): server-side / client-held keys | 13.6 ms / 12.0 ms (client `upload_grouped` 0.30 s) |
+| SUM(charges) WHERE 30 ≤ age ≤ 45 GROUP BY region (421 rows): server-side / client-held keys | 11.4 ms / 11.5 ms (building the copy: server's first query 0.10 s, client `upload_grouped` 0.31 s) |
+| MEDIAN(charges) WHERE 5000 ≤ charges ≤ 20000.5 (706 rows): server-side / client-held keys | 6.0 ms / 7.3 ms |
+| VARIANCE(charges), 1,338 rows (STDDEV alike): server-side / client-held keys | 7.3 ms / 8.0 ms (building the squared copy: server's first query 0.04 s, client upload with `range_filter=True, squares=True` 1.42 s) |
+| MEDIAN(charges) GROUP BY region (4 groups): server-side / client-held keys | 13.6 ms / 13.8 ms (building the sorted copy: server's first query 0.03 s, client `upload_sorted_groups` 0.22 s) |
+| MEDIAN(charges) WHERE 30 ≤ age ≤ 45 GROUP BY region (421 rows, all read): server-side / client-held keys | 37.7 ms / 44.9 ms (building the copy: server's first query 0.06 s, client `upload_sorted_groups` 0.24 s) |
+| Independent check: Microsoft SEAL (BFV) runs the same SUM(charges) GROUP BY region | identical totals in all 4 groups; SEAL 478 ms (masks in plaintext) vs AGNIYA 4.0 ms |
+| Reference: SEAL BFV (TenSEAL), 4,096 values | 1.101 µs/value |
+| Reference: python-paillier (phe), one value | 11.5 ms |
 
-_Generated by `tools/bench.py` at commit `d3fdfc9`, 2026-11-24 06:29:42: 11th Gen Intel(R) Core(TM) i5-1145G7 @ 2.60GHz, 8 logical CPUs, 16 GB RAM, Windows-11-10.0.26300-SP0, Python 3.12.10, gmpy2 2.3.2. p10/p90 and all other sizes in `tools/bench_results.json`._
+_Generated by `tools/bench.py` at commit `2a651ac` (dirty tree), 2026-11-25 02:41:40: 11th Gen Intel(R) Core(TM) i5-1145G7 @ 2.60GHz, 8 logical CPUs, 16 GB RAM, Windows-11-10.0.26300-SP0, Python 3.12.10, gmpy2 2.3.2. p10/p90 and all other sizes in `tools/bench_results.json`._
 <!-- BENCH:END -->
 
 Lattice FHE (SEAL) still encrypts bulk data faster per value; Paillier's strengths are exact integer sums,
