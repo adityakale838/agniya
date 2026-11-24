@@ -90,6 +90,7 @@ def main():
     ap.add_argument("--out", default=os.path.join(ROOT, "tools", "bench_results.json"))
     ap.add_argument("--no-readme", action="store_true")
     ap.add_argument("--sizes", default="1000,10000,100000")
+    ap.add_argument("--scale", type=int, default=0, help="also a DJN packed column of this many values (e.g. 10000000)")
     a = ap.parse_args()
     reps = 7 if a.quick else 25
     sizes = [int(s) for s in a.sizes.split(",")]
@@ -129,7 +130,7 @@ def main():
 
     # Packed columns, end to end per size: encrypt (all cores) and SUM.
     for method in methods():
-        for n_rows in sizes:
+        for n_rows in sizes + ([a.scale] if a.scale and method == "djn" else []):
             vals = [random.randint(3_000_000, 15_000_000) for _ in range(n_rows)]  # salaries in cents
             pool = RandomnessPool(pub, method=method)
             agg = BatchedAggregator(pub, priv, encrypt_batch=pool.encrypt_batch)
@@ -353,6 +354,18 @@ def main():
         assert ts.bfv_vector(ctx, v).decrypt() == v
         s = stats(lambda: ts.bfv_vector(ctx, v), max(5, reps // 3))
         section("baseline_seal_bfv_4096_values", {"encrypt_ms": ms(s), "us_per_value": round(s["median"] / 4096 * 1e6, 3)})
+        # Independent check: SEAL BFV computes the same SUM(charges) GROUP BY region as AGNIYA's client did above.
+        # 41-bit prime plaintext modulus (= 1 mod 16384, for batching) so the fixed-point totals fit below t / 2.
+        cctx = ts.context(ts.SCHEME_TYPE.BFV, poly_modulus_degree=8192, plain_modulus=1099511922689)
+        cctx.generate_galois_keys()
+        xs = [int(round(v * 10**4)) for v in df["charges"]]
+        masks = {g: [int(r == g) for r in df["region"]] for g in sorted(df["region"].unique())}
+        enc = ts.bfv_vector(cctx, xs)  # encrypted once, like AGNIYA's upload; the timing is the query
+        seal_sums = lambda: {g: (enc * m).sum().decrypt()[0] for g, m in masks.items()}  # noqa: E731
+        got = seal_sums()
+        assert got == {g: round(v["sum"] * 10**4) for g, v in gq.items()}, (got, gq)
+        section("crosscheck_seal_bfv", {"query": "SUM(charges) GROUP BY region", "rows": len(df), "groups": len(got),
+                                        "identical_to_agniya": True, "seal_ms": ms(stats(seal_sums, max(5, reps // 3)))})
     except ImportError:
         pass
 
@@ -454,6 +467,11 @@ def update_readme(results_path=None):
                      "server-side / client-held keys",
                      f"{fma['ms']['median']:.1f} ms / {fms['ms']['median']:.1f} ms (building the copy: server's first "
                      f"query {fma['first_query_s']:.2f} s, client `upload_sorted_groups` {fms['upload_sorted_groups_s']:.2f} s)"))
+    cx = r.get("crosscheck_seal_bfv")
+    if cx and gs:
+        rows.append((f"Independent check: Microsoft SEAL (BFV) runs the same SUM(charges) GROUP BY region",
+                     f"identical totals in all {cx['groups']} groups; SEAL {cx['seal_ms']['median']:.0f} ms (masks in plaintext) "
+                     f"vs AGNIYA {gs['ms']['median']:.1f} ms"))
     if "baseline_seal_bfv_4096_values" in r:
         rows.append(("Reference: SEAL BFV (TenSEAL), 4,096 values", f"{r['baseline_seal_bfv_4096_values']['us_per_value']} µs/value"))
     if "baseline_phe_encrypt_one_value_ms" in r:
