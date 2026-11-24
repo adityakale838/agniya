@@ -27,9 +27,8 @@ Architecture:
 └─────────────────────────────────────────────────────────────┘
 
 Performance:
-- Insert: 50-100x faster than pure Paillier (AES fields)
-- Query: 50-100x faster for AES fields
-- Storage: 10-20x smaller for AES fields
+- Versus Paillier on every field (scripts/benchmark_hybrid_vs_pure.py, 50 records): inserts 2.4x faster,
+  queries 2.3x faster, storage 2.7x smaller
 - Aggregation: Same speed as pure Paillier (still homomorphic)
 """
 

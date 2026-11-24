@@ -147,9 +147,8 @@ API server options (environment variables): `AGNIYA_STORE` (SQLite file for `/ap
 ```
 agniya/client.py   AgniyaClient: data-owner side of /api/v2 (keys, encryption, decryption)
 webapp/lib/agniya-browser.ts  the same data-owner side in the browser (dashboard default mode)
-agniya/core/       paillier.py, precomputation.py (rⁿ pool), batch_packing.py, ultimate_system.py (Database)
-agniya/hybrid/     AES-GCM, key wrapping, schema, OPE+Paillier, hybrid row storage
-agniya/storage/    generic data structures (Bloom/Cuckoo filters, LSM tree, wavelet tree, erasure coding)
+agniya/core/       paillier.py, djn.py, precomputation.py (rⁿ pool), batch_packing.py, integrity.py, ultimate_system.py (Database)
+agniya/hybrid/     fast_ope.py (OPE tags); AES-GCM, key wrapping, schema and hybrid row storage (HybridDatabase)
 api/               server_optimized.py (Flask)
 webapp/            Next.js dashboard
 tools/             bench.py (current numbers), verify_claims.py (audit of the pre-cleanup main branch)

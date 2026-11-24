@@ -63,7 +63,7 @@ Repository = "https://github.com/adityakale838/agniya"
 agniya-test = "test_suite:main"
 
 [tool.setuptools]
-packages = ["agniya", "agniya.core", "agniya.storage", "agniya.hybrid", "agniya.benchmarks"]
+packages = ["agniya", "agniya.core", "agniya.hybrid"]
 
 [tool.setuptools.package-data]
 agniya = ["py.typed"]

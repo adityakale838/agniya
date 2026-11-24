@@ -429,12 +429,11 @@ def run_comprehensive_benchmark():
     print(f"   2. Hybrid system is {avg_query_speedup:.0f}-{max(query_speedups):.0f}x faster for queries")
     print(f"   3. Hybrid system uses {avg_storage_ratio:.1f}x less storage")
     print(f"   4. Hybrid maintains homomorphic properties for computational fields")
-    print(f"   5. Hybrid provides same security guarantees as pure Paillier")
+    print(f"   5. AES fields use AES-256-GCM; Paillier fields stay homomorphic (IND-CPA)")
     
     print(f"\n🎓 Conclusion:")
     print(f"   The hybrid AES+Paillier approach achieves practical performance")
     print(f"   while maintaining encrypted computation capabilities.")
-    print(f"   Best of both worlds: Fast AES + Homomorphic Paillier!")
     
     print("\n" + "="*70)
     
