@@ -603,3 +603,31 @@ def test_wrong_ranged_group_quantile_answers_are_caught(sorted_groups, path, cha
     assert GQR(c) == honest
     with pytest.raises(ValueError, match="where="):
         c.quantiles("amount", QS, 1, 2, by="region")
+
+
+def test_group_by_two_columns_matches_pandas(setup, tmp_path):
+    c, df = setup
+    by, cols = ["region", "decade"], [df["region"], df["decade"]]
+    c.upload_grouped("amount", df["amount"], by=by, by_values=cols, decimals=4, squares=True)
+    c.upload_grouped("amount", df["amount"], by=by, by_values=cols, decimals=4, where="score",
+                     where_values=df["score"], where_decimals=2)
+    c.upload_sorted_groups("amount", df["amount"], by=by, by_values=cols, decimals=4)
+    rows = df[["amount", "score"] + by].dropna(subset=["amount"] + by)  # rows missing a label part drop out
+    g = rows.groupby(by)["amount"]
+    got = c.query_groups("amount", by)
+    assert set(got) == set(g.groups) and all(isinstance(k, tuple) for k in got)
+    for label, x in g:
+        assert got[label]["count"] == len(x) and got[label]["sum"] == pytest.approx(x.sum(), abs=1e-6)
+        assert (got[label]["var"] is None) if len(x) < 2 else got[label]["var"] == pytest.approx(x.var(), rel=1e-9)
+    sel = rows[(rows["score"] >= -10.5) & (rows["score"] <= 120.25)].groupby(by)["amount"]
+    got = c.query_groups("amount", by, -10.5, 120.25, where="score")
+    assert set(got) == set(sel.groups)
+    assert all(got[k]["sum"] == pytest.approx(x.sum(), abs=1e-6) for k, x in sel)
+    med = c.quantiles("amount", [0.5], by=by)
+    assert set(med) == set(g.groups) and all(med[k][0] == pytest.approx(x.median(), abs=1e-9) for k, x in g)
+    with pytest.raises(ValueError, match="one entry per column"):
+        c.upload_grouped("amount", df["amount"], by=["region"], by_values=[df["region"]])
+    c.save(str(tmp_path / "k"), "pw")  # tuple labels survive the JSON key file
+    c2 = AgniyaClient.load(str(tmp_path / "k"), "pw", transport)
+    assert c2.query_groups("amount", by) == c.query_groups("amount", by)
+    assert c2.quantiles("amount", [0.5], by=by) == med

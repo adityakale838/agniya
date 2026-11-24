@@ -124,9 +124,13 @@ export default function Dashboard() {
   const [rangeMax, setRangeMax] = useState('');
   const [filterBy, setFilterBy] = useState('');  // '' = filter on the queried field itself
   const [groupBy, setGroupBy] = useState('');  // '' = no GROUP BY
+  const [groupBy2, setGroupBy2] = useState('');  // optional second GROUP BY column
   const [groupable, setGroupable] = useState<Record<string, string[]>>({});  // field -> columns it can be grouped by
   const groupOptions = groupable[selectedField] ?? [];
-  const activeGroupBy = groupOptions.includes(groupBy) ? groupBy : '';
+  const thenOptions = groupOptions.filter(g => g !== groupBy && !g.includes(','));
+  // "a,b" = GROUP BY a, b: one label "x, y" per row, packed like any GROUP BY copy (built on first use)
+  const activeGroupBy = !groupOptions.includes(groupBy) ? ''
+    : thenOptions.includes(groupBy2) && !groupBy.includes(',') ? `${groupBy},${groupBy2}` : groupBy;
 
   const [error, setError] = useState<string | null>(null);
 
@@ -134,6 +138,7 @@ export default function Dashboard() {
   const [browserMode, setBrowserMode] = useState(true);
   const csvRef = useRef<{ header: string[]; rows: string[][] } | null>(null);
   const workerRef = useRef<CryptoWorker | null>(null);
+  const groupCopies = useRef(new Set<string>());  // "a#g" GROUP BY copies the worker has (g may be "b,c")
   const filteredCopies = useRef(new Set<string>());  // "a#g|w" copies the worker has (GROUP BY g WHERE w in range)
   const squareCopies = useRef(new Set<string>());  // copies that also have "^2" (VARIANCE / STDDEV)
   const sortedCopies = useRef(new Set<string>());  // "a#g^sorted" (and "...|w") copies: MIN / MAX / MEDIAN GROUP BY g
@@ -182,9 +187,10 @@ export default function Dashboard() {
       setSchema(restored);
       setEncryptionResult({ success: true, records_encrypted: records, message: 'Restored from key file' });
       setQueries([]);
-      setSelectedField(restored[0]?.name ?? ''); setFilterBy(''); setGroupBy('');
+      setSelectedField(restored[0]?.name ?? ''); setFilterBy(''); setGroupBy(''); setGroupBy2('');
       setGroupable(groupsFromNames(info.columns.map(c => c.name)));
       filteredCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#.*\|/.test(n) && !n.endsWith('^2')));
+      groupCopies.current = new Set(info.columns.map(c => c.name).filter(n => /#[^|@^]*$/.test(n)));
       squareCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.endsWith('^2')).map(n => n.slice(0, -2)));
       sortedCopies.current = new Set(info.columns.map(c => c.name).filter(n => n.includes('^sorted')));
       setKeyPassword(''); setRestoreFile(null);
@@ -200,7 +206,7 @@ export default function Dashboard() {
   const switchMode = (browser: boolean) => {
     setBrowserMode(browser);
     setFile(null); setUploadData(null); setEncryptionResult(null); setSchema([]); setQueries([]);
-    setSelectedField(''); setRangeMin(''); setRangeMax(''); setFilterBy(''); setGroupBy(''); setGroupable({});
+    setSelectedField(''); setRangeMin(''); setRangeMax(''); setFilterBy(''); setGroupBy(''); setGroupBy2(''); setGroupable({});
     csvRef.current = null;
     dropWorker();
     setActiveTab('upload');
@@ -221,10 +227,14 @@ export default function Dashboard() {
   };
 
   /** Raw CSV labels, one per row (null where empty), for GROUP BY. */
+  /** One label per row; for "a,b" (GROUP BY several columns) "x, y", or null when a part is missing. */
   const rowLabels = (name: string): Array<string | null> => {
     const { header, rows } = csvRef.current!;
-    const i = header.indexOf(name);
-    return rows.map(r => (r[i] ?? '').trim() || null);
+    const idx = name.split(',').map(n => header.indexOf(n));
+    return rows.map(r => {
+      const parts = idx.map(i => (r[i] ?? '').trim());
+      return parts.every(Boolean) ? parts.join(', ') : null;
+    });
   };
 
   const parseLocally = async (f: File): Promise<UploadedData> => {
@@ -250,6 +260,7 @@ export default function Dashboard() {
     const worker = new CryptoWorker();
     workerRef.current = worker;
     filteredCopies.current = new Set();
+    groupCopies.current = new Set();
     squareCopies.current = new Set();
     sortedCopies.current = new Set();
     await worker.init(API_BASE_URL, `${uploadData!.filename}-${crypto.randomUUID().slice(0, 8)}`);
@@ -279,6 +290,7 @@ export default function Dashboard() {
         try {
           ciphertexts += (await worker.uploadGrouped(a.name, rowValues(a.name), g, rowLabels(g), decimals[a.name])).ciphertexts;
           (groups[a.name] ??= []).push(g);
+          groupCopies.current.add(`${a.name}#${g}`);
         } catch (err) {
           if (!/too large|No rows/.test(String(err))) throw err;  // skip copies that cannot be built
         }
@@ -290,18 +302,25 @@ export default function Dashboard() {
     return { success: true, records_encrypted: records, time_seconds: secs, throughput: records / secs, ciphertexts };
   };
 
+  /** GROUP BY several columns: at most GROUP_MAX_VALUES label combinations, as on the server. */
+  const checkGroups = () => {
+    const n = new Set(rowLabels(activeGroupBy).filter(v => v !== null)).size;
+    if (n > GROUP_MAX_VALUES) throw new Error(`GROUP BY ${activeGroupBy.replace(',', ', ')} has ${n} groups; up to ${GROUP_MAX_VALUES} are supported`);
+  };
+
   const queryGroupsLocally = async (minVal?: number, maxVal?: number): Promise<QueryResult> => {
     const worker = workerRef.current!, fc = filterBy || selectedField;
     const filtered = minVal !== undefined || maxVal !== undefined;
     const spread = SPREAD.includes(selectedOperation);
     const copy = `${selectedField}#${activeGroupBy}` + (filtered ? `|${fc}` : '');
     if (filtered ? !filteredCopies.current.has(copy) || (spread && !squareCopies.current.has(copy))
-                 : spread && !squareCopies.current.has(copy)) {
+                 : !groupCopies.current.has(copy) || (spread && !squareCopies.current.has(copy))) {
       // A copy packed in fc order (and/or with squares), built on first use: one per field x group x filter up front would be too many.
       if (!csvRef.current) throw new Error(`${filtered ? `GROUP BY ${activeGroupBy} with a range on ${fc}` : selectedOperation} needs the CSV: upload it and encrypt again`);
+      checkGroups();
       await worker.uploadGrouped(selectedField, rowValues(selectedField), activeGroupBy, rowLabels(activeGroupBy), decimalsOf(selectedField),
                                  filtered ? fc : undefined, filtered ? rowValues(fc) : undefined, filtered ? decimalsOf(fc) : 0, spread);
-      if (filtered) filteredCopies.current.add(copy);
+      if (filtered) filteredCopies.current.add(copy); else groupCopies.current.add(copy);
       if (spread) squareCopies.current.add(copy);
     }
     const t0 = performance.now();
@@ -356,6 +375,7 @@ export default function Dashboard() {
     const copy = `${selectedField}#${activeGroupBy}^sorted` + (filtered ? `|${fc}` : '');
     if (!sortedCopies.current.has(copy)) {  // a copy sorted within each group (by fc with a range), built on first use
       if (!csvRef.current) throw new Error(`${selectedOperation} GROUP BY ${activeGroupBy} needs the CSV: upload it and encrypt again`);
+      checkGroups();
       await worker.uploadSortedGroups(selectedField, rowValues(selectedField), activeGroupBy, rowLabels(activeGroupBy), decimalsOf(selectedField),
                                       filtered ? fc : undefined, filtered ? rowValues(fc) : undefined, filtered ? decimalsOf(fc) : 0);
       sortedCopies.current.add(copy);
@@ -1035,14 +1055,34 @@ export default function Dashboard() {
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
                             <Button variant="outline" className="w-full justify-between">
-                              {activeGroupBy || 'No grouping'}
+                              {groupOptions.includes(groupBy) ? groupBy.replace(',', ', ') : 'No grouping'}
                               <Layers className="w-4 h-4" />
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent className="w-full">
                             <DropdownMenuItem onClick={() => setGroupBy('')}>No grouping</DropdownMenuItem>
                             {groupOptions.map(g => (
-                              <DropdownMenuItem key={g} onClick={() => setGroupBy(g)}>{g}</DropdownMenuItem>
+                              <DropdownMenuItem key={g} onClick={() => setGroupBy(g)}>{g.replace(',', ', ')}</DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
+                    )}
+
+                    {activeGroupBy && !groupBy.includes(',') && thenOptions.length > 0 && (
+                      <div>
+                        <Label>Then by (optional: GROUP BY both)</Label>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="outline" className="w-full justify-between">
+                              {thenOptions.includes(groupBy2) ? groupBy2 : 'Only ' + groupBy}
+                              <Layers className="w-4 h-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent className="w-full">
+                            <DropdownMenuItem onClick={() => setGroupBy2('')}>Only {groupBy}</DropdownMenuItem>
+                            {thenOptions.map(g => (
+                              <DropdownMenuItem key={g} onClick={() => setGroupBy2(g)}>{g}</DropdownMenuItem>
                             ))}
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -1151,7 +1191,7 @@ export default function Dashboard() {
                             <span className="text-muted-foreground">{query.operation || query.column}(</span>
                             <span className="font-semibold">{query.field || query.column}</span>
                             <span className="text-muted-foreground">)</span>
-                            {query.group_by && <span className="text-muted-foreground"> GROUP BY <span className="font-semibold text-foreground">{query.group_by}</span></span>}
+                            {query.group_by && <span className="text-muted-foreground"> GROUP BY <span className="font-semibold text-foreground">{query.group_by.replace(',', ', ')}</span></span>}
                           </div>
                           {query.groups ? (<>
                             <table className="w-full text-sm my-2">

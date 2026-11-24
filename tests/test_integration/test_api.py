@@ -202,3 +202,26 @@ def test_min_max_median_by_group_with_a_range_match_pandas(client, field, by, fc
         for label, v in getattr(want, agg)().items():
             assert got[label] == pytest.approx(v, abs=1e-9), (op, label)
     assert "numeric" in q(c, type="MEDIAN", column="amount", group_by="region", filter_column="name", rangeMin=1)["error"]
+
+
+@pytest.mark.parametrize("op,agg,fc,lo,hi", [("SUM", "sum", None, None, None), ("AVG", "mean", None, None, None),
+                                             ("STDDEV", "std", None, None, None), ("MEDIAN", "median", None, None, None),
+                                             ("SUM", "sum", "age", 30, 50), ("MEDIAN", "median", "age", 30, 50),
+                                             ("VARIANCE", "var", "score", -10.5, 120.25)])
+def test_group_by_two_columns(client, op, agg, fc, lo, hi):
+    c, df = client
+    rows = df[list(dict.fromkeys(["amount", "region", "visits"] + ([fc] if fc else [])))].dropna()
+    if fc:
+        rows = rows[(rows[fc] >= lo) & (rows[fc] <= hi)]
+    want = getattr(rows.groupby(["region", "visits"])["amount"], agg)()
+    r = q(c, type=op, column="amount", group_by="region,visits", filter_column=fc, rangeMin=lo, rangeMax=hi)
+    got = {g["group"]: g["result"] for g in r["groups"]}
+    assert got.keys() == {f"{a}, {b}" for a, b in want.index}, r  # labels "region, visits" ("n, 3.0": visits has NaNs)
+    for (a, b), v in want.items():
+        assert (got[f"{a}, {b}"] is None) if pd.isna(v) else got[f"{a}, {b}"] == pytest.approx(v, rel=1e-9, abs=1e-9)
+
+
+def test_group_by_two_columns_rejects(client):
+    c, _ = client
+    assert "Unknown" in q(c, type="SUM", column="amount", group_by="region,nope")["error"]
+    assert "groups" in q(c, type="SUM", column="amount", group_by="region,name")["error"]  # 200+ groups

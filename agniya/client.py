@@ -14,6 +14,8 @@ ciphertexts and are decrypted here.
     c.query("charges", lo=30, hi=45, by="age")  # SUM(charges) WHERE 30 <= age <= 45
     c.upload_grouped("charges", charges, by="region", by_values=regions, decimals=4)
     c.query_groups("charges", "region")     # {'northeast': {'sum', 'count', 'avg'}, ...}
+    c.upload_grouped("charges", charges, by=["region", "smoker"], by_values=[regions, smokers], decimals=4)
+    c.query_groups("charges", ["region", "smoker"])  # {('northeast', 'no'): {...}, ...}: GROUP BY both
     c.upload_grouped("charges", charges, by="region", by_values=regions, decimals=4,
                      where="age", where_values=ages)
     c.query_groups("charges", "region", lo=30, hi=45, where="age")  # ... WHERE 30 <= age <= 45 GROUP BY region
@@ -72,6 +74,23 @@ def dataset_token(priv, dataset: str) -> str:
     """Access token for `dataset` on /api/v2. Only the private key's holder can compute it, so key files
     need nothing new; the server stores its SHA-256. The browser client computes the same token."""
     return hashlib.sha256(f'agniya/v2 dataset token\0{min(priv.p, priv.q)}\0{dataset}'.encode()).hexdigest()
+
+
+def _by(by: Union[str, Sequence[str]], by_values=None):
+    """(name, labels) for GROUP BY `by`: a column name with by_values one label per row, or a list of names
+    with by_values one column each, GROUP BY all of them: the labels are tuples (None where a part is missing)
+    and the copies are named after "a,b"."""
+    if isinstance(by, str):
+        return by, by_values
+    by = list(by)
+    if by_values is None:
+        return ','.join(by), None
+    cols = [list(v) for v in by_values]
+    if len(cols) != len(by) or len(by) < 2:
+        raise ValueError('GROUP BY several columns: by and by_values need one entry per column, at least 2')
+    ok = lambda x: x is not None and x == x  # noqa: E731  x == x is False for NaN
+    return ','.join(by), [tuple(x.item() if hasattr(x, 'item') else x for x in t) if all(map(ok, t)) else None
+                          for t in zip(*cols, strict=True)]
 
 
 def http_transport(base_url: str) -> Transport:
@@ -137,6 +156,8 @@ class AgniyaClient:
             if 'ope_key' in m:
                 m['ope'] = FastOPE(base64.b64decode(m.pop('ope_key')), in_range=ValueRange(0, m['ope_top']),
                                    out_range=ValueRange(0, 2 ** 64 - 1))
+            if 'labels' in m:
+                m['labels'] = [tuple(x) if isinstance(x, list) else x for x in m['labels']]  # GROUP BY several columns
             c.columns[name] = m
         return c
 
@@ -162,7 +183,7 @@ class AgniyaClient:
                       if a is not None and b is not None and a == a and b == b)  # x == x is False for NaN
         return self._upload(f'{column}|{by}', [a for _, a in rows], s, [b for b, _ in rows], fs, squares)
 
-    def upload_grouped(self, column: str, values: Iterable[float], by: str, by_values: Iterable,
+    def upload_grouped(self, column: str, values: Iterable[float], by: Union[str, Sequence[str]], by_values: Iterable,
                        decimals: int = 0, where: Optional[str] = None, where_values: Optional[Iterable[float]] = None,
                        where_decimals: int = 0, squares: bool = False) -> dict:
         """Store `column` packed by the labels in `by_values` (one per row, same order), so that
@@ -177,6 +198,7 @@ class AgniyaClient:
         lo <= where <= hi. Such a copy needs about len(rows) / lanes ciphertexts, and the server
         also learns what a range filter shows: the row count and the order of the where values."""
         s = 10 ** decimals
+        by, by_values = _by(by, by_values)
         ok = lambda x: x is not None and x == x  # noqa: E731  x == x is False for NaN
         if where is None:
             rows = [(int(round(a * s)), b) for a, b in zip(values, by_values, strict=True) if ok(a) and ok(b)]
@@ -221,7 +243,7 @@ class AgniyaClient:
         pool.close()
         return out
 
-    def upload_sorted_groups(self, column: str, values: Iterable[float], by: str, by_values: Iterable,
+    def upload_sorted_groups(self, column: str, values: Iterable[float], by: Union[str, Sequence[str]], by_values: Iterable,
                              decimals: int = 0, where: Optional[str] = None, where_values: Optional[Iterable[float]] = None,
                              where_decimals: int = 0) -> dict:
         """Store `column` sorted within each group of `by` (labels in by_values, one per row) as "column#by^sorted",
@@ -234,6 +256,7 @@ class AgniyaClient:
         quantiles(..., lo, hi, by=by, where=where) uses only rows with lo <= where <= hi. The tags show the server
         the order of the where values within each group and, by their jumps, where groups start. When where is
         another column, a query reads every row in range (one decryption per ciphertext of them)."""
+        by, by_values = _by(by, by_values)
         if where == column and where_values is None:
             where_values, where_decimals = values, decimals
         s, fs, groups = 10 ** decimals, 10 ** where_decimals, {}
@@ -258,12 +281,14 @@ class AgniyaClient:
         self.columns[name].update(meta)
         return r
 
-    def query_groups(self, column: str, by: str, lo: Optional[float] = None, hi: Optional[float] = None,
+    def query_groups(self, column: str, by: Union[str, Sequence[str]], lo: Optional[float] = None, hi: Optional[float] = None,
                      where: Optional[str] = None) -> dict:
         """{label: {'sum', 'count', 'avg'}} for SUM / COUNT / AVG(column) GROUP BY by (needs upload_grouped).
         With where=, only rows with lo <= where <= hi (needs upload_grouped(..., where=where)); groups
         with no such rows are left out, as in SQL. Copies uploaded with squares=True also give each
-        group's 'var' and 'std' (None for a group of one row)."""
+        group's 'var' and 'std' (None for a group of one row). by= a list of columns: GROUP BY all of them,
+        with tuple labels (needs upload_grouped with the same list)."""
+        by = _by(by)[0]
         name = f'{column}#{by}' + (f'|{where}' if where else '')
         if name not in self.columns:
             raise ValueError(f'Call upload_grouped({column!r}, ..., by={by!r}' + (f', where={where!r}' if where else '')
@@ -391,7 +416,7 @@ class AgniyaClient:
         return r
 
     def quantiles(self, column: str, qs: Sequence[float], lo: Optional[float] = None,
-                  hi: Optional[float] = None, by: Optional[str] = None, where: Optional[str] = None):
+                  hi: Optional[float] = None, by: Union[str, Sequence[str], None] = None, where: Optional[str] = None):
         """Quantiles of a column uploaded with range_filter=True, as pandas computes them (linear
         interpolation): q = 0 is MIN, 0.5 MEDIAN, 1 MAX. Optionally only rows with lo <= value <= hi;
         None for each q when no row is. The column is packed sorted, so each quantile reads one or two
@@ -400,7 +425,7 @@ class AgniyaClient:
         only rows with lo <= where <= hi, leaving out groups with none (as SQL)."""
         qs = [float(q) for q in qs]
         if by:
-            return self._group_quantiles(column, by, qs, lo, hi, where)
+            return self._group_quantiles(column, _by(by)[0], qs, lo, hi, where)
         m = self.columns.get(column)
         if m is None or 'ope' not in m or '|' in column or '#' in column:
             raise ValueError(f'{column} was not uploaded with range_filter=True')

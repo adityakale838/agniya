@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"  # >= 22.18: the TypeScript cross-checks run with type stripping
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+
+      - name: Python dependencies (the benchmark-only ones are left out)
+        run: |
+          grep -vE '^(numba|psutil|phe|tenseal)==' requirements.txt > ci-requirements.txt
+          pip install -r ci-requirements.txt
+          pip install -e . --no-deps
+
+      - name: Webapp dependencies
+        working-directory: webapp
+        run: npm ci
+
+      - name: Typecheck and lint
+        working-directory: webapp
+        run: |
+          npx tsc --noEmit -p .
+          npx eslint app lib
+
+      - name: Tests (Python, and the browser crypto under Node)
+        run: python -m pytest -q

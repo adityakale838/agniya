@@ -188,22 +188,18 @@ def encrypt_dataset():
     # SUM(a) GROUP BY g: for every column g (encrypted or not) with few distinct values, a copy of each
     # encrypted column a packed by group, so one decryption per page of groups gives every sum and count.
     group_cols = [g for g in df.columns if 2 <= df[g].nunique() <= GROUP_MAX_VALUES]
+    ds = {'db': db, 'columns': columns, 'record_count': len(df), 'df': df}
     for a, cs in columns.items():
         cs['groups'] = {}
         for g in group_cols:
-            rows = df[[a, g]].dropna()  # rows missing a or g drop out (pandas groupby default)
-            if a == g or rows.empty:
-                continue
-            try:
-                packed = db.packer.encrypt_groups([int(round(float(x) * cs['scale'])) for x in rows[a]], list(rows[g]))
-            except ValueError:  # values too large for one plaintext: no copy, query says so
-                continue
-            cs['groups'][g] = packed
-            total_cts += len(packed['ciphertexts'])
+            packed = _group_copy(ds, a, g)
+            if packed:
+                cs['groups'][g] = packed
+                total_cts += len(packed['ciphertexts'])
 
     db.pool.close()  # release worker processes; queries need no new randomness
     elapsed = time.perf_counter() - start
-    encrypted_datasets[filename] = {'db': db, 'columns': columns, 'record_count': len(df), 'df': df}
+    encrypted_datasets[filename] = ds
     return jsonify({
         'success': True,
         'records_encrypted': len(df),
@@ -217,6 +213,41 @@ def encrypt_dataset():
                        'range_filterable': 'ope' in c, 'group_by': sorted(c['groups'])} for n, c in columns.items()},
         'key_bits': db.public_key.n.bit_length(),
     })
+
+
+def _group_copy(ds, a, g):
+    """GROUP BY copy of encrypted column a by column g; None when no row has both or the values are too large
+    for one plaintext (the query then says there is no copy). Rows missing a or g drop out, as in pandas."""
+    rows = ds['df'][[a, g]].dropna()
+    if a == g or rows.empty:
+        return None
+    try:
+        return ds['db'].packer.encrypt_groups([int(round(float(x) * ds['columns'][a]['scale'])) for x in rows[a]],
+                                              list(rows[g]))
+    except ValueError:
+        return None
+
+
+def _composite_groups(ds, field, group_by):
+    """GROUP BY several columns, group_by = "a,b": a label column of that name in the dataset ("x, y", missing
+    when a part is) and a GROUP BY copy of field by it, made on first use. Every grouped query then works as
+    for one column. Returns an error message, or None."""
+    df, parts = ds['df'], group_by.split(',')
+    if group_by not in df.columns:
+        if len(parts) < 2 or not all(p in df.columns for p in parts):
+            return f'Unknown GROUP BY column(s) {group_by}'
+        sub = df[parts]
+        labels = sub.astype(str).agg(', '.join, axis=1).where(sub.notna().all(axis=1))
+        if not 2 <= labels.nunique() <= GROUP_MAX_VALUES:
+            return f'GROUP BY {group_by} has {labels.nunique()} groups; 2-{GROUP_MAX_VALUES} are supported'
+        df[group_by] = labels
+    groups = ds['columns'][field]['groups']
+    if group_by not in groups:
+        packed = _group_copy(ds, field, group_by)
+        ds['db'].pool.close()
+        if packed:
+            groups[group_by] = packed
+    return None
 
 
 def _tag_range(tags, ope, top, scale, offset, lo, hi):
@@ -330,6 +361,11 @@ def execute_query():
     col = ds['columns'].get(field)
     if col is None:
         return jsonify({'error': f'Field {field} is not Paillier-encrypted'}), 400
+    group_by = data.get('group_by') or data.get('groupBy')
+    if group_by and ',' in group_by:  # GROUP BY several columns
+        err = _composite_groups(ds, field, group_by)
+        if err:
+            return jsonify({'error': err}), 400
 
     db = ds['db']
     start = time.perf_counter()
