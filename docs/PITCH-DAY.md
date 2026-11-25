@@ -39,7 +39,7 @@ Everything here was run on the development laptop (Intel i5-1145G7, Windows 11).
 | `start.ps1` says the API did not answer | Read its window; a port already in use means an old server is running: close it and run again |
 | Dashboard shows an error after a reload | The key was lost with the tab: upload and encrypt again |
 | A use case button is greyed out | `credit_score` wasn't set to OPE+Paillier before encrypting: set it, encrypt again |
-| No time or no network | Show slide 8 of the deck: the same six questions with their measured times |
+| No time or no network | Show slide 12 of the deck: the same six questions with their measured times |
 
 ## Numbers you can quote (all measured, see `tools/bench_results.json`)
 
