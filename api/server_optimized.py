@@ -30,13 +30,13 @@ import sys
 import time
 import secrets
 import sqlite3
-from contextlib import closing
+from contextlib import closing, contextmanager
 from bisect import bisect_left, bisect_right
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
-from flask import Flask, request, jsonify
+from flask import Flask, g as req_ctx, request, jsonify
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 from pyope.ope import ValueRange
@@ -228,6 +228,20 @@ def _group_copy(ds, a, g):
         return None
 
 
+@contextmanager
+def _setup_time():
+    """Add the time spent building an encrypted copy on first use (a nested build counts once) to req_ctx.setup_ms,
+    so a query reports it apart from its own time: the first VARIANCE of a column pays for its squared copy."""
+    outer = not req_ctx.get('in_setup')
+    req_ctx.in_setup, t = True, time.perf_counter()
+    try:
+        yield
+    finally:
+        if outer:
+            req_ctx.in_setup = False
+            req_ctx.setup_ms = req_ctx.get('setup_ms', 0.0) + (time.perf_counter() - t) * 1000
+
+
 def _composite_groups(ds, field, group_by):
     """GROUP BY several columns, group_by = "a,b": a label column of that name in the dataset ("x, y", missing
     when a part is) and a GROUP BY copy of field by it, made on first use. Every grouped query then works as
@@ -243,8 +257,9 @@ def _composite_groups(ds, field, group_by):
         df[group_by] = labels
     groups = ds['columns'][field]['groups']
     if group_by not in groups:
-        packed = _group_copy(ds, field, group_by)
-        ds['db'].pool.close()
+        with _setup_time():
+            packed = _group_copy(ds, field, group_by)
+            ds['db'].pool.close()
         if packed:
             groups[group_by] = packed
     return None
@@ -266,24 +281,25 @@ def _filtered_groups(ds, field, by, fc):
     col = ds['columns'][field]
     cache = col.setdefault('filtered_groups', {})
     if (by, fc) not in cache:
-        df = ds['df']
-        if fc not in df.columns or not pd.api.types.is_numeric_dtype(df[fc]):
-            raise ValueError(f'Range filters need a numeric column, not {fc}')
-        rows = df[list(dict.fromkeys([field, by, fc]))].dropna()
-        if rows.empty:
-            raise ValueError(f'No rows have {field}, {by} and {fc}')
-        fscale = 1 if pd.api.types.is_integer_dtype(df[fc]) else 10 ** FIXED_POINT_DECIMALS
-        trip = sorted(((int(round(float(w) * fscale)), int(round(float(a) * col['scale'])), g)
-                       for a, g, w in zip(rows[field], rows[by], rows[fc])), key=lambda r: r[:2])
-        db = ds['db']
-        packed = db.packer.encrypt_sorted_groups([a for _, a, _ in trip], [g for _, _, g in trip])
-        db.pool.close()
-        keys = [w for w, _, _ in trip]
-        offset, top = keys[0], max(keys[-1] - keys[0], 1)
-        ope = FastOPE(secrets.token_bytes(32), in_range=ValueRange(0, top), out_range=ValueRange(0, 2 ** 64 - 1))
-        packed.update(ope=ope, ope_max=top, ope_offset=offset, fscale=fscale, rows=trip,
-                      ope_tags=ope.encrypt_list([k - offset for k in keys]))
-        cache[(by, fc)] = packed
+        with _setup_time():
+            df = ds['df']
+            if fc not in df.columns or not pd.api.types.is_numeric_dtype(df[fc]):
+                raise ValueError(f'Range filters need a numeric column, not {fc}')
+            rows = df[list(dict.fromkeys([field, by, fc]))].dropna()
+            if rows.empty:
+                raise ValueError(f'No rows have {field}, {by} and {fc}')
+            fscale = 1 if pd.api.types.is_integer_dtype(df[fc]) else 10 ** FIXED_POINT_DECIMALS
+            trip = sorted(((int(round(float(w) * fscale)), int(round(float(a) * col['scale'])), g)
+                           for a, g, w in zip(rows[field], rows[by], rows[fc])), key=lambda r: r[:2])
+            db = ds['db']
+            packed = db.packer.encrypt_sorted_groups([a for _, a, _ in trip], [g for _, _, g in trip])
+            db.pool.close()
+            keys = [w for w, _, _ in trip]
+            offset, top = keys[0], max(keys[-1] - keys[0], 1)
+            ope = FastOPE(secrets.token_bytes(32), in_range=ValueRange(0, top), out_range=ValueRange(0, 2 ** 64 - 1))
+            packed.update(ope=ope, ope_max=top, ope_offset=offset, fscale=fscale, rows=trip,
+                          ope_tags=ope.encrypt_list([k - offset for k in keys]))
+            cache[(by, fc)] = packed
     return cache[(by, fc)]
 
 
@@ -294,27 +310,28 @@ def _squares(ds, field, how):
     col, df, db = ds['columns'][field], ds['df'], ds['db']
     cache = col.setdefault('squares', {})
     if how not in cache:
-        fx = lambda xs: [int(round(float(x) * col['scale'])) for x in xs]  # noqa: E731
-        labels = None
-        if how[0] == 'all':
-            xs = fx(df[field].dropna())
-            if 'ope' in col:
-                xs.sort()
-        elif how[0] == 'by':
-            rows, fs = df[[field, how[1]]].dropna(), ds['columns'][how[1]]['scale']
-            xs = [x for _, x in sorted((int(round(float(y) * fs)), int(round(float(x) * col['scale'])))
-                                       for x, y in zip(rows[field], rows[how[1]]))]  # as encrypt_dataset's pairs
-        elif how[0] == 'group':
-            rows = df[[field, how[1]]].dropna()
-            xs, labels = fx(rows[field]), list(rows[how[1]])
-        else:
-            trip = _filtered_groups(ds, field, how[1], how[2])['rows']
-            xs, labels = [a for _, a, _ in trip], [g for _, _, g in trip]
-        sq, c = squares(xs)
-        packed = (db.encrypt_column(sq) if labels is None else db.packer.encrypt_groups(sq, labels) if how[0] == 'group'
-                  else db.packer.encrypt_sorted_groups(sq, labels))
-        db.pool.close()
-        cache[how] = (packed, c)
+        with _setup_time():
+            fx = lambda xs: [int(round(float(x) * col['scale'])) for x in xs]  # noqa: E731
+            labels = None
+            if how[0] == 'all':
+                xs = fx(df[field].dropna())
+                if 'ope' in col:
+                    xs.sort()
+            elif how[0] == 'by':
+                rows, fs = df[[field, how[1]]].dropna(), ds['columns'][how[1]]['scale']
+                xs = [x for _, x in sorted((int(round(float(y) * fs)), int(round(float(x) * col['scale'])))
+                                           for x, y in zip(rows[field], rows[how[1]]))]  # as encrypt_dataset's pairs
+            elif how[0] == 'group':
+                rows = df[[field, how[1]]].dropna()
+                xs, labels = fx(rows[field]), list(rows[how[1]])
+            else:
+                trip = _filtered_groups(ds, field, how[1], how[2])['rows']
+                xs, labels = [a for _, a, _ in trip], [g for _, _, g in trip]
+            sq, c = squares(xs)
+            packed = (db.encrypt_column(sq) if labels is None else db.packer.encrypt_groups(sq, labels) if how[0] == 'group'
+                      else db.packer.encrypt_sorted_groups(sq, labels))
+            db.pool.close()
+            cache[how] = (packed, c)
     return cache[how]
 
 
@@ -325,19 +342,20 @@ def _sorted_groups(ds, field, by, fc=None):
     col, df = ds['columns'][field], ds['df']
     cache = col.setdefault('sorted_groups', {})
     if (by, fc) not in cache:
-        if fc and (fc not in df.columns or not pd.api.types.is_numeric_dtype(df[fc])):
-            raise ValueError(f'Range filters need a numeric column, not {fc}')
-        fscale = 1 if not fc or pd.api.types.is_integer_dtype(df[fc]) else 10 ** FIXED_POINT_DECIMALS
-        xs, spans, keys = [], {}, {}
-        for g, x in df[list(dict.fromkeys([field, by] + ([fc] if fc else [])))].dropna().groupby(by):
-            pairs = sorted((int(round(float(w) * fscale)) if fc else 0, int(round(float(v) * col['scale'])))
-                           for v, w in zip(x[field], x[fc] if fc else x[field]))
-            label = g.item() if hasattr(g, 'item') else g
-            spans[label], keys[label] = (len(xs), len(xs) + len(pairs)), [w for w, _ in pairs]
-            xs += [v for _, v in pairs]
-        packed = ds['db'].encrypt_column(xs)
-        ds['db'].pool.close()
-        cache[(by, fc)] = (packed, spans, keys, fscale)
+        with _setup_time():
+            if fc and (fc not in df.columns or not pd.api.types.is_numeric_dtype(df[fc])):
+                raise ValueError(f'Range filters need a numeric column, not {fc}')
+            fscale = 1 if not fc or pd.api.types.is_integer_dtype(df[fc]) else 10 ** FIXED_POINT_DECIMALS
+            xs, spans, keys = [], {}, {}
+            for g, x in df[list(dict.fromkeys([field, by] + ([fc] if fc else [])))].dropna().groupby(by):
+                pairs = sorted((int(round(float(w) * fscale)) if fc else 0, int(round(float(v) * col['scale'])))
+                               for v, w in zip(x[field], x[fc] if fc else x[field]))
+                label = g.item() if hasattr(g, 'item') else g
+                spans[label], keys[label] = (len(xs), len(xs) + len(pairs)), [w for w, _ in pairs]
+                xs += [v for _, v in pairs]
+            packed = ds['db'].encrypt_column(xs)
+            ds['db'].pool.close()
+            cache[(by, fc)] = (packed, spans, keys, fscale)
     return cache[(by, fc)]
 
 
@@ -368,7 +386,12 @@ def execute_query():
             return jsonify({'error': err}), 400
 
     db = ds['db']
-    start = time.perf_counter()
+    start, setup0 = time.perf_counter(), req_ctx.get('setup_ms', 0.0)
+
+    def timing():  # the query's own time; building an encrypted copy on first use is reported as setup_ms
+        setup = req_ctx.get('setup_ms', 0.0)
+        ms = round((time.perf_counter() - start) * 1000 - (setup - setup0), 2)
+        return {'time_ms': ms, 'query_time_ms': ms, **({'setup_ms': round(setup, 2)} if setup else {})}
     filtered = range_min not in (None, '') or range_max not in (None, '')
     group_by = data.get('group_by') or data.get('groupBy')
     spread = operation in SPREAD
@@ -402,10 +425,9 @@ def execute_query():
             vs = value if in_order else dict(enumerate(sorted(value[r] for r in range(i, j)), i))
             a, b, f = quantile_rows(i, j, q)
             groups.append({'group': g, 'count': j - i, 'result': (vs[a] + (vs[b] - vs[a]) * f) / col['scale']})
-        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
         return jsonify({
             'success': True, 'operation': operation, 'field': field, 'column': field, 'group_by': group_by,
-            'groups': groups, 'result': None, 'pages': 1, 'time_ms': elapsed_ms, 'query_time_ms': elapsed_ms,
+            'groups': groups, 'result': None, 'pages': 1, **timing(),
             'records_processed': sum(g['count'] for g in groups), 'ciphertexts_aggregated': len(cts),
             'encrypted_computation': True,
             **({'filter_applied': True, 'filter_column': fc, 'range': {'min': range_min, 'max': range_max},
@@ -437,10 +459,9 @@ def execute_query():
             va, vb = (slot_value(plain[packed['ciphertexts'][r // s]], r % s, packed['slot_bits']) + packed['offset']
                       for r in (a, b))
             result = (va + (vb - va) * frac) / col['scale']
-        elapsed_ms = round((time.perf_counter() - start) * 1000, 2)
         return jsonify({
             'success': True, 'operation': operation, 'field': field, 'column': field, 'result': result,
-            'time_ms': elapsed_ms, 'query_time_ms': elapsed_ms, 'records_processed': j - i,
+            **timing(), 'records_processed': j - i,
             'ciphertexts_aggregated': len(cts), 'encrypted_computation': True,
             **({'filter_applied': True, 'filter_column': fc, 'range': {'min': range_min, 'max': range_max},
                 'records_before_filter': packed['count'], 'filter_selectivity': (j - i) / max(packed['count'], 1)}
@@ -533,20 +554,20 @@ def execute_query():
 
     total = total_scaled / col['scale'] if col['scale'] != 1 else total_scaled
     result = (finish(count, total_scaled, total2, shift) if spread else {'SUM': total, 'AVG': (total / count) if count else 0, 'COUNT': count}[operation])
-    elapsed_ms = (time.perf_counter() - start) * 1000
-
+    computed = operation != 'COUNT' or bool(group_by)  # a plain COUNT is the stored row count: nothing to decrypt
     response.update({
         'success': True, 'operation': operation, 'field': field, 'column': field,
-        'result': None if result is None else float(result), 'time_ms': round(elapsed_ms, 2), 'query_time_ms': round(elapsed_ms, 2),
-        'records_processed': count, 'ciphertexts_aggregated': len(cts) if operation != 'COUNT' or group_by else 0,
-        'encrypted_computation': operation != 'COUNT' or bool(group_by),
-        'encryption_proof': {
+        'result': None if result is None else float(result), **timing(),
+        'records_processed': count, 'ciphertexts_aggregated': len(cts) if computed else 0,
+        'encrypted_computation': computed,
+        **({'encryption_proof': {
             'ciphertext_bit_lengths': [c.bit_length() for c in cts[:3]],
             'modulus_n_bit_length': db.public_key.n.bit_length(),
             'verification': f'{len(cts)} packed ciphertexts: whole ones multiplied mod n^2 and decrypted once'
                             + ('; range-edge ones decrypted separately' if filtered else ''),
             'computation_type': 'Paillier homomorphic addition',
-        },
+        }} if computed else {'count_note': 'No ciphertext was multiplied or decrypted: the server keeps each column’s '
+                             'row count' + (' and found the rows in range by comparing OPE tags' if filtered else '')}),
     })
     return jsonify(response)
 

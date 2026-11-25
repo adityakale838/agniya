@@ -87,6 +87,8 @@ interface QueryResult {
   field?: string;
   result?: number | null;  // null: MIN / MAX / MEDIAN of no rows
   time_ms?: number;
+  setup_ms?: number;  // first use only: building the encrypted copy this query needs, not counted in time_ms
+  count_note?: string;  // a plain COUNT on the server: the stored row count, nothing decrypted
   records_processed?: number;
   // New fields from advanced server
   success?: boolean;
@@ -313,6 +315,7 @@ export default function Dashboard() {
     const filtered = minVal !== undefined || maxVal !== undefined;
     const spread = SPREAD.includes(selectedOperation);
     const copy = `${selectedField}#${activeGroupBy}` + (filtered ? `|${fc}` : '');
+    const s0 = performance.now();
     if (filtered ? !filteredCopies.current.has(copy) || (spread && !squareCopies.current.has(copy))
                  : !groupCopies.current.has(copy) || (spread && !squareCopies.current.has(copy))) {
       // A copy packed in fc order (and/or with squares), built on first use: one per field x group x filter up front would be too many.
@@ -323,7 +326,7 @@ export default function Dashboard() {
       if (filtered) filteredCopies.current.add(copy); else groupCopies.current.add(copy);
       if (spread) squareCopies.current.add(copy);
     }
-    const t0 = performance.now();
+    const t0 = performance.now(), setup_ms = t0 - s0;
     const a = await worker.queryGroups(selectedField, activeGroupBy, minVal, maxVal, filtered ? fc : undefined);
     const pick = (g: Spread & { sum: number; count: number; avg: number }) =>
       ({ SUM: g.sum, AVG: g.avg, COUNT: g.count, VARIANCE: g.variance ?? null, STDDEV: g.std ?? null })[selectedOperation as Aggregate | 'VARIANCE' | 'STDDEV'];
@@ -332,7 +335,7 @@ export default function Dashboard() {
       operation: selectedOperation, field: selectedField, column: selectedField, group_by: activeGroupBy,
       groups: a.groups.map(g => ({ ...g, result: pick(g) })),
       result: spread ? null : pick({ sum, count, avg: count ? sum / count : 0 }),  // per group only
-      time_ms: performance.now() - t0, records_processed: count, ciphertexts_aggregated: a.ciphertextsUsed,
+      time_ms: performance.now() - t0, setup_ms, records_processed: count, ciphertexts_aggregated: a.ciphertextsUsed,
       ...(filtered && { filter_applied: true, filter_column: fc, range: { min: minVal ?? null, max: maxVal ?? null },
                         records_before_filter: a.total, filter_selectivity: a.total ? count / a.total : 0 }),
       security_note: (filtered
@@ -373,6 +376,7 @@ export default function Dashboard() {
     const worker = workerRef.current!, fc = filterBy || selectedField;
     const filtered = minVal !== undefined || maxVal !== undefined;
     const copy = `${selectedField}#${activeGroupBy}^sorted` + (filtered ? `|${fc}` : '');
+    const s0 = performance.now();
     if (!sortedCopies.current.has(copy)) {  // a copy sorted within each group (by fc with a range), built on first use
       if (!csvRef.current) throw new Error(`${selectedOperation} GROUP BY ${activeGroupBy} needs the CSV: upload it and encrypt again`);
       checkGroups();
@@ -380,13 +384,13 @@ export default function Dashboard() {
                                       filtered ? fc : undefined, filtered ? rowValues(fc) : undefined, filtered ? decimalsOf(fc) : 0);
       sortedCopies.current.add(copy);
     }
-    const t0 = performance.now();
+    const t0 = performance.now(), setup_ms = t0 - s0;
     const a = await worker.groupQuantiles(selectedField, activeGroupBy, [ORDER_STATS[selectedOperation]!], minVal, maxVal,
                                           filtered ? fc : undefined);
     return {
       operation: selectedOperation, field: selectedField, column: selectedField, group_by: activeGroupBy,
       groups: a.groups.map(g => ({ group: g.group, count: g.count, result: g.values[0] })), result: null,
-      time_ms: performance.now() - t0, records_processed: a.groups.reduce((n, g) => n + g.count, 0), ciphertexts_aggregated: a.ciphertextsUsed,
+      time_ms: performance.now() - t0, setup_ms, records_processed: a.groups.reduce((n, g) => n + g.count, 0), ciphertexts_aggregated: a.ciphertextsUsed,
       ...(filtered && { filter_applied: true, filter_column: fc, range: { min: minVal ?? null, max: maxVal ?? null },
                         records_before_filter: a.total, filter_selectivity: a.total ? a.groups.reduce((n, g) => n + g.count, 0) / a.total : 0 }),
       security_note: `A copy of ${selectedField} sorted within each group` + (filtered ? ` (by ${fc}, with OPE tags of group and ${fc})` : '') + `: the server sent the ciphertexts holding each group's answer`
@@ -404,6 +408,7 @@ export default function Dashboard() {
     const fc = filterBy || selectedField, worker = workerRef.current!;
     const cross = fc !== selectedField, spread = SPREAD.includes(selectedOperation);
     const copy = cross ? `${selectedField}|${fc}` : selectedField;
+    const s0 = performance.now();
     if ((cross && !byCopies.current.has(copy)) || (spread && !squareCopies.current.has(copy))) {
       // built on first use: a copy in fc's order and/or the "^2" copy (re-uploads the column with it)
       if (!csvRef.current) throw new Error(`${cross ? `Filtering ${selectedField} by ${fc}` : selectedOperation} needs the CSV: upload it and encrypt again`);
@@ -416,7 +421,7 @@ export default function Dashboard() {
       }
       if (spread) squareCopies.current.add(copy);
     }
-    const t0 = performance.now();
+    const t0 = performance.now(), setup_ms = t0 - s0;
     const a = await worker.query(selectedField, minVal, maxVal, fc);
     const time_ms = performance.now() - t0;
     const total = a.total;
@@ -425,7 +430,7 @@ export default function Dashboard() {
       operation: selectedOperation, field: selectedField, column: selectedField, filter_column: fc,
       result: { SUM: a.sum, AVG: a.avg, COUNT: a.count, VARIANCE: a.variance ?? null, STDDEV: a.std ?? null }[
         selectedOperation as Aggregate | 'VARIANCE' | 'STDDEV'],
-      time_ms, records_processed: a.count, ciphertexts_aggregated: a.ciphertextsUsed,
+      time_ms, setup_ms, records_processed: a.count, ciphertexts_aggregated: a.ciphertextsUsed,
       filter_applied: filtered, range: { min: minVal ?? null, max: maxVal ?? null },
       records_before_filter: total, filter_selectivity: total ? a.count / total : 0,
       security_note: 'The server compared OPE tags (it learns their order) and multiplied ciphertexts; the edge ciphertexts were decrypted in this browser.',
@@ -1225,8 +1230,13 @@ export default function Dashboard() {
                             <Badge className="bg-primary/20 text-primary border-primary/30">
                               {query.operation || query.column}
                             </Badge>
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-xs text-muted-foreground text-right">
                               {(query.time_ms || query.query_time_ms || 0).toFixed(2)} ms
+                              {(query.setup_ms ?? 0) >= 1 && (
+                                <span className="block" title="First use only: encrypting the copy of the column this query needs. Later runs reuse it; answers themselves are never cached.">
+                                  + {Math.round(query.setup_ms!)} ms one-time setup
+                                </span>
+                              )}
                             </span>
                           </div>
                           <div className="font-mono text-sm mb-1">
@@ -1279,6 +1289,12 @@ export default function Dashboard() {
                             </div>
                           )}
                           
+                          {query.count_note && (
+                            <div className="mt-3 p-2 bg-muted/40 border border-border rounded text-xs text-muted-foreground">
+                              {query.count_note}
+                            </div>
+                          )}
+
                           {/* Encryption Proof */}
                           {query.encryption_proof && (
                             <div className="mt-3 p-2 bg-green-500/10 border border-green-500/30 rounded text-xs">

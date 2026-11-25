@@ -120,6 +120,26 @@ def test_ciphertexts_are_real(client):
     assert all(b > 4000 for b in proof["ciphertext_bit_lengths"])
 
 
+def test_count_decrypts_nothing(client):
+    """A plain COUNT is the stored row count: no proof of a computation that did not happen."""
+    c, df = client
+    for kw in ({}, {"rangeMin": 30, "rangeMax": 40}):
+        r = q(c, type="COUNT", column="age", **kw)
+        assert r["encrypted_computation"] is False and r["ciphertexts_aggregated"] == 0
+        assert "encryption_proof" not in r and "No ciphertext was multiplied or decrypted" in r["count_note"]
+    assert "encryption_proof" in q(c, type="COUNT", column="amount", group_by="region")  # one decryption per page
+
+
+def test_first_use_copy_time_is_reported_apart(client):
+    """The first VARIANCE GROUP BY builds the squared copy and says so (setup_ms); the second reuses it.
+    The answer is computed again each time, never cached."""
+    c, df = client
+    first = q(c, type="VARIANCE", column="visits", group_by="age")
+    again = q(c, type="VARIANCE", column="visits", group_by="age")
+    assert first["setup_ms"] > 0 and "setup_ms" not in again
+    assert first["groups"] == again["groups"] and again["time_ms"] > 0
+
+
 @pytest.mark.parametrize("lo,hi", [(-50, 0), (-10.5, 120.25), (None, -49.9), (300, None), (12.34, 12.34), (400, 500)])
 def test_ope_range_filter_floats(client, lo, hi):
     c, df = client
