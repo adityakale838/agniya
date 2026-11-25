@@ -1,29 +1,10 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, Lock, ArrowLeft, FileText, Zap, Database, Search, Calculator, Filter, TrendingUp, AlertCircle, Shield, Layers } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { AlertCircle, ArrowRight, ChevronDown, KeyRound, Lock, Play, Upload } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Badge } from '@/components/ui/badge';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
 import Link from 'next/link';
+import { Sheet, SheetHeader, inkButton, navLink, paperButton } from '@/components/paper';
 import { apiService, API_BASE_URL } from '@/lib/api';
 import { parseCsv, type Spread } from '@/lib/agniya-browser';
 import { CryptoWorker } from '@/lib/agniya-worker-client';
@@ -447,7 +428,7 @@ export default function Dashboard() {
     e.preventDefault();
     setIsDragging(false);
     const droppedFile = e.dataTransfer.files[0];
-    if (droppedFile && droppedFile.type === 'text/csv') {
+    if (droppedFile && (droppedFile.type === 'text/csv' || droppedFile.name.toLowerCase().endsWith('.csv'))) {
       setFile(droppedFile);
       handleUpload(droppedFile);
     }
@@ -525,7 +506,7 @@ export default function Dashboard() {
   const presets = BANK_PRESETS.filter(p => [p.field, p.group, p.group2, p.filter].every(c => !c || schema.some(f => f.name === c))
                                        && PAILLIER.includes(encryptedAs(p.field) ?? ''));
   const presetBlocker = (p: Preset) => (p.filter && encryptedAs(p.filter) !== 'OPE+Paillier'
-    ? `Set ${p.filter} to OPE+Paillier (Configure) to filter on it` : null);
+    ? `Set ${p.filter} to Paillier + range (step 2) to filter on it` : null);
   const runPreset = (p: Preset) => {
     setSelectedOperation(p.op); setSelectedField(p.field); setGroupBy(p.group ?? ''); setGroupBy2(p.group2 ?? '');
     setFilterBy(p.filter ?? ''); setRangeMin(p.min ?? ''); setRangeMax(p.max ?? '');
@@ -587,776 +568,454 @@ export default function Dashboard() {
     setSchema(newSchema);
   };
 
-  const encryptionColors = {
-    'Plaintext': 'bg-gray-500/10 text-gray-600 border-gray-500/20',
-    'AES-256': 'bg-blue-500/10 text-blue-600 border-blue-500/20',
-    'Paillier-2048': 'bg-purple-500/10 text-purple-600 border-purple-500/20',
-    'OPE+Paillier': 'bg-primary/10 text-primary border-primary/20'
+  const PROTECTION: Array<{ value: Field['encryption']; label: string; hint: string }> = [
+    { value: 'Plaintext', label: 'Plain', hint: 'ids only, not encrypted' },
+    { value: 'AES-256', label: 'AES-256', hint: 'text: sealed, not computed on' },
+    { value: 'Paillier-2048', label: 'Paillier', hint: 'SUM, AVG, spread, GROUP BY' },
+    { value: 'OPE+Paillier', label: 'Paillier + range', hint: 'also ranges, MIN, MAX, MEDIAN' },
+  ];
+  const fmt = (v: number | null | undefined) => (v == null ? 'no rows' : v.toLocaleString('en-GB', { maximumFractionDigits: 3 }));
+  const steps = [
+    { value: 'upload', label: 'Load data', enabled: true },
+    { value: 'configure', label: 'Choose protection', enabled: !!uploadData },
+    { value: 'query', label: 'Ask questions', enabled: !!encryptionResult },
+    { value: 'results', label: 'Log', enabled: queries.length > 0 },
+  ];
+  const fieldSelect = 'h-11 w-full appearance-none border border-input bg-card px-3 pr-9 text-[0.98rem] text-ink focus-visible:outline-2';
+  const label = 'mb-1.5 block text-[0.875rem] font-semibold text-ink';
+
+  const renderSlip = (q: QueryResult, key: number) => {
+    const proof = q.encryption_proof;
+    const checked = !!proof && /checked the integrity tags/.test(proof.verification);
+    const sorted = q.groups ? [...q.groups].sort((x, y) => String(x.group).localeCompare(String(y.group), undefined, { numeric: true })) : null;
+    return (
+      <article key={key} className="feed-in border-b border-dashed border-band-line px-5 py-6 md:px-7">
+        <header className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
+          <code className="font-mono text-[0.92rem] font-semibold text-ink">
+            {q.operation}({q.field || q.column}){q.filter_applied && ` WHERE ${q.filter_column || q.field} BETWEEN ${q.range?.min ?? '…'} AND ${q.range?.max ?? '…'}`}
+            {q.group_by && ` GROUP BY ${q.group_by.replace(',', ', ')}`}
+          </code>
+          <span className="font-mono text-[0.875rem] text-ink-2">
+            {(q.time_ms || q.query_time_ms || 0).toFixed(1)} ms
+            {(q.setup_ms ?? 0) >= 1 && (
+              <span title="First use only: the encrypted copy of the column this query needs. Later runs reuse it; answers are never cached.">
+                {' '}+ {Math.round(q.setup_ms!)} ms one-time setup
+              </span>
+            )}
+          </span>
+        </header>
+
+        {sorted ? (
+          <table className="mt-4 w-full border-collapse">
+            <tbody>
+              {sorted.map((g, i) => (
+                <tr key={String(g.group)} className={i % 2 ? '' : 'bg-band/70'}>
+                  <th scope="row" className="py-2 pl-3 pr-4 text-left text-[1.1rem] font-medium">{String(g.group)}</th>
+                  <td className="py-2 pr-4 text-right font-mono text-[clamp(1.2rem,1.9vw,1.6rem)] font-semibold">{fmt(g.result)}</td>
+                  <td className="whitespace-nowrap py-2 pr-3 text-right font-mono text-[0.875rem] text-ink-2">{g.count.toLocaleString('en-GB')} rows</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <div className="mt-3 font-mono text-[clamp(2.2rem,4vw,3.4rem)] font-semibold leading-none tracking-[-0.03em]">{fmt(q.result)}</div>
+        )}
+
+        <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-[0.88rem] text-ink-2">
+          <span>{(q.records_processed || 0).toLocaleString('en-GB')} encrypted rows</span>
+          {q.filter_applied && <span>{Math.round((q.filter_selectivity || 0) * 100)}% of {(q.records_before_filter || 0).toLocaleString('en-GB')} in range</span>}
+          {!!q.ciphertexts_aggregated && <span>{q.ciphertexts_aggregated.toLocaleString('en-GB')} ciphertexts</span>}
+          {checked && <span className="stamp ml-auto text-ok">Checked: integrity tags match</span>}
+          {proof && !checked && <span className="stamp ml-auto text-ink-2">Decrypted by the server</span>}
+        </div>
+        {q.count_note && <p className="mt-3 text-[0.88rem] text-ink-2">{q.count_note}</p>}
+        {proof && <p className="mt-3 max-w-[70ch] text-[0.875rem] leading-relaxed text-ink-2">{proof.verification}.</p>}
+      </article>
+    );
   };
 
   return (
-    <div className="min-h-screen bg-background relative overflow-hidden">
-      <div className="fixed inset-0 gradient-mesh -z-10" />
-      
-      {/* Navigation */}
-      <nav className="glass-morphism sticky top-0 z-50">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-6">
-              <Link href="/" className="flex items-center gap-2">
-                <Lock className="w-6 h-6 text-primary" />
-                <span className="text-xl font-bold tracking-tight">AGNIYA</span>
-              </Link>
-              <Badge variant="outline" className="bg-primary/10 text-primary border-primary/20">
-                Live Encryption Dashboard
-              </Badge>
+    <div className="min-h-[100dvh] bg-paper text-ink">
+      <SheetHeader>
+        <span className={`hidden border px-3 py-1.5 font-mono text-[0.875rem] md:inline-block ${browserMode ? 'border-ok text-ok' : 'border-ribbon text-ribbon'}`}>
+          {browserMode ? 'key held in this browser' : 'server holds the key'}
+        </span>
+        <Link href="/" className={navLink}>Home</Link>
+      </SheetHeader>
+
+      <main className="mx-auto max-w-[1320px] pb-16 pt-6 md:px-6">
+        <Sheet className="pb-12 pt-6">
+        <div className="px-3 md:px-6">
+        {error && (
+          <div role="alert" className="mb-6 flex items-start gap-3 border-2 border-ribbon bg-card px-4 py-3 text-ribbon">
+            <AlertCircle className="mt-0.5 size-5 shrink-0" strokeWidth={2} />
+            <p className="text-[0.98rem] font-medium">{error}</p>
+            <button type="button" onClick={() => setError(null)} className="ml-auto text-[0.9rem] font-semibold underline">Dismiss</button>
+          </div>
+        )}
+
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-0">
+          <TabsList className="grid h-auto w-full grid-cols-2 gap-px rounded-none border border-band-line bg-band-line p-0 md:grid-cols-4">
+            {steps.map((s, i) => (
+              <TabsTrigger key={s.value} value={s.value} disabled={!s.enabled}
+                           className="h-auto justify-start gap-3 rounded-none border-0 bg-card px-4 py-3 text-left text-[0.98rem] font-semibold text-ink-2 shadow-none data-[state=active]:bg-ink data-[state=active]:text-paper data-[state=active]:shadow-none disabled:opacity-45">
+                <span className="font-mono text-[0.875rem]">{i + 1}</span>{s.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+
+          {/* 1: LOAD DATA */}
+          <TabsContent value="upload" className="mt-8 space-y-8">
+            <fieldset>
+              <legend className="semi-wide mb-3 text-[1.15rem] font-bold">Who holds the key?</legend>
+              <div className="grid gap-px border border-band-line bg-band-line md:grid-cols-2">
+                {[
+                  { on: true, title: 'This browser', tag: 'use this for the demo',
+                    text: 'The CSV is read and encrypted in this tab. The server receives only ciphertexts and order tags. Close the tab and the key is gone, unless you save a key file.' },
+                  { on: false, title: 'The server', tag: 'comparison only',
+                    text: 'The CSV is uploaded and the server makes and holds the key. Useful to compare speed; it is not the privacy model.' },
+                ].map(m => (
+                  <button key={m.title} type="button" onClick={() => switchMode(m.on)} aria-pressed={browserMode === m.on}
+                          className={`flex flex-col gap-2 p-5 text-left transition-colors ${browserMode === m.on ? 'bg-ink text-paper' : 'bg-card text-ink hover:bg-band'}`}>
+                    <span className="flex items-baseline justify-between gap-3">
+                      <span className="text-[1.1rem] font-bold">{m.title}</span>
+                      <span className={`font-mono text-[0.875rem] ${browserMode === m.on ? 'text-band' : 'text-ink-2'}`}>{m.tag}</span>
+                    </span>
+                    <span className={`text-[0.95rem] leading-relaxed ${browserMode === m.on ? 'text-[#d9e3d6]' : 'text-ink-2'}`}>{m.text}</span>
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
+            <div
+              className={`relative flex flex-col items-center justify-center border-2 border-dashed px-6 py-14 text-center transition-colors ${isDragging ? 'border-ok bg-band' : 'border-[#9fb79a] bg-card'}`}
+              onDrop={handleDrop}
+              onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+              onDragLeave={() => setIsDragging(false)}
+            >
+              <input type="file" accept=".csv" className="hidden" id="file-upload" onChange={handleFileSelect} />
+              {isUploading ? (
+                <p className="semi-wide text-[1.3rem] font-bold">Reading the CSV…</p>
+              ) : (
+                <>
+                  <p className="semi-wide text-[clamp(1.3rem,2.2vw,1.8rem)] font-bold">{file ? file.name : 'Drop a CSV here'}</p>
+                  <p className="mt-2 text-[0.98rem] text-ink-2">
+                    {file ? `${(file.size / 1024).toFixed(1)} KB` : 'Demo data: data/bank_customers.csv, 2,000 synthetic customers'}
+                  </p>
+                  <label htmlFor="file-upload" className={`${inkButton} mt-6 cursor-pointer`}>
+                    <Upload className="size-4" strokeWidth={2.2} /> Choose a file
+                  </label>
+                </>
+              )}
             </div>
-            
-            <Link href="/">
-              <Button variant="ghost" size="sm" className="gap-2">
-                <ArrowLeft className="w-4 h-4" />
-                Home
-              </Button>
-            </Link>
-          </div>
-        </div>
-      </nav>
 
-      {/* Main Content */}
-      <div className="container mx-auto px-6 py-12">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="max-w-6xl mx-auto"
-        >
-          <div className="mb-8">
-            <h1 className="text-4xl font-bold mb-2 text-gradient">Encrypted Analytics Dashboard</h1>
-            <p className="text-muted-foreground">
-              Upload CSV, encrypt with Paillier-2048 & AES-256, run queries on encrypted data
-            </p>
-          </div>
-
-          {/* Error Display */}
-          <AnimatePresence>
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                className="mb-6"
-              >
-                <Card className="p-4 bg-destructive/10 border-destructive/20">
-                  <div className="flex items-center gap-3">
-                    <AlertCircle className="w-5 h-5 text-destructive" />
-                    <p className="text-sm text-destructive">{error}</p>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => setError(null)}
-                      className="ml-auto"
-                    >
-                      Dismiss
-                    </Button>
-                  </div>
-                </Card>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid w-full grid-cols-4">
-              <TabsTrigger value="upload">
-                <Upload className="w-4 h-4 mr-2" />
-                Upload
-              </TabsTrigger>
-              <TabsTrigger value="configure" disabled={!uploadData}>
-                <Lock className="w-4 h-4 mr-2" />
-                Configure
-              </TabsTrigger>
-              <TabsTrigger value="query" disabled={!encryptionResult}>
-                <Database className="w-4 h-4 mr-2" />
-                Query
-              </TabsTrigger>
-              <TabsTrigger value="results" disabled={queries.length === 0}>
-                <TrendingUp className="w-4 h-4 mr-2" />
-                Results
-              </TabsTrigger>
-            </TabsList>
-
-            {/* UPLOAD TAB */}
-            <TabsContent value="upload" className="space-y-6">
-              <Card className="p-4 glass-morphism">
-                <div className="flex flex-col md:flex-row md:items-center gap-3">
-                  <div className="flex gap-2">
-                    <Button size="sm" variant={browserMode ? 'default' : 'outline'} onClick={() => switchMode(true)}>
-                      <Shield className="w-4 h-4 mr-2" />
-                      Encrypt in this browser
-                    </Button>
-                    <Button size="sm" variant={browserMode ? 'outline' : 'default'} onClick={() => switchMode(false)}>
-                      <Database className="w-4 h-4 mr-2" />
-                      Server-side demo
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {browserMode
-                      ? 'The CSV is read and encrypted here. The server receives only ciphertexts and OPE tags; the private key stays in this tab unless you download a password-protected key file.'
-                      : 'The CSV is uploaded and the server generates and holds the private key: the server is the data owner.'}
-                  </p>
-                </div>
-              </Card>
-
-              {browserMode && (
-                <Card className="p-4 glass-morphism">
-                  <div className="flex flex-col md:flex-row md:items-end gap-3">
-                    <div className="flex-1">
-                      <Label htmlFor="restore-file">Restore from key file</Label>
-                      <Input id="restore-file" type="file" accept=".agniya-key,application/json"
-                             onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)} />
-                    </div>
-                    <div className="flex-1">
-                      <Label htmlFor="restore-password">Key file password</Label>
-                      <Input id="restore-password" type="password" value={keyPassword}
-                             onChange={(e) => setKeyPassword(e.target.value)} />
-                    </div>
-                    <Button onClick={restoreFromKeyFile} disabled={!restoreFile || !keyPassword || keyBusy}>
-                      <Lock className="w-4 h-4 mr-2" />
-                      {keyBusy ? 'Unlocking...' : 'Restore'}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Reopen data you encrypted earlier: the key file is decrypted in this browser; the ciphertexts are already on the server.
-                  </p>
-                </Card>
-              )}
-
-              <Card
-                className={`p-12 border-2 border-dashed transition-all duration-300 glass-morphism ${
-                  isDragging
-                    ? 'border-primary bg-primary/10 scale-105'
-                    : 'border-zinc-300 dark:border-zinc-700'
-                }`}
-                onDrop={handleDrop}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-              >
-                <div className="text-center">
-                  {isUploading ? (
-                    <>
-                      <Zap className="w-16 h-16 mx-auto mb-4 text-primary animate-pulse" />
-                      <h3 className="text-xl font-semibold mb-2">Uploading...</h3>
-                      <p className="text-muted-foreground">Parsing CSV and detecting schema...</p>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="w-16 h-16 mx-auto mb-4 text-primary" />
-                      <h3 className="text-xl font-semibold mb-2">
-                        {file ? file.name : 'Drop your CSV file here'}
-                      </h3>
-                      <p className="text-muted-foreground mb-6">
-                        {file ? `${(file.size / 1024).toFixed(2)} KB` : 'or click to browse'}
-                      </p>
-                      <input
-                        type="file"
-                        accept=".csv"
-                        className="hidden"
-                        id="file-upload"
-                        onChange={handleFileSelect}
-                      />
-                      <label htmlFor="file-upload" className="inline-block">
-                        <div className="cursor-pointer px-6 py-2 rounded-lg bg-gradient-to-r from-primary to-primary/80 text-white font-medium inline-flex items-center gap-2 hover:opacity-90 transition-opacity">
-                          <FileText className="w-4 h-4" />
-                          Select CSV File
-                        </div>
-                      </label>
-                    </>
-                  )}
-                </div>
-              </Card>
-
-              {uploadData && (
-                <motion.div
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                >
-                  <Card className="p-6 glass-morphism">
-                    <h4 className="font-semibold text-lg mb-4">Dataset Information</h4>
-                    <div className="grid grid-cols-3 gap-4 mb-6">
-                      <div className="p-4 rounded-lg bg-primary/5 border border-primary/10">
-                        <Database className="w-5 h-5 text-primary mb-2" />
-                        <div className="text-2xl font-bold">{uploadData.records}</div>
-                        <div className="text-sm text-muted-foreground">Records</div>
-                      </div>
-                      <div className="p-4 rounded-lg bg-primary/5 border border-primary/10">
-                        <FileText className="w-5 h-5 text-primary mb-2" />
-                        <div className="text-2xl font-bold">{uploadData.fields}</div>
-                        <div className="text-sm text-muted-foreground">Fields</div>
-                      </div>
-                      <div className="p-4 rounded-lg bg-primary/5 border border-primary/10">
-                        <Lock className="w-5 h-5 text-primary mb-2" />
-                        <div className="text-2xl font-bold">Ready</div>
-                        <div className="text-sm text-muted-foreground">Status</div>
-                      </div>
-                    </div>
-
-                    {uploadData.sample_data && uploadData.sample_data.length > 0 && (
-                      <div>
-                        <h5 className="font-semibold mb-3">Sample Data (First 3 rows)</h5>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-sm">
-                            <thead className="border-b">
-                              <tr>
-                                {Object.keys(uploadData.sample_data[0]).map(key => (
-                                  <th key={key} className="text-left py-2 px-3 font-medium">{key}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {uploadData.sample_data.slice(0, 3).map((row, i) => (
-                                <tr key={i} className="border-b">
-                                  {Object.values(row).map((val, j) => (
-                                    <td key={j} className="py-2 px-3 font-mono text-xs">{String(val)}</td>
-                                  ))}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    <Button
-                      onClick={() => setActiveTab('configure')}
-                      className="w-full mt-6 gradient-primary text-white"
-                      size="lg"
-                    >
-                      Configure Encryption
-                      <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
-                    </Button>
-                  </Card>
-                </motion.div>
-              )}
-            </TabsContent>
-
-            {/* CONFIGURE TAB */}
-            <TabsContent value="configure" className="space-y-6">
-              <Card className="p-6 glass-morphism">
-                <div className="flex items-center justify-between mb-6">
+            {browserMode && (
+              <details className="group border border-band-line bg-card">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4">
+                  <span>
+                    <span className="block text-[1.02rem] font-bold">Reopen a saved session</span>
+                    <span className="block text-[0.9rem] text-ink-2">Encrypted earlier and saved a key file? Open it to query the same encrypted data again; nothing is uploaded twice.</span>
+                  </span>
+                  <ChevronDown className="size-5 shrink-0 transition-transform group-open:rotate-180" strokeWidth={2} />
+                </summary>
+                <div className="grid gap-4 border-t border-band-line px-5 py-5 md:grid-cols-[1fr_1fr_auto] md:items-end">
                   <div>
-                    <h3 className="text-xl font-semibold mb-1">Configure Encryption Schema</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Choose encryption type for each field
-                    </p>
+                    <label htmlFor="restore-file" className={label}>Key file (.agniya-key)</label>
+                    <input id="restore-file" type="file" accept=".agniya-key,application/json"
+                           className="block w-full border border-input bg-paper px-3 py-2 text-[0.92rem] file:mr-3 file:border-0 file:bg-band file:px-3 file:py-1 file:font-semibold"
+                           onChange={(e) => setRestoreFile(e.target.files?.[0] ?? null)} />
                   </div>
-                  <Badge variant="outline" className="gap-2 bg-primary/5 border-primary/20">
-                    <Lock className="w-3 h-3" />
-                    {schema.filter(f => f.encryption !== 'Plaintext').length} fields encrypted
-                  </Badge>
+                  <div>
+                    <label htmlFor="restore-password" className={label}>Its password</label>
+                    <input id="restore-password" type="password" value={keyPassword} onChange={(e) => setKeyPassword(e.target.value)}
+                           className="h-11 w-full border border-input bg-paper px-3" />
+                  </div>
+                  <button type="button" onClick={restoreFromKeyFile} disabled={!restoreFile || !keyPassword || keyBusy} className={inkButton}>
+                    <KeyRound className="size-4" strokeWidth={2.2} /> {keyBusy ? 'Unlocking…' : 'Open session'}
+                  </button>
                 </div>
+              </details>
+            )}
 
-                <div className="border rounded-lg overflow-hidden">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Field Name</TableHead>
-                        <TableHead>Data Type</TableHead>
-                        <TableHead>Encryption Type</TableHead>
-                        <TableHead className="w-32">Actions</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {schema.map((field, index) => (
-                        <TableRow key={index}>
-                          <TableCell className="font-mono font-semibold">{field.name}</TableCell>
-                          <TableCell className="text-muted-foreground">{field.type}</TableCell>
-                          <TableCell>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className={`w-full justify-start ${encryptionColors[field.encryption]}`}
-                                >
-                                  {field.encryption}
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="start" className="w-64">
-                                {(['Plaintext', 'AES-256', 'Paillier-2048', 'OPE+Paillier'] as const).map((type) => (
-                                  <DropdownMenuItem
-                                    key={type}
-                                    onClick={() => updateFieldEncryption(index, type)}
-                                    className="flex flex-col items-start gap-1 py-3"
-                                  >
-                                    <span className="font-medium">{type}</span>
-                                    <span className="text-xs text-muted-foreground">
-                                      {type === 'Plaintext' && 'No encryption - for IDs'}
-                                      {type === 'AES-256' && 'Fast symmetric - for strings'}
-                                      {type === 'Paillier-2048' && 'Homomorphic - for SUM/AVG'}
-                                      {type === 'OPE+Paillier' && 'Dual-mode - range queries + aggregation'}
-                                    </span>
-                                  </DropdownMenuItem>
-                                ))}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={encryptionColors[field.encryption]}>
-                              {field.encryption === 'Plaintext' ? '⚠️' : '🔒'}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+            {uploadData && (
+              <section className="border border-band-line bg-card">
+                <div className="flex flex-wrap items-center gap-x-8 gap-y-2 px-5 py-4">
+                  <span className="font-mono text-[1.4rem] font-semibold">{uploadData.records.toLocaleString('en-GB')} <span className="text-[0.875rem] font-normal text-ink-2">rows</span></span>
+                  <span className="font-mono text-[1.4rem] font-semibold">{uploadData.fields} <span className="text-[0.875rem] font-normal text-ink-2">columns</span></span>
+                  <button type="button" onClick={() => setActiveTab('configure')} className={`${inkButton} ml-auto`}>
+                    Choose protection <ArrowRight className="size-4" strokeWidth={2.2} />
+                  </button>
                 </div>
+                {uploadData.sample_data && uploadData.sample_data.length > 0 && (
+                  <div className="overflow-x-auto border-t border-band-line">
+                    <table className="w-full border-collapse text-[0.875rem]">
+                      <thead>
+                        <tr>{Object.keys(uploadData.sample_data[0]).map(k => <th key={k} className="whitespace-nowrap px-4 py-2 text-left font-mono font-semibold">{k}</th>)}</tr>
+                      </thead>
+                      <tbody>
+                        {uploadData.sample_data.slice(0, 3).map((row, i) => (
+                          <tr key={i} className={i % 2 ? '' : 'bg-band/70'}>
+                            {Object.values(row).map((v, j) => <td key={j} className="whitespace-nowrap px-4 py-2 font-mono text-ink-2">{String(v)}</td>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+            )}
+          </TabsContent>
 
-                <Button
-                  onClick={handleEncrypt}
-                  disabled={isEncrypting}
-                  className="w-full mt-6 h-12 gradient-primary text-white"
-                  size="lg"
-                >
-                  {isEncrypting ? (
-                    <>
-                      <Zap className="w-5 h-5 mr-2 animate-pulse" />
-                      {browserMode ? 'Generating key and encrypting in this browser...' : 'Encrypting with Paillier-2048...'}
-                    </>
-                  ) : (
-                    <>
-                      <Lock className="w-5 h-5 mr-2" />
-                      Encrypt Dataset ({uploadData?.records} records)
-                    </>
-                  )}
-                </Button>
-              </Card>
+          {/* 2: CHOOSE PROTECTION */}
+          <TabsContent value="configure" className="mt-8 space-y-6">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <h2 className="semi-wide text-[1.4rem] font-bold">How each column is protected</h2>
+                <p className="mt-1 max-w-[62ch] text-[0.98rem] text-ink-2">
+                  Paillier columns can be summed while encrypted. Add range to filter by value or ask MIN, MAX and MEDIAN; the server then learns the order of that column.
+                </p>
+              </div>
+              <span className="font-mono text-[0.875rem] text-ink-2">{schema.filter(f => f.encryption !== 'Plaintext').length} of {schema.length} encrypted</span>
+            </div>
 
-              {encryptionResult && (
-                <motion.div
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                >
-                  <Card className="p-6 bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="p-3 rounded-xl bg-primary/20">
-                        <Zap className="w-6 h-6 text-primary" />
+            <div className="overflow-x-auto border border-band-line bg-card">
+              <table className="w-full min-w-[720px] border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-ink text-left">
+                    <th className="px-4 py-3 text-[0.875rem] font-semibold">Column</th>
+                    <th className="px-4 py-3 text-[0.875rem] font-semibold">Type</th>
+                    <th className="px-4 py-3 text-[0.875rem] font-semibold">Protection</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {schema.map((field, index) => (
+                    <tr key={field.name} className={index % 2 ? '' : 'bg-band/60'}>
+                      <th scope="row" className="px-4 py-2.5 text-left font-mono text-[0.95rem] font-semibold">{field.name}</th>
+                      <td className="px-4 py-2.5 font-mono text-[0.875rem] text-ink-2">{field.type}</td>
+                      <td className="px-4 py-2">
+                        <div role="radiogroup" aria-label={`Protection for ${field.name}`} className="inline-flex border border-input">
+                          {PROTECTION.map(p => {
+                            const numericOnly = p.value === 'Paillier-2048' || p.value === 'OPE+Paillier';
+                            const disabled = numericOnly && field.type === 'str';
+                            const on = field.encryption === p.value;
+                            return (
+                              <button key={p.value} type="button" role="radio" aria-checked={on} disabled={disabled} title={p.hint}
+                                      onClick={() => updateFieldEncryption(index, p.value)}
+                                      className={`border-r border-input px-3 py-1.5 text-[0.875rem] font-semibold last:border-r-0 disabled:cursor-not-allowed disabled:text-[#a9b4ac] ${on ? 'bg-ink text-paper' : 'bg-card text-ink hover:bg-band'}`}>
+                                {p.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4">
+              <button type="button" onClick={handleEncrypt} disabled={isEncrypting} className={`${inkButton} h-12 px-6 text-[1rem]`}>
+                <Lock className="size-4" strokeWidth={2.2} />
+                {isEncrypting ? (browserMode ? 'Making a key and encrypting in this browser…' : 'Encrypting on the server…')
+                              : `Encrypt ${uploadData?.records.toLocaleString('en-GB') ?? ''} rows`}
+              </button>
+              <span className="text-[0.9rem] text-ink-2">{PROTECTION.map(p => `${p.label}: ${p.hint}`).join('. ')}.</span>
+            </div>
+
+            {encryptionResult && (
+              <section className="border-2 border-ink bg-card">
+                <div className="flex flex-wrap items-baseline gap-x-10 gap-y-3 px-5 py-5">
+                  <span className="stamp text-ok">Encrypted</span>
+                  <span className="font-mono text-[1.5rem] font-semibold">{(encryptionResult.records_encrypted || 0).toLocaleString('en-GB')} <span className="text-[0.875rem] font-normal text-ink-2">rows</span></span>
+                  {encryptionResult.time_seconds != null && <span className="font-mono text-[1.5rem] font-semibold">{encryptionResult.time_seconds.toFixed(2)} <span className="text-[0.875rem] font-normal text-ink-2">s</span></span>}
+                  {encryptionResult.ciphertexts != null && <span className="font-mono text-[1.5rem] font-semibold">{encryptionResult.ciphertexts.toLocaleString('en-GB')} <span className="text-[0.875rem] font-normal text-ink-2">ciphertexts stored</span></span>}
+                  <button type="button" onClick={() => setActiveTab('query')} className={`${inkButton} ml-auto`}>
+                    Ask questions <ArrowRight className="size-4" strokeWidth={2.2} />
+                  </button>
+                </div>
+                {browserMode && (
+                  <div className="grid gap-3 border-t border-band-line px-5 py-4 md:grid-cols-[1fr_auto] md:items-end">
+                    <div>
+                      <label htmlFor="key-password" className={label}>Save the key: without it this data cannot be decrypted after the tab closes</label>
+                      <input id="key-password" type="password" placeholder="Choose a password for the key file" value={keyPassword}
+                             onChange={(e) => setKeyPassword(e.target.value)} className="h-11 w-full border border-input bg-paper px-3" />
+                    </div>
+                    <button type="button" onClick={downloadKeyFile} disabled={!keyPassword || keyBusy} className={paperButton}>
+                      <KeyRound className="size-4" strokeWidth={2.2} /> {keyBusy ? 'Encrypting the key…' : 'Download key file'}
+                    </button>
+                  </div>
+                )}
+              </section>
+            )}
+          </TabsContent>
+
+          {/* 3: ASK QUESTIONS */}
+          <TabsContent value="query" className="mt-8">
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(320px,400px)_minmax(0,1fr)]">
+              <div className="min-w-0 space-y-8">
+                {presets.length > 0 && (
+                  <section>
+                    <h2 className="semi-wide text-[1.15rem] font-bold">Bank questions</h2>
+                    <p className="mt-1 text-[0.9rem] text-ink-2">One click: the server computes with no key, this browser decrypts and checks.</p>
+                    <ul className="mt-4 border-t border-band-line">
+                      {presets.map(p => {
+                        const blocker = presetBlocker(p);
+                        return (
+                          <li key={p.title}>
+                            <button type="button" disabled={!!blocker || isQuerying} onClick={() => runPreset(p)} title={blocker ?? undefined}
+                                    className="group flex w-full items-start justify-between gap-3 border-b border-band-line px-1 py-3 text-left hover:bg-band disabled:cursor-not-allowed disabled:opacity-55">
+                              <span>
+                                <span className="block text-[1.02rem] font-semibold leading-snug">{p.title}</span>
+                                <span className="mt-0.5 block font-mono text-[0.875rem] leading-relaxed text-ink-2">{presetSql(p)}</span>
+                                {blocker && <span className="mt-1 block text-[0.875rem] font-medium text-ribbon">{blocker}</span>}
+                              </span>
+                              <Play className="mt-1 size-4 shrink-0 text-ink-2 group-hover:text-ink" strokeWidth={2.2} />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </section>
+                )}
+
+                <section className="border border-band-line bg-card p-5">
+                  <h2 className="semi-wide text-[1.15rem] font-bold">Your own query</h2>
+                  <div className="mt-4 space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label htmlFor="q-op" className={label}>Operation</label>
+                        <div className="relative">
+                          <select id="q-op" value={selectedOperation} onChange={(e) => setSelectedOperation(e.target.value as Operation)} className={fieldSelect}>
+                            {(['SUM', 'AVG', 'COUNT', 'MIN', 'MAX', 'MEDIAN', 'VARIANCE', 'STDDEV'] as Operation[]).map(o => <option key={o} value={o}>{o}</option>)}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3.5 size-4" strokeWidth={2} />
+                        </div>
                       </div>
                       <div>
-                        <h4 className="font-bold text-lg">Encryption Complete!</h4>
-                        <p className="text-sm text-muted-foreground">Your data is now encrypted and ready for queries</p>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-4 gap-4">
-                      <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
-                        <div className="text-3xl font-bold text-primary">
-                          {encryptionResult.records_encrypted || 0}
-                        </div>
-                        <div className="text-sm text-muted-foreground">Records Encrypted</div>
-                      </div>
-                      <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
-                        <div className="text-3xl font-bold text-primary">
-                          {encryptionResult.time_seconds?.toFixed(2) ?? 'N/A'}s
-                        </div>
-                        <div className="text-sm text-muted-foreground">Time Taken</div>
-                      </div>
-                      <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
-                        <div className="text-3xl font-bold text-primary">
-                          {encryptionResult.throughput?.toFixed(0) ?? 'N/A'}/s
-                        </div>
-                        <div className="text-sm text-muted-foreground">Throughput</div>
-                      </div>
-                      <div className="p-4 rounded-lg bg-white/50 dark:bg-black/20">
-                        <div className="text-3xl font-bold text-green-600">
-                          {encryptionResult.ciphertexts ?? 'N/A'}
-                        </div>
-                        <div className="text-sm text-muted-foreground">Ciphertexts stored</div>
-                      </div>
-                    </div>
-
-                    {browserMode && (
-                      <div className="mt-6 p-4 rounded-lg bg-white/50 dark:bg-black/20">
-                        <Label htmlFor="key-password">
-                          Save the key: without it the data cannot be decrypted after this tab closes
-                        </Label>
-                        <div className="flex gap-2 mt-2">
-                          <Input id="key-password" type="password" placeholder="Password for the key file"
-                                 value={keyPassword} onChange={(e) => setKeyPassword(e.target.value)} />
-                          <Button onClick={downloadKeyFile} disabled={!keyPassword || keyBusy} variant="outline">
-                            {keyBusy ? 'Encrypting key...' : 'Download key file'}
-                          </Button>
+                        <label htmlFor="q-field" className={label}>Column</label>
+                        <div className="relative">
+                          <select id="q-field" value={selectedField} onChange={(e) => setSelectedField(e.target.value)} className={fieldSelect}>
+                            {!selectedField && <option value="">Choose…</option>}
+                            {schema.filter(f => PAILLIER.includes(f.encryption)).map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3.5 size-4" strokeWidth={2} />
                         </div>
                       </div>
-                    )}
-
-                    <Button
-                      onClick={() => setActiveTab('query')}
-                      variant="secondary"
-                      className="w-full mt-6"
-                      size="lg"
-                    >
-                      Start Querying Encrypted Data
-                      <ArrowLeft className="w-4 h-4 ml-2 rotate-180" />
-                    </Button>
-                  </Card>
-                </motion.div>
-              )}
-            </TabsContent>
-
-            {/* QUERY TAB */}
-            <TabsContent value="query" className="space-y-6">
-              {presets.length > 0 && (
-                <Card className="p-6 glass-morphism">
-                  <h3 className="text-xl font-semibold mb-1 flex items-center gap-2">
-                    <Shield className="w-5 h-5 text-primary" />
-                    Banking use cases
-                  </h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    One click runs the query on the encrypted data: the server computes without any key, this browser decrypts and checks the answer.
-                  </p>
-                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {presets.map(p => {
-                      const blocker = presetBlocker(p);
-                      return (
-                        <button key={p.title} type="button" disabled={!!blocker || isQuerying} onClick={() => runPreset(p)} title={blocker ?? undefined}
-                                className="text-left rounded-lg border border-primary/20 p-3 hover:bg-primary/5 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                          <div className="font-medium">{p.title}</div>
-                          <div className="font-mono text-xs text-muted-foreground mt-1">{presetSql(p)}</div>
-                          {blocker && <div className="text-xs text-amber-600 mt-1">{blocker}</div>}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </Card>
-              )}
-              <div className="grid md:grid-cols-2 gap-6">
-                {/* Query Builder */}
-                <Card className="p-6 glass-morphism">
-                  <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
-                    <Calculator className="w-5 h-5 text-primary" />
-                    Homomorphic Query Builder
-                  </h3>
-
-                  <div className="space-y-4">
-                    <div>
-                      <Label>Operation</Label>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="outline" className="w-full justify-between">
-                            {selectedOperation}
-                            <Filter className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-full">
-                          <DropdownMenuItem onClick={() => setSelectedOperation('SUM')}>
-                            SUM - Total sum of values
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setSelectedOperation('AVG')}>
-                            AVG - Average of values
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setSelectedOperation('COUNT')}>
-                            COUNT - Number of records
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setSelectedOperation('MIN')}>
-                            MIN - Smallest value (OPE+Paillier, or per group)
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setSelectedOperation('MAX')}>
-                            MAX - Largest value (OPE+Paillier, or per group)
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setSelectedOperation('MEDIAN')}>
-                            MEDIAN - Middle value (OPE+Paillier, or per group)
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setSelectedOperation('VARIANCE')}>
-                            VARIANCE - Sample variance
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => setSelectedOperation('STDDEV')}>
-                            STDDEV - Sample standard deviation
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </div>
-
-                    <div>
-                      <Label>Field</Label>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="outline" className="w-full justify-between">
-                            {selectedField || 'Select field...'}
-                            <Database className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent className="w-full">
-                          {schema.filter(f => PAILLIER.includes(f.encryption)).map(field => (
-                            <DropdownMenuItem key={field.name} onClick={() => setSelectedField(field.name)}>
-                              {field.name} ({field.encryption})
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </div>
 
                     {groupOptions.length > 0 && (
-                      <div>
-                        <Label>Group by (one decryption per plaintext of groups)</Label>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="outline" className="w-full justify-between">
-                              {groupOptions.includes(groupBy) ? groupBy.replace(',', ', ') : 'No grouping'}
-                              <Layers className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="w-full">
-                            <DropdownMenuItem onClick={() => setGroupBy('')}>No grouping</DropdownMenuItem>
-                            {groupOptions.map(g => (
-                              <DropdownMenuItem key={g} onClick={() => setGroupBy(g)}>{g.replace(',', ', ')}</DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    )}
-
-                    {activeGroupBy && !groupBy.includes(',') && thenOptions.length > 0 && (
-                      <div>
-                        <Label>Then by (optional: GROUP BY both)</Label>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="outline" className="w-full justify-between">
-                              {thenOptions.includes(groupBy2) ? groupBy2 : 'Only ' + groupBy}
-                              <Layers className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="w-full">
-                            <DropdownMenuItem onClick={() => setGroupBy2('')}>Only {groupBy}</DropdownMenuItem>
-                            {thenOptions.map(g => (
-                              <DropdownMenuItem key={g} onClick={() => setGroupBy2(g)}>{g}</DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label htmlFor="q-group" className={label}>Group by</label>
+                          <div className="relative">
+                            <select id="q-group" value={groupOptions.includes(groupBy) ? groupBy : ''} onChange={(e) => setGroupBy(e.target.value)} className={fieldSelect}>
+                              <option value="">No grouping</option>
+                              {groupOptions.map(g => <option key={g} value={g}>{g.replace(',', ', ')}</option>)}
+                            </select>
+                            <ChevronDown className="pointer-events-none absolute right-3 top-3.5 size-4" strokeWidth={2} />
+                          </div>
+                        </div>
+                        {activeGroupBy && !groupBy.includes(',') && thenOptions.length > 0 && (
+                          <div>
+                            <label htmlFor="q-group2" className={label}>Then by</label>
+                            <div className="relative">
+                              <select id="q-group2" value={thenOptions.includes(groupBy2) ? groupBy2 : ''} onChange={(e) => setGroupBy2(e.target.value)} className={fieldSelect}>
+                                <option value="">Only {groupBy}</option>
+                                {thenOptions.map(g => <option key={g} value={g}>{g}</option>)}
+                              </select>
+                              <ChevronDown className="pointer-events-none absolute right-3 top-3.5 size-4" strokeWidth={2} />
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
 
                     {schema.some(f => f.encryption === 'OPE+Paillier') && (
                       <div>
-                        <Label>Filter by (range on an OPE+Paillier field)</Label>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="outline" className="w-full justify-between">
-                              {filterBy && filterBy !== selectedField ? filterBy : `${selectedField || 'the field'} itself`}
-                              <Filter className="w-4 h-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent className="w-full">
-                            <DropdownMenuItem onClick={() => setFilterBy('')}>
-                              {selectedField || 'The field'} itself
-                            </DropdownMenuItem>
-                            {schema.filter(f => f.encryption === 'OPE+Paillier' && f.name !== selectedField).map(f => (
-                              <DropdownMenuItem key={f.name} onClick={() => setFilterBy(f.name)}>
-                                {f.name}
-                              </DropdownMenuItem>
-                            ))}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        <label htmlFor="q-filter" className={label}>Range filter on</label>
+                        <div className="relative">
+                          <select id="q-filter" value={filterBy && filterBy !== selectedField ? filterBy : ''} onChange={(e) => setFilterBy(e.target.value)} className={fieldSelect}>
+                            <option value="">{selectedField || 'the column'} itself</option>
+                            {schema.filter(f => f.encryption === 'OPE+Paillier' && f.name !== selectedField).map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-3 top-3.5 size-4" strokeWidth={2} />
+                        </div>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <Label>Min {filterBy || selectedField || 'value'} (optional)</Label>
-                        <Input
-                          type="number"
-                          placeholder="25"
-                          value={rangeMin}
-                          onChange={(e) => setRangeMin(e.target.value)}
-                        />
+                        <label htmlFor="q-min" className={label}>From (optional)</label>
+                        <input id="q-min" type="number" value={rangeMin} onChange={(e) => setRangeMin(e.target.value)} className="h-11 w-full border border-input bg-card px-3 font-mono" />
                       </div>
                       <div>
-                        <Label>Max {filterBy || selectedField || 'value'} (optional)</Label>
-                        <Input
-                          type="number"
-                          placeholder="50"
-                          value={rangeMax}
-                          onChange={(e) => setRangeMax(e.target.value)}
-                        />
+                        <label htmlFor="q-max" className={label}>To (optional)</label>
+                        <input id="q-max" type="number" value={rangeMax} onChange={(e) => setRangeMax(e.target.value)} className="h-11 w-full border border-input bg-card px-3 font-mono" />
                       </div>
                     </div>
-                    {activeGroupBy && (
-                      <p className="text-xs text-muted-foreground">With a range, the first query per filter column encrypts a copy of {selectedField} packed in that column&apos;s order.</p>
-                    )}
 
-                    <Button
-                      onClick={handleQuery}
-                      disabled={!selectedField || isQuerying}
-                      className="w-full gradient-primary text-white"
-                      size="lg"
-                    >
-                      {isQuerying ? (
-                        <>
-                          <Zap className="w-5 h-5 mr-2 animate-pulse" />
-                          Computing on Encrypted Data...
-                        </>
-                      ) : (
-                        <>
-                          <Search className="w-5 h-5 mr-2" />
-                          Execute Query
-                        </>
-                      )}
-                    </Button>
+                    <button type="button" onClick={handleQuery} disabled={!selectedField || isQuerying} className={`${inkButton} w-full justify-center`}>
+                      {isQuerying ? 'Computing on ciphertexts…' : 'Run on encrypted data'}
+                    </button>
                   </div>
-                </Card>
-
-                {/* Recent Queries */}
-                <Card className="p-6 glass-morphism">
-                  <h3 className="text-xl font-semibold mb-6 flex items-center gap-2">
-                    <TrendingUp className="w-5 h-5 text-primary" />
-                    Query Results
-                  </h3>
-
-                  {queries.length === 0 ? (
-                    <div className="text-center py-12 text-muted-foreground">
-                      <Search className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                      <p>No queries yet. Run your first homomorphic query!</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {queries.map((query, i) => (
-                        <motion.div
-                          key={i}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          className="p-4 rounded-lg bg-primary/5 border border-primary/10"
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <Badge className="bg-primary/20 text-primary border-primary/30">
-                              {query.operation || query.column}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground text-right">
-                              {(query.time_ms || query.query_time_ms || 0).toFixed(2)} ms
-                              {(query.setup_ms ?? 0) >= 1 && (
-                                <span className="block" title="First use only: encrypting the copy of the column this query needs. Later runs reuse it; answers themselves are never cached.">
-                                  + {Math.round(query.setup_ms!)} ms one-time setup
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                          <div className="font-mono text-sm mb-1">
-                            <span className="text-muted-foreground">{query.operation || query.column}(</span>
-                            <span className="font-semibold">{query.field || query.column}</span>
-                            <span className="text-muted-foreground">)</span>
-                            {query.group_by && <span className="text-muted-foreground"> GROUP BY <span className="font-semibold text-foreground">{query.group_by.replace(',', ', ')}</span></span>}
-                          </div>
-                          {query.groups ? (<>
-                            <table className="w-full text-sm my-2">
-                              <tbody>
-                                {[...query.groups].sort((x, y) => String(x.group).localeCompare(String(y.group), undefined, { numeric: true })).map(g => (
-                                  <tr key={String(g.group)} className="border-b border-primary/10 last:border-0">
-                                    <td className="py-1 font-mono">{String(g.group)}</td>
-                                    <td className="py-1 text-right font-bold text-primary">{g.result == null ? '—' : g.result.toLocaleString()}</td>
-                                    <td className="py-1 text-right text-xs text-muted-foreground">{g.count} rows</td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                            </table>
-                            {query.security_note && <div className="text-xs text-muted-foreground mb-1">🔐 {query.security_note}</div>}
-                          </>) : (
-                          <div className="text-2xl font-bold text-primary">
-                            {query.result == null ? '—' : query.result.toLocaleString()}
-                          </div>
-                          )}
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {query.records_processed || 0} records processed (encrypted)
-                            {query.filter_applied && (
-                              <div className="text-blue-600 dark:text-blue-400 mt-1">
-                                🔍 WHERE {query.filter_column || query.field || query.column} in [{query.range?.min} - {query.range?.max}]
-                                ({Math.round((query.filter_selectivity || 0) * 100)}% of data)
-                              </div>
-                            )}
-                          </div>
-                          
-                          {/* Range Filter Info */}
-                          {query.filter_applied && (
-                            <div className="mt-3 p-2 bg-blue-500/10 border border-blue-500/30 rounded text-xs">
-                              <div className="font-semibold text-blue-600 mb-1 flex items-center gap-1">
-                                <Filter className="w-3 h-3" />
-                                OPE Range Filter Applied
-                              </div>
-                              <div className="space-y-1 text-muted-foreground">
-                                <div>📊 Total records: {query.records_before_filter || 0}</div>
-                                <div>✅ Filtered records: {query.records_processed || 0}</div>
-                                <div>🎯 Selectivity: {Math.round((query.filter_selectivity || 0) * 100)}%</div>
-                                <div>🔐 {query.security_note}</div>
-                              </div>
-                            </div>
-                          )}
-                          
-                          {query.count_note && (
-                            <div className="mt-3 p-2 bg-muted/40 border border-border rounded text-xs text-muted-foreground">
-                              {query.count_note}
-                            </div>
-                          )}
-
-                          {/* Encryption Proof */}
-                          {query.encryption_proof && (
-                            <div className="mt-3 p-2 bg-green-500/10 border border-green-500/30 rounded text-xs">
-                              <div className="font-semibold text-green-600 mb-1 flex items-center gap-1">
-                                <Shield className="w-3 h-3" />
-                                Encrypted Computation Verified
-                              </div>
-                              <div className="space-y-1 text-muted-foreground">
-                                <div>🔐 Ciphertext sizes: {query.encryption_proof.ciphertext_bit_lengths?.join(', ')} bits</div>
-                                {query.encryption_proof.encrypted_result_bit_length && (
-                                  <div>🔐 Encrypted result: {query.encryption_proof.encrypted_result_bit_length} bits</div>
-                                )}
-                                <div>✅ {query.encryption_proof.verification}</div>
-                              </div>
-                            </div>
-                          )}
-                        </motion.div>
-                      ))}
-                    </div>
-                  )}
-                </Card>
+                </section>
               </div>
-            </TabsContent>
 
-            {/* RESULTS TAB */}
-            <TabsContent value="results">
-              <Card className="p-6 glass-morphism">
-                <h3 className="text-xl font-semibold mb-6">All Query Results</h3>
-                
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Operation</TableHead>
-                      <TableHead>Field</TableHead>
-                      <TableHead className="text-right">Result</TableHead>
-                      <TableHead className="text-right">Time (ms)</TableHead>
-                      <TableHead className="text-right">Records</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {queries.map((query, i) => (
-                      <TableRow key={i}>
-                        <TableCell>
-                          <Badge className="bg-primary/20 text-primary border-primary/30">
-                            {query.operation || query.column}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-mono">{query.field || query.column}{query.group_by && ` by ${query.group_by}`}</TableCell>
-                        <TableCell className="text-right font-bold text-primary text-lg">
-                          {query.result == null ? '—' : query.result.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right font-mono">{(query.time_ms || query.query_time_ms || 0).toFixed(2)}</TableCell>
-                        <TableCell className="text-right">{query.records_processed || 0}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </motion.div>
-      </div>
+              {/* The printout roll: newest message on top. */}
+              <section aria-live="polite" aria-label="Results" className="relative min-h-[420px] self-start border border-band-line bg-[#fbfcf8]">
+                <div className="flex items-center justify-between border-b-2 border-ink px-5 py-3 md:px-7">
+                  <h2 className="semi-wide text-[1.05rem] font-bold">Results</h2>
+                  <span className="font-mono text-[0.875rem] text-ink-2">{queries.length} printed · newest first</span>
+                </div>
+                {isQuerying && (
+                  <div className="border-b border-dashed border-band-line bg-band px-5 py-4 font-mono text-[0.9rem] md:px-7">
+                    printing: the server multiplies ciphertexts, then this browser decrypts…
+                  </div>
+                )}
+                {queries.length === 0 && !isQuerying ? (
+                  <div className="greenbar flex min-h-[360px] flex-col items-start justify-center px-7 py-10 [--bar:60px]">
+                    <p className="semi-wide text-[1.3rem] font-bold">Nothing printed yet</p>
+                    <p className="mt-2 max-w-[44ch] text-[0.98rem] text-ink-2">Click a bank question on the left, or build your own query. Each answer arrives here with its timing and its check.</p>
+                  </div>
+                ) : (
+                  <div className="max-h-[calc(100dvh-14rem)] overflow-y-auto">
+                    {queries.map((q, i) => renderSlip(q, queries.length - i))}
+                  </div>
+                )}
+              </section>
+            </div>
+          </TabsContent>
+
+          {/* 4: LOG */}
+          <TabsContent value="results" className="mt-8">
+            <div className="overflow-x-auto border border-band-line bg-card">
+              <table className="w-full min-w-[640px] border-collapse">
+                <thead>
+                  <tr className="border-b-2 border-ink text-left text-[0.875rem]">
+                    <th className="px-4 py-3 font-semibold">Query</th>
+                    <th className="px-4 py-3 text-right font-semibold">Result</th>
+                    <th className="px-4 py-3 text-right font-semibold">Time</th>
+                    <th className="px-4 py-3 text-right font-semibold">Rows</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {queries.map((q, i) => (
+                    <tr key={i} className={i % 2 ? '' : 'bg-band/60'}>
+                      <td className="px-4 py-2.5 font-mono text-[0.875rem]">{q.operation}({q.field || q.column}){q.group_by && ` GROUP BY ${q.group_by.replace(',', ', ')}`}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-[1rem] font-semibold">{q.groups ? `${q.groups.length} groups` : fmt(q.result)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-[0.9rem]">{(q.time_ms || q.query_time_ms || 0).toFixed(1)} ms</td>
+                      <td className="px-4 py-2.5 text-right font-mono text-[0.9rem]">{(q.records_processed || 0).toLocaleString('en-GB')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </TabsContent>
+        </Tabs>
+        </div>
+        </Sheet>
+      </main>
     </div>
   );
 }

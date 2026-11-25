@@ -15,21 +15,24 @@ Everything here was run on the development laptop (Intel i5-1145G7, Windows 11).
 
 1. `.\start.ps1` (or double-click `start.bat`). It starts the API (port 5000) and the dashboard (port 3000),
    waits until both answer, and opens `http://localhost:3000/dashboard`. Leave both server windows open.
-2. Dashboard, **Upload**: choose `data/bank_customers.csv` (2,000 synthetic customers, no real data).
-3. **Configure**: set `credit_score` to **OPE+Paillier** (needed for the sub-prime use case). Keep the
-   default "Encrypt in this browser" mode. Click **Encrypt**: about 3.5 s.
-4. **Query**: click each of the six banking use cases once. The first run of each builds its encrypted copy
+2. Dashboard, step **1 Load data**: keep "Who holds the key?" on **This browser**, then choose
+   `data/bank_customers.csv` (2,000 synthetic customers, no real data).
+3. Step **2 Choose protection**: set `credit_score` to **Paillier + range** (needed for the sub-prime
+   question). Click **Encrypt 2,000 rows**: about 3.5 s.
+4. Step **3 Ask questions**: click each of the six bank questions once. The first run of each builds its encrypted copy
    (0.3–1.5 s); after that each answers in 0.2–0.4 s.
 5. Optional: save a key file (button after encrypting) with a password you will remember.
 
 ## While presenting
 
-- Click two or three use cases. Point at the result card's last line: the server multiplied ciphertexts
-  "without any key", and the browser "checked the integrity tags".
+- Click two or three bank questions. Point at the green stamp on each result, "Checked: integrity tags match",
+  and the line under it: the server multiplied ciphertexts "without any key" and this browser decrypted them.
+- On the home page (localhost:3000), the slip at the top makes real ciphertexts in the browser; "Print again"
+  gives new ciphertexts and the same total.
 - Good ones to show: *Loan exposure by risk band* (GROUP BY, one decryption), *Median balance by region*
   (MEDIAN per group), *Sub-prime exposure by product* (a range filter plus GROUP BY).
 - Don't close or reload the browser tab: the key lives in it. If it happens, upload and encrypt again (3.5 s).
-- Don't switch to "Server-side demo" mode: there the server holds the key, which is not the story you are
+- Don't switch "Who holds the key?" to **The server**: there the server holds the key, which is not the story you are
   telling.
 
 ## If something goes wrong
@@ -38,7 +41,7 @@ Everything here was run on the development laptop (Intel i5-1145G7, Windows 11).
 |---|---|
 | `start.ps1` says the API did not answer | Read its window; a port already in use means an old server is running: close it and run again |
 | Dashboard shows an error after a reload | The key was lost with the tab: upload and encrypt again |
-| A use case button is greyed out | `credit_score` wasn't set to OPE+Paillier before encrypting: set it, encrypt again |
+| A bank question is greyed out | `credit_score` wasn't set to Paillier + range before encrypting: set it, encrypt again |
 | No time or no network | Show slide 12 of the deck: the same six questions with their measured times |
 
 ## Numbers you can quote (all measured, see `tools/bench_results.json`)

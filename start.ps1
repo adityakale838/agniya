@@ -44,6 +44,6 @@ Write-Host "Dashboard is up." -ForegroundColor Green
 Start-Process 'http://localhost:3000/dashboard'
 Write-Host ""
 Write-Host "Ready. Banking walkthrough: docs\PITCH-DAY.md" -ForegroundColor Cyan
-Write-Host "  1. Upload data\bank_customers.csv"
-Write-Host "  2. Configure: set credit_score to OPE+Paillier, then Encrypt (about 3.5 s)"
-Write-Host "  3. Query tab: click each banking use case once before presenting"
+Write-Host "  1. Load data: data\bank_customers.csv (keep the key in this browser)"
+Write-Host "  2. Choose protection: set credit_score to Paillier + range, then Encrypt (about 3.5 s)"
+Write-Host "  3. Ask questions: click each bank question once before presenting"

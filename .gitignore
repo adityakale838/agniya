@@ -97,3 +97,6 @@ output/
 
 # API v2 ciphertext store
 *.sqlite3
+
+# Impeccable design review captures (local only)
+.impeccable/review/

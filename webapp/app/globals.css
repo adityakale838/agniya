@@ -1,26 +1,17 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* dark: only under an explicit .dark ancestor, which this app never sets (light sheet by design). */
 @custom-variant dark (&:is(.dark *));
+
+/* AGNIYA: green-bar clearing printout. Paper and ink, not chrome.
+   Light only: the demo runs on a projector in a lit hall, where a light sheet carries furthest. */
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
+  --font-sans: var(--font-archivo);
+  --font-mono: var(--font-martian);
   --color-ring: var(--ring);
   --color-input: var(--input);
   --color-border: var(--border);
@@ -37,107 +28,153 @@
   --color-popover: var(--popover);
   --color-card-foreground: var(--card-foreground);
   --color-card: var(--card);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
+  --color-paper: var(--paper);
+  --color-band: var(--band);
+  --color-band-line: var(--band-line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ok: var(--ok);
+  --color-ribbon: var(--ribbon);
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
 }
 
 :root {
-  --radius: 0.75rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(0.995 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.55 0.22 264);
-  --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.965 0.01 264);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.965 0.01 264);
-  --muted-foreground: oklch(0.48 0.02 264);
-  --accent: oklch(0.955 0.02 264);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.92 0.01 264);
-  --input: oklch(0.92 0.01 264);
-  --ring: oklch(0.55 0.22 264);
-  --chart-1: oklch(0.55 0.22 264);
-  --chart-2: oklch(0.6 0.19 162);
-  --chart-3: oklch(0.65 0.18 305);
-  --chart-4: oklch(0.70 0.15 70);
-  --chart-5: oklch(0.58 0.20 16);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.55 0.22 264);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.965 0.01 264);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.92 0.01 264);
-  --sidebar-ring: oklch(0.55 0.22 264);
-}
+  color-scheme: light;
+  --radius: 0px;
+  --paper: #f3f5ef;        /* fanfold stock, faintly green */
+  --band: #dfecda;         /* the green bar */
+  --band-line: #c3d8bd;    /* band edge and rules */
+  --ink: #1b1f1d;          /* ribbon black */
+  --ink-2: #4f5a53;        /* faded ribbon, 6.4:1 on paper */
+  --ok: #1f6b48;           /* checked stamp */
+  --ribbon: #b92d19;       /* red half of the ribbon: failures and tampering only */
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: #f7f9f4;
+  --card-foreground: var(--ink);
+  --popover: #fbfcf9;
+  --popover-foreground: var(--ink);
+  --primary: var(--ink);
+  --primary-foreground: #f7f9f4;
+  --secondary: var(--band);
+  --secondary-foreground: var(--ink);
+  --muted: #e8eee4;
+  --muted-foreground: var(--ink-2);
+  --accent: var(--band);
+  --accent-foreground: var(--ink);
+  --destructive: var(--ribbon);
+  --border: var(--band-line);
+  --input: #9fb79a;
+  --ring: var(--ok);
 }
 
 @layer base {
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border;
+  }
+  html {
+    scrollbar-color: #9fb79a var(--paper);
   }
   body {
     @apply bg-background text-foreground antialiased;
+    font-family: var(--font-archivo), system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
   }
+  ::selection {
+    background: var(--ink);
+    color: var(--band);
+  }
+  :focus-visible {
+    outline: 2px solid var(--ok);
+    outline-offset: 2px;
+  }
+  a {
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: 1px;
+  }
+  ::-webkit-scrollbar { width: 12px; height: 12px; }
+  ::-webkit-scrollbar-track { background: var(--paper); }
+  ::-webkit-scrollbar-thumb { background: #b4c9ae; border: 3px solid var(--paper); }
+  input::placeholder { color: #6b766f; }
 }
 
 @layer utilities {
-  .glass-morphism {
-    @apply bg-white/70 dark:bg-card/50 backdrop-blur-xl border border-border/50 shadow-lg;
+  /* Wide report-header voice: Archivo at its expanded width. */
+  .wide { font-stretch: 125%; font-variation-settings: "wdth" 125; }
+  .semi-wide { font-stretch: 112%; font-variation-settings: "wdth" 112; }
+
+  /* The green bar: three printed lines of band, three of paper. */
+  .greenbar {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      var(--band) 0 calc(var(--bar, 72px)),
+      transparent calc(var(--bar, 72px)) calc(var(--bar, 72px) * 2)
+    );
   }
-  
-  .gradient-primary {
-    @apply bg-gradient-to-br from-primary via-primary/90 to-primary/70;
+
+  /* Tractor-feed margin: the punched holes down each edge of fanfold paper. */
+  .tractor {
+    background-image: radial-gradient(circle at 50% 50%, #d6ded2 0 var(--hole, 5px), #c3cebe var(--hole, 5px) calc(var(--hole, 5px) + 1px), transparent calc(var(--hole, 5px) + 1.5px));
+    background-size: 100% 24px;
+    background-repeat: repeat-y;
   }
-  
-  .gradient-mesh {
-    background: 
-      radial-gradient(at 40% 20%, oklch(0.55 0.22 264 / 0.08) 0px, transparent 50%),
-      radial-gradient(at 80% 0%, oklch(0.65 0.18 305 / 0.06) 0px, transparent 50%),
-      radial-gradient(at 0% 50%, oklch(0.6 0.19 162 / 0.06) 0px, transparent 50%);
+
+  /* Perforation: the tear line between sheets. */
+  .perf {
+    background-image: repeating-linear-gradient(to right, var(--band-line) 0 6px, transparent 6px 11px);
+    background-size: 100% 1px;
+    background-repeat: no-repeat;
+    background-position: left center;
   }
-  
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-br from-primary via-primary to-chart-3;
+
+  /* Message field tag, as on an interbank slip: :32A: */
+  .tag {
+    font-family: var(--font-martian), ui-monospace, monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0;
+    color: var(--ink-2);
+  }
+
+  /* Ciphertext: dense, pixel-crisp, from real bytes. */
+  .cipher {
+    font-family: var(--font-martian), ui-monospace, monospace;
+    font-size: 10px;
+    line-height: 13px;
+    letter-spacing: 0;
+    word-break: break-all;
+    color: #3d4a42;
+  }
+
+  /* Stamp: the "checked" mark printed in the second ink. */
+  .stamp {
+    border: 2px solid currentColor;
+    padding: 0.15rem 0.5rem;
+    font-family: var(--font-martian), ui-monospace, monospace;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+}
+
+/* Paper feed: printed lines arrive one at a time, at a constant rate, like a line printer. */
+@media (prefers-reduced-motion: no-preference) {
+  .feed-line {
+    animation: feed 260ms linear both;
+    animation-delay: calc(var(--i, 0) * 140ms);
+  }
+  @keyframes feed {
+    from { clip-path: inset(0 100% 0 0); }
+    to { clip-path: inset(0 0 0 0); }
+  }
+  .feed-in {
+    animation: feedin 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+  @keyframes feedin {
+    from { transform: translateY(-12px); clip-path: inset(0 0 100% 0); }
+    to { transform: none; clip-path: inset(0 0 0 0); }
   }
 }
