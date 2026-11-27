@@ -1,6 +1,6 @@
 # AGNIYA system architecture
 
-This describes the system as it runs today (branch `integrity`, commit `91435b2`), not a target design. Every component, endpoint, limit and number here is taken from the code, the tests or `tools/bench_results.json`. Section 11 lists what a bank deployment still needs.
+> This describes the system as it runs today (branch `integrity`, commit `91435b2`), not a target design. Every component, endpoint, limit and number here is taken from the code, the tests or `tools/bench_results.json`. Section 11 lists what a bank deployment still needs.
 
 **Status labels used below**
 
@@ -19,15 +19,15 @@ A data owner (a bank, or an analyst's browser tab) encrypts numeric columns with
 ## 2. System context
 
 ```mermaid
-flowchart LR
+flowchart TB
   subgraph Owner["Data owner side (holds every key)"]
     PY["Python client<br/>agniya/client.py<br/>AgniyaClient"]
     subgraph Browser["Browser tab: dashboard (Next.js)"]
       UI["Dashboard UI<br/>app/dashboard/page.tsx"]
       W["Crypto Web Worker<br/>lib/agniya-worker.ts<br/>BrowserClient (keys live here)"]
       H["Helper workers, up to 8<br/>lib/agniya-encrypt-worker.ts"]
-      UI <-- "postMessage" --> W
-      W <-- "p, q + plaintext batches" --> H
+      UI <-->|postMessage| W
+      W <-->|"p, q + plaintext batches"| H
     end
     KF[("Key file<br/>*.agniya-key<br/>scrypt + AES-256-GCM")]
     PY <--> KF
@@ -87,7 +87,7 @@ Both clients speak the same `/api/v2` protocol and produce byte-compatible data:
 | Public modulus `n`, packed ciphertexts, slots, row counts | Server memory and SQLite | Server |
 | OPE tags (64-bit, sorted) and tag MACs (16 bytes per ciphertext) | Server, only for columns marked "Paillier + range" | Server (learns the order of those columns) |
 
-**Boundary rule:** everything that crosses to the server is either public (`n`), a ciphertext, an OPE tag on an opted-in column, a MAC, a count, or the token. The server's answers are ciphertexts plus row indices, and none of them is trusted until the owner's checks pass.
+> **Boundary rule:** everything that crosses to the server is either public (`n`), a ciphertext, an OPE tag on an opted-in column, a MAC, a count, or the token. The server's answers are ciphertexts plus row indices, and none of them is trusted until the owner's checks pass.
 
 ## 5. Data model
 
@@ -152,12 +152,12 @@ sequenceDiagram
   participant W as Crypto worker (keys)
   participant H as Helper workers
   participant S as Server /api/v2
-  U->>U: Parse CSV in the tab; propose protection per column
+  U->>U: Parse CSV in the tab, propose protection per column
   U->>W: init(dataset = file + random 8 hex)
-  W->>W: Generate 2048-bit key pair; derive dataset token
+  W->>W: Generate 2048-bit key pair, derive dataset token
   loop each Paillier column
     U->>W: upload(column, values, decimals, range?)
-    W->>W: Fixed point, offset, layout, integrity tags; OPE tags + MACs if range
+    W->>W: Fixed point, offset, layout, integrity tags, OPE tags + MACs if range
     W->>H: Plaintext batches with p, q
     H-->>W: Ciphertexts (hex)
     W->>S: POST /columns (n, ciphertexts, slots, count, tags, MACs, token)
@@ -174,14 +174,14 @@ The dataset name gets a random suffix so two runs of the same file never collide
 sequenceDiagram
   participant W as Owner (worker or Python)
   participant S as Server (no key)
-  W->>W: First use only: upload copy loan_amount#product|credit_score
+  W->>W: First use only: upload grouped copy sorted by credit_score
   W->>W: lo_tag = OPE(300), hi_tag = OPE(600) under that copy's key
   W->>S: POST /aggregate (copy, lo_tag, hi_tag) per page of groups
-  S->>S: Binary search tags: rows i..j-1; multiply the ciphertexts inside
+  S->>S: Binary search tags: rows i..j-1, multiply the ciphertexts inside
   S-->>W: product, up to 2 edge ciphertexts, witnesses (tags + MACs around the cut)
   W->>W: Check witness MACs: rows i..j-1 are exactly the rows in range
-  W->>W: CRT-decrypt product and edges; check integrity tags
-  W->>W: Read each group's slots (sum, count); subtract offset; scale
+  W->>W: CRT-decrypt product and edges, check integrity tags
+  W->>W: Read each group's slots (sum, count), subtract offset, scale
   W-->>W: Result per product, or IntegrityError
 ```
 
@@ -208,7 +208,7 @@ Other operations follow the same pattern:
 | Owner, beyond the answer | The other values packed in an edge ciphertext of a range, or in a quantile's ciphertext | n/a |
 | Anyone with the token but no key | Ciphertexts and answers in encrypted form | Values |
 
-Guarantees and assumptions: IND-CPA under decisional composite residuosity (2048-bit keys, about 112-bit security); integrity forgeries succeed with probability about 2^−127 (AES-256 keystream, HMAC-SHA256). Not provided: post-quantum security, protection of the order of range columns, availability against a server that refuses to answer, and an independent security review.
+> Guarantees and assumptions: IND-CPA under decisional composite residuosity (2048-bit keys, about 112-bit security); integrity forgeries succeed with probability about 2^−127 (AES-256 keystream, HMAC-SHA256). Not provided: post-quantum security, protection of the order of range columns, availability against a server that refuses to answer, and an independent security review.
 
 ## 9. Performance (measured, not projected)
 
@@ -259,4 +259,4 @@ The cryptography, protocol and checks are the stable core. What stands between t
 | Multi-party | One owner per dataset | Threshold decryption for joint statistics across institutions | research |
 | Clean-up | `agniya/hybrid/{aes_cipher,key_wrapper,schema,hybrid_storage}.py`, `examples/`, `scripts/` unused by the product | Move to `legacy/` or delete with their tests | hours |
 
-**Recommended order:** server runtime and TLS, then lazy loading, then KMS-held keys and roles. Those three turn the current single-laptop demo into something a bank can pilot (see the six-week plan in `docs/BANKING.md`) without touching the cryptographic core.
+> **Recommended order:** server runtime and TLS, then lazy loading, then KMS-held keys and roles. Those three turn the current single-laptop demo into something a bank can pilot (see the six-week plan in `docs/BANKING.md`) without touching the cryptographic core.
