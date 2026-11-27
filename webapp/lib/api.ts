@@ -60,17 +60,6 @@ export interface QueryResponse {
   };
 }
 
-export interface BenchmarkResponse {
-  speedup: number;
-  encryption_time_ms: number;
-  throughput_rec_per_sec: number;
-  operations: Array<{
-    name: string;
-    hybrid_ms: number;
-    paillier_ms: number | null;
-  }>;
-}
-
 class APIService {
   private async fetchAPI<T>(
     endpoint: string,
@@ -196,10 +185,6 @@ class APIService {
       method: 'POST',
       body: JSON.stringify(body),
     });
-  }
-
-  async getBenchmarks(): Promise<BenchmarkResponse> {
-    return this.fetchAPI('/api/benchmark');
   }
 }
 

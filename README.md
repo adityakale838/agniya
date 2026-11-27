@@ -3,6 +3,9 @@
 Encrypted aggregation for tabular data: SUM / AVG / COUNT (and OPE range filters) computed on
 **Paillier-2048** ciphertexts, with a Flask API and a Next.js dashboard.
 
+**System architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) (components, key custody, data model, API,
+query flows, leakage, measured performance, and the path to a bank deployment).
+
 ```python
 import agniya as ag
 
